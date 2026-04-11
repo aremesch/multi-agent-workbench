@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MAW CLI Adapter Config",
+  "description": "Config-driven CLI adapter for a tmux-hosted coding agent. Source of truth for validation is adapter.config.schema.ts (Zod); this file exists only for editor autocomplete on *.jsonc.",
+  "type": "object",
+  "required": ["kind", "displayName", "spawn", "input"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "kind": { "type": "string", "minLength": 1 },
+    "displayName": { "type": "string", "minLength": 1 },
+    "spawn": {
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "command": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "initialInput": { "type": "string" }
+      }
+    },
+    "input": {
+      "type": "object",
+      "properties": {
+        "encoding": { "type": "string", "enum": ["literal"] },
+        "submitKey": { "type": "string" },
+        "promptAnswers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "regex"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["ready", "working", "prompt_detected", "task_done", "error", "exited"]
+          },
+          "regex": { "type": "string" },
+          "flags": { "type": "string" },
+          "scope": { "type": "string", "enum": ["tail", "tail_line"] },
+          "choices": { "type": "array", "items": { "type": "string" } },
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warning", "error", "critical"]
+          },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "idleDetection": {
+      "type": "object",
+      "properties": {
+        "method": { "type": "string", "enum": ["cursor_at_prompt", "inactivity"] },
+        "promptLineRegex": { "type": "string" },
+        "inactivityMs": { "type": "number" }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "autoAnswer": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["patternId", "answer"],
+            "properties": {
+              "patternId": { "type": "string" },
+              "when": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              },
+              "answer": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

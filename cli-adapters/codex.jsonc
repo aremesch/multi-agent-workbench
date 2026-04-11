@@ -1,0 +1,59 @@
+{
+  "$schema": "../schemas/adapter.schema.json",
+  "kind": "codex",
+  "displayName": "Codex CLI",
+
+  // Starter patterns — must be tuned against a real recording.
+  "spawn": {
+    "command": "codex",
+    "args": [],
+    "env": {
+      "OPENAI_API_KEY": "{{env.OPENAI_API_KEY}}"
+    },
+    "initialInput": "{{task.body}}"
+  },
+
+  "input": {
+    "encoding": "literal",
+    "submitKey": "Enter",
+    "promptAnswers": {
+      "yes": ["y", "Enter"],
+      "no": ["n", "Enter"],
+      "abort": ["C-c"]
+    }
+  },
+
+  "patterns": [
+    {
+      "id": "approval_prompt",
+      "kind": "prompt_detected",
+      "regex": "Approve (?<action>.+?)\\? \\[y/N\\]",
+      "scope": "tail",
+      "choices": ["yes", "no"],
+      "severity": "warning"
+    },
+    {
+      "id": "ready",
+      "kind": "ready",
+      "regex": "^codex>\\s*$",
+      "scope": "tail_line"
+    },
+    {
+      "id": "task_done",
+      "kind": "task_done",
+      "regex": "^Done\\.?\\s*$",
+      "flags": "m",
+      "scope": "tail"
+    }
+  ],
+
+  "idleDetection": {
+    "method": "cursor_at_prompt",
+    "promptLineRegex": "^codex>\\s*$",
+    "inactivityMs": 2000
+  },
+
+  "defaults": {
+    "autoAnswer": []
+  }
+}

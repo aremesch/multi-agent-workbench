@@ -1,0 +1,80 @@
+{
+  "$schema": "../schemas/adapter.schema.json",
+  "kind": "claude-code",
+  "displayName": "Claude Code",
+
+  // NOTE: these patterns are starting points. Tune against real captured
+  // sessions with `pnpm test:adapter cli-adapters/claude-code.jsonc <session.txt>`.
+  "spawn": {
+    "command": "claude",
+    "args": ["--dangerously-skip-permissions"],
+    "env": {
+      "ANTHROPIC_API_KEY": "{{env.ANTHROPIC_API_KEY}}"
+    },
+    "initialInput": "{{task.body}}"
+  },
+
+  "input": {
+    "encoding": "literal",
+    "submitKey": "Enter",
+    "promptAnswers": {
+      "yes": ["y", "Enter"],
+      "no": ["n", "Enter"],
+      "1": ["1", "Enter"],
+      "2": ["2", "Enter"],
+      "abort": ["C-c"]
+    }
+  },
+
+  "patterns": [
+    {
+      "id": "tool_permission_prompt",
+      "kind": "prompt_detected",
+      "regex": "Do you want to (?:run|proceed with) (?<tool>[a-zA-Z_]+)(?:\\((?<args>[^)]*)\\))?\\?",
+      "flags": "m",
+      "scope": "tail",
+      "choices": ["yes", "no"],
+      "severity": "warning",
+      "description": "Standard tool-use permission prompt"
+    },
+    {
+      "id": "shell_command_prompt",
+      "kind": "prompt_detected",
+      "regex": "Run (?<cmd>.+?) \\? \\[y/N\\]",
+      "scope": "tail",
+      "choices": ["yes", "no"],
+      "severity": "warning"
+    },
+    {
+      "id": "ready",
+      "kind": "ready",
+      "regex": "^>\\s*$",
+      "scope": "tail_line"
+    },
+    {
+      "id": "task_done",
+      "kind": "task_done",
+      "regex": "(?:✓ Task complete|All done!)",
+      "scope": "tail",
+      "severity": "info"
+    },
+    {
+      "id": "rate_limit",
+      "kind": "error",
+      "regex": "rate.limit|quota exceeded",
+      "flags": "i",
+      "scope": "tail",
+      "severity": "error"
+    }
+  ],
+
+  "idleDetection": {
+    "method": "cursor_at_prompt",
+    "promptLineRegex": "^>\\s*$",
+    "inactivityMs": 2000
+  },
+
+  "defaults": {
+    "autoAnswer": []
+  }
+}

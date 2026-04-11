@@ -1,0 +1,58 @@
+{
+  "$schema": "../schemas/adapter.schema.json",
+  "kind": "gemini",
+  "displayName": "Gemini CLI",
+
+  // Starter patterns — must be tuned against a real recording.
+  "spawn": {
+    "command": "gemini",
+    "args": [],
+    "env": {
+      "GEMINI_API_KEY": "{{env.GEMINI_API_KEY}}"
+    },
+    "initialInput": "{{task.body}}"
+  },
+
+  "input": {
+    "encoding": "literal",
+    "submitKey": "Enter",
+    "promptAnswers": {
+      "yes": ["y", "Enter"],
+      "no": ["n", "Enter"],
+      "abort": ["C-c"]
+    }
+  },
+
+  "patterns": [
+    {
+      "id": "confirm_action",
+      "kind": "prompt_detected",
+      "regex": "Confirm (?<action>.+?) \\[Y/n\\]",
+      "scope": "tail",
+      "choices": ["yes", "no"],
+      "severity": "warning"
+    },
+    {
+      "id": "ready",
+      "kind": "ready",
+      "regex": "^gemini>\\s*$",
+      "scope": "tail_line"
+    },
+    {
+      "id": "task_done",
+      "kind": "task_done",
+      "regex": "Completed successfully",
+      "scope": "tail"
+    }
+  ],
+
+  "idleDetection": {
+    "method": "cursor_at_prompt",
+    "promptLineRegex": "^gemini>\\s*$",
+    "inactivityMs": 2000
+  },
+
+  "defaults": {
+    "autoAnswer": []
+  }
+}
