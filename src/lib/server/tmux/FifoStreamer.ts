@@ -6,16 +6,21 @@
  * writes into the pipe.
  *
  * Design notes:
- *   - `open(path, 'r')` on a FIFO blocks until a writer appears. To avoid
- *     that we open with O_RDWR (we never write, but the flag gives us a
- *     non-blocking open even when no writer exists yet).
- *   - Re-open on close (`readable.on('end')`) in case the pipe-pane writer
- *     restarts across backend reconnects — no-op in practice since we hold
- *     O_RDWR, but cheap insurance.
- *   - Cleanup: on stop(), close the fd and unlink the fifo.
+ *   - `open(path, 'r')` on a FIFO blocks in the kernel until a writer
+ *     appears. We avoid that by opening O_RDWR: kernel treats us as both
+ *     ends, so open() returns immediately AND the pipe never hits EOF when
+ *     tmux's pipe-pane writer restarts across backend reconnects (our own
+ *     O_RDWR fd always counts as a live writer).
+ *   - Reads are BLOCKING (no O_NONBLOCK). Node's ReadStream dispatches
+ *     reads through libuv's threadpool, which does blocking read(2) off the
+ *     event loop; that's the path that handles arbitrary fds cleanly. With
+ *     O_NONBLOCK set, an empty pipe returns EAGAIN and Node's stream layer
+ *     (which has no retry-on-EAGAIN for arbitrary fds) emits 'error' and
+ *     crashes the process.
+ *   - Cleanup: on stop(), destroy the stream, close the fd, unlink the fifo.
  */
 
-import { mkdirSync, existsSync, unlinkSync, openSync, closeSync, constants } from 'node:fs';
+import { mkdirSync, existsSync, unlinkSync, openSync, closeSync } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { execa } from 'execa';
@@ -47,8 +52,10 @@ export class FifoStreamer extends EventEmitter {
   /** Begin streaming. Calls back with each Buffer chunk tmux writes into the fifo. */
   start(onChunk: (chunk: Buffer) => void): void {
     if (this.fd !== null) return;
-    // O_RDWR prevents blocking when there's no writer yet.
-    this.fd = openSync(this.path, constants.O_RDWR | constants.O_NONBLOCK);
+    // O_RDWR (no O_NONBLOCK): non-blocking open thanks to being our own
+    // writer, blocking reads dispatched via libuv threadpool. See header.
+    // 'r+' is the node fs shorthand for O_RDWR.
+    this.fd = openSync(this.path, 'r+');
     this.stream = createReadStream('', { fd: this.fd, autoClose: false });
     this.stream.on('data', (chunk) => {
       onChunk(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);

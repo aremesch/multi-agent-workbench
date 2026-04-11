@@ -34,6 +34,14 @@ export interface CS_SendInput {
   text: string;
   submit: boolean;
 }
+export interface CS_SendKeys {
+  // Raw keystroke bytes (e.g. arrow keys, Ctrl-C) forwarded from the xterm.js
+  // `onData` callback. Distinct from `send_input`, which is line-mode text +
+  // an optional Enter.
+  type: 'send_keys';
+  agentId: string;
+  b64: string;
+}
 export interface CS_AnswerPrompt {
   type: 'answer_prompt';
   agentId: string;
@@ -59,6 +67,7 @@ export type ClientMessage =
   | CS_SubscribeAgent
   | CS_UnsubscribeAgent
   | CS_SendInput
+  | CS_SendKeys
   | CS_AnswerPrompt
   | CS_AssignTask
   | CS_Control

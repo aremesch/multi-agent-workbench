@@ -1,0 +1,31 @@
+{
+  "$schema": "../schemas/adapter.schema.json",
+  "kind": "shell",
+  "displayName": "Shell (bash smoke test)",
+
+  // Minimal adapter with no pattern matching — exists only to exercise the
+  // tmux + FIFO + WebSocket pipeline end-to-end without depending on any
+  // third-party CLI being installed. No prompts, no task interpolation.
+  "spawn": {
+    "command": "bash",
+    "args": ["-i"],
+    "env": {}
+  },
+
+  "input": {
+    "encoding": "literal",
+    "submitKey": "Enter",
+    "promptAnswers": {}
+  },
+
+  "patterns": [],
+
+  "idleDetection": {
+    "method": "inactivity",
+    "inactivityMs": 2000
+  },
+
+  "defaults": {
+    "autoAnswer": []
+  }
+}

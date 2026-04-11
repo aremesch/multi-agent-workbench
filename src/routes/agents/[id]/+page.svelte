@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import type { PageData } from './$types';
   import { MawWsClient } from '$lib/client/ws';
+  import Terminal from '$lib/client/components/Terminal.svelte';
 
   let { data }: { data: PageData } = $props();
 
@@ -13,17 +14,25 @@
   });
   let pendingPrompt = $state<{ choices?: string[]; detail?: Record<string, unknown> } | null>(null);
   let client: MawWsClient | null = null;
-  // Minimal scrollback into a <pre> until xterm.js is wired into Terminal.svelte.
-  let buffer = $state('');
+  let term: Terminal | undefined = $state();
+
+  // Base64 → Uint8Array. We hand raw bytes to xterm.js so it can decode
+  // UTF-8 itself (box-drawing chars, emoji, etc.) and correctly buffer any
+  // multibyte sequence that gets split across chunk boundaries.
+  function b64ToBytes(b64: string): Uint8Array {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
 
   onMount(() => {
     client = new MawWsClient({
       onOutput: ({ b64 }) => {
-        buffer += atob(b64);
-        if (buffer.length > 200_000) buffer = buffer.slice(-100_000);
+        term?.write(b64ToBytes(b64));
       },
       onScrollback: ({ chunks }) => {
-        for (const c of chunks) buffer += atob(c.b64);
+        for (const c of chunks) term?.write(b64ToBytes(c.b64));
       },
       onEvent: ({ kind, choices, detail }) => {
         if (kind === 'prompt_detected') {
@@ -37,6 +46,10 @@
     client.connect();
     client.subscribe(data.agent.id);
   });
+
+  function onTerminalData(bytes: string): void {
+    client?.sendKeys(data.agent.id, bytes);
+  }
 
   onDestroy(() => {
     client?.close();
@@ -65,7 +78,7 @@
   <span class="status">{status}</span>
 </header>
 
-<pre class="terminal">{buffer}</pre>
+<Terminal bind:this={term} onData={onTerminalData} />
 
 {#if pendingPrompt}
   <section class="prompt">
@@ -99,19 +112,6 @@
   .status {
     font-size: 0.85rem;
     color: #9ca3af;
-  }
-  .terminal {
-    background: #000;
-    color: #e5e7eb;
-    padding: 0.75rem;
-    border-radius: 0.375rem;
-    white-space: pre-wrap;
-    min-height: 20rem;
-    max-height: 60vh;
-    overflow: auto;
-    font-family: ui-monospace, Menlo, monospace;
-    font-size: 0.85rem;
-    border: 1px solid #1f2937;
   }
   .prompt {
     margin-top: 1rem;

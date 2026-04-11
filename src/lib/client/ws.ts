@@ -93,6 +93,23 @@ export class MawWsClient {
     this.send({ type: 'send_input', agentId, text, submit });
   }
 
+  /**
+   * Forward raw keystroke bytes (arrow keys, Ctrl-C, Enter, etc.) from an
+   * xterm.js instance. `text` is the string xterm handed us via `onData` —
+   * it may contain control characters which we ship to the server as base64
+   * to survive JSON transport.
+   */
+  sendKeys(agentId: string, text: string): void {
+    if (text.length === 0) return;
+    // btoa only accepts latin-1; encode to bytes first so multibyte input
+    // (e.g. pasted emoji) round-trips correctly.
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    const b64 = btoa(bin);
+    this.send({ type: 'send_keys', agentId, b64 });
+  }
+
   answerPrompt(agentId: string, choice: string | number): void {
     this.send({ type: 'answer_prompt', agentId, choice });
   }

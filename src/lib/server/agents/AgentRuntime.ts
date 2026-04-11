@@ -75,6 +75,21 @@ export class AgentRuntime extends EventEmitter {
     return this.inputQueue;
   }
 
+  /**
+   * Forward raw keystroke bytes from an interactive terminal (e.g. xterm.js
+   * `onData`) straight to tmux. Bypasses adapter encoding — control chars
+   * like `\x1b[A` or `\x03` must reach the pane verbatim. `send-keys -l`
+   * sends the payload literally, so control bytes pass through.
+   */
+  enqueueRawKeys(text: string): Promise<void> {
+    if (text.length === 0) return this.inputQueue;
+    const task = async (): Promise<void> => {
+      await Tmux.sendLiteral(this.agent.tmux_session, text);
+    };
+    this.inputQueue = this.inputQueue.then(task, task);
+    return this.inputQueue;
+  }
+
   enqueueAnswer(choice: string | number): Promise<void> {
     const keys = this.adapter.input.answerPrompt(choice);
     const task = async (): Promise<void> => {

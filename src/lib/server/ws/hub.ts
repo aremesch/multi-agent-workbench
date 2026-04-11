@@ -76,6 +76,9 @@ class HubClient {
       case 'send_input':
         this.handleSendInput(msg.agentId, msg.text, msg.submit);
         break;
+      case 'send_keys':
+        this.handleSendKeys(msg.agentId, msg.b64);
+        break;
       case 'answer_prompt':
         this.handleAnswerPrompt(msg.agentId, msg.choice);
         break;
@@ -177,6 +180,21 @@ class HubClient {
     const runtime = getSupervisor().get(agentId);
     if (!runtime || runtime.agent.user_id !== this.userId) return;
     runtime.enqueueInput(text, submit).catch((err) => {
+      this.send({ type: 'error', code: 'input_failed', message: String(err) });
+    });
+  }
+
+  private handleSendKeys(agentId: string, b64: string): void {
+    const runtime = getSupervisor().get(agentId);
+    if (!runtime || runtime.agent.user_id !== this.userId) return;
+    let text: string;
+    try {
+      text = Buffer.from(b64, 'base64').toString('utf8');
+    } catch {
+      this.send({ type: 'error', code: 'bad_payload', message: 'send_keys: invalid base64' });
+      return;
+    }
+    runtime.enqueueRawKeys(text).catch((err) => {
       this.send({ type: 'error', code: 'input_failed', message: String(err) });
     });
   }

@@ -19,19 +19,29 @@ Two driving goals:
 
 ## Current status
 
-- v0.1 scaffold builds, `pnpm check` is clean, login works, dashboard reads
-  empty state (no create-forms yet).
-- Backend skeleton complete: SQLite + hand-written migrations, auth
-  (argon2id + session cookie + CSRF), tmux + FIFO streamer,
-  `AgentSupervisor` with reattach-on-boot, `ConfigDrivenAdapter` +
-  hot-reloading `AdapterRegistry`, WebSocket hub implementing the full
-  `ClientMessage`/`ServerMessage` protocol.
-- CLI adapter configs present for `claude-code`, `codex`, `gemini` —
-  starter patterns only, must be tuned against real recorded sessions.
-- Not yet implemented: create-forms for projects/repos/roles/agents,
-  xterm.js rendering (placeholder `<pre>` for now), PWA + service
-  worker + Web Push, alert pipeline, MCP server, `maw` CLI binary,
-  LLM overseer.
+- v0.1 foundation + CRUD UI landed, `pnpm check` clean (0/0).
+- Full create flow in SvelteKit form actions: project → repo → role →
+  spawn agent, reachable from the dashboard. Pre-generated `agentId`
+  keeps worktree dir, branch (`maw/<agentId>`) and DB row in lock-step.
+- Repo attach is self-healing: empty dirs get `git init -b <default>` +
+  empty initial commit; unborn repos get HEAD re-pointed and seeded;
+  legacy `master` is renamed to the project default (`main`);
+  non-empty non-git dirs are rejected. Helper lives in WorktreeManager.
+- Terminal view now uses xterm.js (dynamic-imported for SSR safety).
+  Raw PTY bytes flow as `Uint8Array` so UTF-8 multibyte sequences decode
+  correctly. Client-side keystrokes (arrows, Ctrl-C, etc.) forward as a
+  new `send_keys` WS message → `AgentRuntime.enqueueRawKeys` →
+  `tmux send-keys -l`, preserving VT220 escape sequences verbatim.
+- FifoStreamer fixed: dropped `O_NONBLOCK` (kept `O_RDWR`) so libuv does
+  blocking reads in the threadpool instead of crashing on EAGAIN.
+- Smoke adapter `cli-adapters/shell.jsonc` exercises the pipeline end
+  to end without needing claude/codex/gemini installed.
+- Backend skeleton (auth, SQLite+migrations, tmux+FIFO, supervisor with
+  reattach-on-boot, ConfigDrivenAdapter + hot-reloading registry, WS
+  hub) unchanged and still clean.
+- Not yet: edit/delete flows, PWA + service worker + Web Push, alert
+  pipeline, MCP server, `maw` CLI binary, LLM overseer, tuned
+  claude-code/codex/gemini adapter patterns.
 
 > Keep this section terse and *replace* its contents as work lands.
 > Do not append completed items — git history is the activity log.

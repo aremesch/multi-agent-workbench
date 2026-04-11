@@ -23,6 +23,11 @@ import { WorktreeManager } from '../git/WorktreeManager.js';
 import { getConfig } from '../config.js';
 
 export interface SpawnAgentArgs {
+  /**
+   * Pre-generated agent id. Must match the ulid the caller used to name the
+   * worktree directory and branch so everything stays in lock-step.
+   */
+  agentId: string;
   userId: string;
   roleId: string;
   repoId: string;
@@ -115,7 +120,7 @@ export class AgentSupervisor {
       }
     });
 
-    const agentId = ulid();
+    const agentId = args.agentId;
     const tmuxSession = Tmux.sessionName(agentId);
 
     insertAgent({
