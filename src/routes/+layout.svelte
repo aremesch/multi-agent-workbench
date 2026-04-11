@@ -91,6 +91,11 @@
 {/if}
 
 <style>
+  :global(html, body) {
+    margin: 0;
+    padding: 0;
+    background: #0a0a0a;
+  }
   .app {
     font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
     color: #e5e5e5;
