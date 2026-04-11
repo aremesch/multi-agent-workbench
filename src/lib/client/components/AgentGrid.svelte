@@ -81,6 +81,10 @@
       // aspect once the first snapshot reports its measured cols/rows.
       el.setAttribute('gs-w', '4');
       el.setAttribute('gs-h', '2');
+      // Flow new cards left-to-right, then wrap down. Without this the
+      // missing gs-x/gs-y default to (0,0) and — because float:true lets
+      // items overlap — every fresh spawn stacks on the top-left corner.
+      el.setAttribute('gs-auto-position', 'true');
       autoFitPending.add(agent.id);
     }
     const content = document.createElement('div');
