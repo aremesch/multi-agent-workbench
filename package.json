@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
+    "dev": "UV_THREADPOOL_SIZE=64 vite dev",
     "build": "vite build",
-    "preview": "node server.js",
-    "start": "node server.js",
+    "preview": "UV_THREADPOOL_SIZE=64 node server.js",
+    "start": "UV_THREADPOOL_SIZE=64 node server.js",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "lint": "eslint .",

@@ -18,6 +18,16 @@
  *     (which has no retry-on-EAGAIN for arbitrary fds) emits 'error' and
  *     crashes the process.
  *   - Cleanup: on stop(), destroy the stream, close the fd, unlink the fifo.
+ *
+ * THREADPOOL BUDGET:
+ *   Each live AgentRuntime parks one libuv threadpool thread on a blocking
+ *   read() for the lifetime of the agent. libuv's default pool size is 4,
+ *   so with ≥4 live agents ALL other threadpool consumers (fs.readFile,
+ *   Vite's SSR module-runner fetchModule, better-sqlite3's async ops,
+ *   dns.lookup, …) get starved and the process appears to hang. We bump
+ *   UV_THREADPOOL_SIZE to 64 in package.json's dev/preview/start scripts so
+ *   up to ~60 agents can coexist with the rest of Node's fs traffic. If you
+ *   expect more, raise it further — each thread is ~8KB of RAM.
  */
 
 import { mkdirSync, existsSync, unlinkSync, openSync, closeSync } from 'node:fs';

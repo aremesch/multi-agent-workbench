@@ -163,9 +163,17 @@
   });
 
   // Reactively sync widgets with the agents prop.
+  //
+  // IMPORTANT: read `agents` *before* the grid guard. Svelte 5 $effect tracks
+  // dependencies by what is actually read during the run, so if we early-
+  // returned on the very first pass (before onMount set `grid`) without
+  // touching `agents`, Svelte would never register the prop as a dep — and
+  // subsequent changes (e.g. a newly-spawned agent landing in data.liveAgents
+  // after invalidateAll) would silently fail to update the grid.
   $effect(() => {
+    const ids = agents.map((a) => a.id);
     if (!grid) return;
-    const present = new Set(agents.map((a) => a.id));
+    const present = new Set(ids);
     for (const id of Array.from(widgets.keys())) {
       if (!present.has(id)) removeWidget(id);
     }

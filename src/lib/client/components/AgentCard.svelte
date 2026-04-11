@@ -125,7 +125,10 @@
 <article class="agent-card">
   <header class="agent-card-header">
     <div class="titles">
-      <span class="name">{agent.role_name}</span>
+      <span class="name"
+        >{agent.project_name}{agent.task_title ? `/${agent.task_title}` : ''}</span
+      >
+      <span class="role">{agent.role_name}</span>
       <span class="cli">{agent.cli_kind}</span>
     </div>
     <span class="status status-{agent.status}">{agent.status}</span>
@@ -190,6 +193,14 @@
     font-size: 0.8rem;
     font-weight: 500;
     color: #e5e7eb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .role {
+    font-size: 0.7rem;
+    color: #6b7280;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

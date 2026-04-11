@@ -13,8 +13,9 @@ export type AgentStatus =
   | 'crashed';
 
 /**
- * Agent row enriched with role name + repo path for dashboard display.
- * Matches the shape returned by `listAgentCardsForUser` in queries.ts.
+ * Agent row enriched with role name + repo path + project name for
+ * dashboard display. Matches the shape returned by `listAgentCardsForUser`
+ * in queries.ts.
  */
 export interface AgentCardRow {
   id: string;
@@ -31,6 +32,8 @@ export interface AgentCardRow {
   updated_at: number;
   role_name: string;
   repo_path: string;
+  project_name: string;
+  task_title: string | null;
 }
 
 /** Persisted gridstack position for one agent card. */

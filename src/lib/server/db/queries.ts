@@ -236,12 +236,15 @@ export function listAgentsForUser(userId: string): AgentRow[] {
 }
 
 /**
- * Agent row joined with its role name + repo path for dashboard display.
- * Filtered by the caller-provided status set. Ordered newest-first.
+ * Agent row joined with its role name + repo path + project name + current
+ * task title for dashboard display. Filtered by the caller-provided status
+ * set. Ordered newest-first.
  */
 export interface AgentCardRow extends AgentRow {
   role_name: string;
   repo_path: string;
+  project_name: string;
+  task_title: string | null;
 }
 
 export function listAgentCardsForUser(
@@ -251,10 +254,16 @@ export function listAgentCardsForUser(
   if (statuses.length === 0) return [];
   const placeholders = statuses.map(() => '?').join(',');
   const sql = `
-    SELECT a.*, r.name AS role_name, rp.path AS repo_path
+    SELECT a.*,
+           r.name AS role_name,
+           rp.path AS repo_path,
+           p.name AS project_name,
+           t.title AS task_title
     FROM agents a
     JOIN roles r ON r.id = a.role_id
     JOIN repos rp ON rp.id = a.repo_id
+    JOIN projects p ON p.id = rp.project_id
+    LEFT JOIN tasks t ON t.id = a.current_task_id
     WHERE a.user_id = ? AND a.status IN (${placeholders})
     ORDER BY a.created_at DESC
   `;
@@ -315,6 +324,12 @@ export function updateAgentAttention(id: string, ts: number): void {
   prep<[number, number, string]>(
     'UPDATE agents SET last_attention_at = ?, updated_at = ? WHERE id = ?'
   ).run(ts, now(), id);
+}
+
+export function updateAgentCurrentTask(id: string, taskId: string | null): void {
+  prep<[string | null, number, string]>(
+    'UPDATE agents SET current_task_id = ?, updated_at = ? WHERE id = ?'
+  ).run(taskId, now(), id);
 }
 
 // --------------- agent runs ---------------

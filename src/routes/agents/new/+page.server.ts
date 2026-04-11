@@ -5,10 +5,12 @@ import {
   getProject,
   getRepo,
   getRole,
+  insertTask,
   insertWorktree,
   listProjects,
   listReposForProject,
-  listRoles
+  listRoles,
+  updateAgentCurrentTask
 } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
 import { getConfig } from '$lib/server/config';
@@ -117,6 +119,23 @@ export const actions: Actions = {
         ...fields,
         error: `Spawn failed: ${(err as Error).message}`
       });
+    }
+
+    // Persist the task so the dashboard caption can render it. The agent row
+    // is inserted inside supervisor.spawn(), so we can now safely FK back to
+    // it and set current_task_id — which listAgentCardsForUser joins on.
+    if (task) {
+      const taskId = ulid();
+      insertTask({
+        id: taskId,
+        user_id: locals.user.id,
+        agent_id: agentId,
+        title: task.title,
+        body: task.body,
+        status: 'active',
+        assigned_by_agent_id: null
+      });
+      updateAgentCurrentTask(agentId, taskId);
     }
 
     throw redirect(303, `/agents/${agentId}`);
