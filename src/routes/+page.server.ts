@@ -61,11 +61,15 @@ export const load: PageServerLoad = async ({ locals }) => {
     cli_kind: r.cli_kind
   }));
   const spawnRepos = loadRepoOptions(locals.user.id);
+  const spawnProjects = listProjects(locals.user.id);
+  const spawnCliKinds = locals.supervisor.registry.list();
   return {
     liveAgents,
     archivedAgents,
     dashboardLayout,
     spawnRoles,
-    spawnRepos
+    spawnRepos,
+    spawnProjects,
+    spawnCliKinds
   };
 };

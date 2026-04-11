@@ -36,7 +36,9 @@ export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) throw redirect(303, '/login');
   return {
     roles: listRoles(locals.user.id),
-    repos: loadRepoOptions(locals.user.id)
+    repos: loadRepoOptions(locals.user.id),
+    projects: listProjects(locals.user.id),
+    cliKinds: locals.supervisor.registry.list()
   };
 };
 

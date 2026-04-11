@@ -109,6 +109,8 @@
     <SpawnAgentForm
       roles={data.spawnRoles}
       repos={data.spawnRepos}
+      projects={data.spawnProjects}
+      cliKinds={data.spawnCliKinds}
       onSuccess={onSpawnSuccess}
       onCancel={() => (spawnOpen = false)}
     />

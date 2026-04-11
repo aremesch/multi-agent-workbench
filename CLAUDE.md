@@ -32,14 +32,18 @@ Two driving goals:
   correctly. Client-side keystrokes (arrows, Ctrl-C, etc.) forward as a
   new `send_keys` WS message → `AgentRuntime.enqueueRawKeys` →
   `tmux send-keys -l`, preserving VT220 escape sequences verbatim.
-- Reconnect snapshot = 500-line `tmux capture-pane -S -500` piped
-  through `collapseRepeatingTailBlocks` (the repeating-tail-block
-  dedup helper in `hub.ts`). Line-based CLIs get real session
-  history; TUI CLIs (Claude Code et al.) get their redraw stacks
-  folded down before shipping. Client `term.reset()`s before
-  applying. Fresh snapshot on every modal open — xterm state does
-  not persist across close/reopen, which eliminates the reattach-
-  redraw-pollution failure mode. Spawn defaults 120×32; protocol
+- Reconnect snapshot is adapter-driven via the new
+  `scrollbackMode: 'visible' | 'history'` field on the adapter
+  descriptor (default `visible`). `'history'` (set only on
+  `shell.jsonc`) grabs 500 lines of `capture-pane -S -500` piped
+  through `collapseRepeatingTailBlocks` — real backlog for line-
+  based CLIs. `'visible'` (claude-code/codex/gemini) grabs
+  `-S 0` — only what's on screen right now, which is the only
+  reliable answer for TUI CLIs that repaint the whole UI in the
+  main buffer; it specifically kills the Ctrl-O expand/collapse
+  ghost-stack that byte-unequal variants slip through the dedup
+  heuristic. Client `term.reset()`s before applying. Fresh
+  snapshot on every modal open. Spawn defaults 120×32; protocol
   stays at v2.
 - `MawWsClient` is a module-level tab-wide shared singleton
   (`getMawWsClient()`) with per-agent handler dispatch — one `/ws`
@@ -100,3 +104,4 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-terminal-replay.md`](docs/plans/v0.1-terminal-replay.md) — snapshot-on-subscribe reconnect (atomic resize + `capture-pane`), drops byte-log replay for live viewers, lowers spawn defaults to 120×32, protocol v2 (executed).
 - [`docs/plans/v0.1-terminal-persistence.md`](docs/plans/v0.1-terminal-persistence.md) — `TerminalRegistry` that reparented xterm hosts between a hidden pool and the active panel; **superseded by v0.1-terminal-scrollback-v2** after TUI-CLI redraw pollution and reattach-resize races made persisted xterm scrollback unusable. Only the shared `MawWsClient` singleton from this plan survived.
 - [`docs/plans/v0.1-terminal-scrollback-v2.md`](docs/plans/v0.1-terminal-scrollback-v2.md) — reverts the terminal registry, switches reconnect snapshot to `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`; tmux becomes the source of truth for backing scrollback, every modal open gets a fresh deduped snapshot (executed).
+- [`docs/plans/v0.1-inline-spawn.md`](docs/plans/v0.1-inline-spawn.md) — inline project/role/repo creation within the spawn form modal; three JSON API routes, no page navigation required (executed).

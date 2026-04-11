@@ -5,7 +5,7 @@
 </script>
 
 <h1>Spawn agent</h1>
-<SpawnAgentForm roles={data.roles} repos={data.repos} />
+<SpawnAgentForm roles={data.roles} repos={data.repos} projects={data.projects} cliKinds={data.cliKinds} />
 
 <style>
   h1 {
