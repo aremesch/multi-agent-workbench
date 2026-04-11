@@ -149,7 +149,8 @@ pnpm migrate
 pnpm dev
 ```
 
-Open http://127.0.0.1:3000 and log in with the bootstrap credentials
+Open the URL `pnpm dev` prints (Vite defaults to
+http://127.0.0.1:5173) and log in with the bootstrap credentials
 from `.env`. Create a project, point it at a git repo (or an empty
 directory — MAW will `git init` it), add a role, then spawn an agent.
 The terminal view will attach to the live tmux session.
