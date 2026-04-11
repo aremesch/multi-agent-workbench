@@ -79,6 +79,9 @@ class HubClient {
       case 'send_keys':
         this.handleSendKeys(msg.agentId, msg.b64);
         break;
+      case 'resize':
+        this.handleResize(msg.agentId, msg.cols, msg.rows);
+        break;
       case 'answer_prompt':
         this.handleAnswerPrompt(msg.agentId, msg.choice);
         break;
@@ -196,6 +199,15 @@ class HubClient {
     }
     runtime.enqueueRawKeys(text).catch((err) => {
       this.send({ type: 'error', code: 'input_failed', message: String(err) });
+    });
+  }
+
+  private handleResize(agentId: string, cols: number, rows: number): void {
+    const runtime = getSupervisor().get(agentId);
+    if (!runtime || runtime.agent.user_id !== this.userId) return;
+    if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols < 1 || rows < 1) return;
+    runtime.resize(cols, rows).catch((err) => {
+      this.send({ type: 'error', code: 'resize_failed', message: String(err) });
     });
   }
 

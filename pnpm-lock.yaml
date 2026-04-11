@@ -26,6 +26,9 @@ importers:
       execa:
         specifier: ^9.5.2
         version: 9.6.1
+      gridstack:
+        specifier: ^12.6.0
+        version: 12.6.0
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
@@ -1313,6 +1316,9 @@ packages:
   globals@14.0.0:
     resolution: {integrity: sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ==}
     engines: {node: '>=18'}
+
+  gridstack@12.6.0:
+    resolution: {integrity: sha512-dUrqsormSybFn/2P4Dz8AgprftKD5e/IiV7UmC0XLQU+G+/WtkAeFiCSNLoAGhPDXoJ/O61Xtj3gljY/Ds83yQ==}
 
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
@@ -3139,6 +3145,8 @@ snapshots:
       is-glob: 4.0.3
 
   globals@14.0.0: {}
+
+  gridstack@12.6.0: {}
 
   has-flag@4.0.0: {}
 

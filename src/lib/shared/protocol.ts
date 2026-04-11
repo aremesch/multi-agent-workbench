@@ -61,6 +61,18 @@ export interface CS_Ping {
   type: 'ping';
   ts: number;
 }
+/**
+ * Resize the underlying tmux pane so its column/row count matches the
+ * xterm.js window the user is looking at. Sent on terminal mount and
+ * (debounced) on every subsequent xterm resize. Keeping the two in sync
+ * is the only way to avoid CLI output wrapping at an unrelated column.
+ */
+export interface CS_Resize {
+  type: 'resize';
+  agentId: string;
+  cols: number;
+  rows: number;
+}
 
 export type ClientMessage =
   | CS_Hello
@@ -71,7 +83,8 @@ export type ClientMessage =
   | CS_AnswerPrompt
   | CS_AssignTask
   | CS_Control
-  | CS_Ping;
+  | CS_Ping
+  | CS_Resize;
 
 // ---------- server → client ----------
 

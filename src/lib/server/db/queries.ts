@@ -235,6 +235,37 @@ export function listAgentsForUser(userId: string): AgentRow[] {
   ).all(userId);
 }
 
+/**
+ * Agent row joined with its role name + repo path for dashboard display.
+ * Filtered by the caller-provided status set. Ordered newest-first.
+ */
+export interface AgentCardRow extends AgentRow {
+  role_name: string;
+  repo_path: string;
+}
+
+export function listAgentCardsForUser(
+  userId: string,
+  statuses: AgentStatus[]
+): AgentCardRow[] {
+  if (statuses.length === 0) return [];
+  const placeholders = statuses.map(() => '?').join(',');
+  const sql = `
+    SELECT a.*, r.name AS role_name, rp.path AS repo_path
+    FROM agents a
+    JOIN roles r ON r.id = a.role_id
+    JOIN repos rp ON rp.id = a.repo_id
+    WHERE a.user_id = ? AND a.status IN (${placeholders})
+    ORDER BY a.created_at DESC
+  `;
+  // Cache by the number of placeholders — each arity gets its own prepared stmt.
+  return prep<unknown[], AgentCardRow>(sql).all(userId, ...statuses);
+}
+
+export function deleteAgent(id: string): void {
+  prep<[string]>('DELETE FROM agents WHERE id = ?').run(id);
+}
+
 export function listLiveAgents(): AgentRow[] {
   return prep<[], AgentRow>(
     `SELECT * FROM agents
@@ -548,4 +579,24 @@ export function upsertPushSub(row: {
 
 export function deletePushSubByEndpoint(endpoint: string): void {
   prep<[string]>('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
+}
+
+// --------------- user settings ---------------
+
+export function getUserSetting(userId: string, key: string): string | null {
+  const row = prep<[string, string], { value_json: string }>(
+    'SELECT value_json FROM user_settings WHERE user_id = ? AND key = ?'
+  ).get(userId, key);
+  return row?.value_json ?? null;
+}
+
+export function setUserSetting(userId: string, key: string, valueJson: string): void {
+  const ts = now();
+  prep<[string, string, string, number, number]>(
+    `INSERT INTO user_settings (user_id, key, value_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, key) DO UPDATE SET
+       value_json = excluded.value_json,
+       updated_at = excluded.updated_at`
+  ).run(userId, key, valueJson, ts, ts);
 }

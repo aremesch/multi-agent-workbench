@@ -7,6 +7,12 @@
   Exposes an imperative write()/clear() API via `bind:this`. Writes that land
   before onMount finishes (e.g. scrollback replay racing the dynamic import)
   are queued and flushed once xterm is ready.
+
+  Sizing: the host fills 100% of its parent. A ResizeObserver reflows
+  FitAddon whenever the parent changes, and each fit bubbles the resulting
+  cols/rows up via `onResize` so the caller can tell the backend to resize
+  the tmux pane to match — that's what stops CLI output from wrapping at
+  the old spawn size.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -16,9 +22,10 @@
 
   type Props = {
     onData?: (text: string) => void;
+    onResize?: (cols: number, rows: number) => void;
   };
 
-  const { onData }: Props = $props();
+  const { onData, onResize }: Props = $props();
 
   let container: HTMLDivElement | undefined = $state();
   let term: XTerm | null = null;
@@ -66,26 +73,48 @@
       fit = new FitAddon();
       term.loadAddon(fit);
       term.open(container);
-      fit.fit();
+      try {
+        fit.fit();
+      } catch {
+        // xterm throws if the container is 0-sized on first open (e.g. when
+        // inside a <dialog> that hasn't laid out yet). The ResizeObserver
+        // below will retry once the real dimensions land.
+      }
 
       if (onData) {
         term.onData((d) => onData(d));
+      }
+      if (onResize) {
+        term.onResize(({ cols, rows }) => onResize(cols, rows));
       }
 
       for (const chunk of pending) term.write(chunk);
       pending = [];
 
-      const handleResize = (): void => {
+      // Refit whenever the host element's box changes — modal open, window
+      // resize, parent flex reflow, …
+      const ro = new ResizeObserver(() => {
+        if (!term || !fit) return;
+        try {
+          fit.fit();
+        } catch {
+          // Container temporarily detached; ignore.
+        }
+      });
+      ro.observe(container);
+
+      const handleWindowResize = (): void => {
         try {
           fit?.fit();
         } catch {
-          // xterm throws if the container is temporarily detached; ignore.
+          /* ignore */
         }
       };
-      window.addEventListener('resize', handleResize);
+      window.addEventListener('resize', handleWindowResize);
 
       cleanup = () => {
-        window.removeEventListener('resize', handleResize);
+        window.removeEventListener('resize', handleWindowResize);
+        ro.disconnect();
         term?.dispose();
         term = null;
         fit = null;
@@ -104,15 +133,16 @@
 <style>
   .terminal-host {
     background: #000;
-    border: 1px solid #1f2937;
-    border-radius: 0.375rem;
-    padding: 0.5rem;
-    min-height: 20rem;
-    height: 60vh;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
-  /* xterm injects its own canvas layers; make sure they fill the host */
+  /* xterm injects its own canvas layers; make sure they fill the host. */
   .terminal-host :global(.xterm) {
     height: 100%;
+    width: 100%;
   }
   .terminal-host :global(.xterm-viewport) {
     background-color: transparent !important;

@@ -114,6 +114,11 @@ export class MawWsClient {
     this.send({ type: 'answer_prompt', agentId, choice });
   }
 
+  /** Inform the server of the current xterm.js viewer size so tmux resizes its pane to match. */
+  sendResize(agentId: string, cols: number, rows: number): void {
+    this.send({ type: 'resize', agentId, cols, rows });
+  }
+
   // ---------- internals ----------
 
   private send(msg: ClientMessage): void {

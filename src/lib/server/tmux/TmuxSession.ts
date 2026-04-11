@@ -100,10 +100,36 @@ export class Tmux {
   }
 
   /**
-   * Scrollback snapshot for new viewers. -e includes escape sequences so the
-   * xterm.js client can render colors; -S -10000 grabs ~10k lines of history.
+   * Resize a detached session's window to the given dimensions. Used when an
+   * xterm.js viewer attaches and wants the pane to stop wrapping at the
+   * original spawn size (200x50) and match its own visible columns/rows.
    */
-  static async capturePane(session: string): Promise<string> {
+  static async resizeWindow(session: string, cols: number, rows: number): Promise<void> {
+    if (cols < 1 || rows < 1) return;
+    try {
+      await execa('tmux', [
+        'resize-window',
+        '-t',
+        session,
+        '-x',
+        String(Math.floor(cols)),
+        '-y',
+        String(Math.floor(rows))
+      ]);
+    } catch (err) {
+      const e = err as ExecaError;
+      const stderr = typeof e.stderr === 'string' ? e.stderr : '';
+      // "can't find session" means the pane is already gone — ignore.
+      if (!/can't find session|session not found/i.test(stderr)) throw err;
+    }
+  }
+
+  /**
+   * Scrollback snapshot for new viewers. -e includes escape sequences so the
+   * xterm.js client can render colors; -S <startLine> chooses how far back to
+   * grab (default -10000 ≈ 10k lines). Pass e.g. -50 for a compact thumbnail.
+   */
+  static async capturePane(session: string, startLine = -10000): Promise<string> {
     try {
       const { stdout } = await execa('tmux', [
         'capture-pane',
@@ -112,7 +138,7 @@ export class Tmux {
         '-p',
         '-e',
         '-S',
-        '-10000'
+        String(startLine)
       ]);
       return stdout;
     } catch {

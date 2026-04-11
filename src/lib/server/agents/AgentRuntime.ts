@@ -90,6 +90,15 @@ export class AgentRuntime extends EventEmitter {
     return this.inputQueue;
   }
 
+  /**
+   * Resize the underlying tmux pane to the given dimensions. Called when an
+   * xterm.js viewer fits its container and needs the CLI to redraw at those
+   * columns/rows (otherwise output wraps at the original spawn size).
+   */
+  async resize(cols: number, rows: number): Promise<void> {
+    await Tmux.resizeWindow(this.agent.tmux_session, cols, rows);
+  }
+
   enqueueAnswer(choice: string | number): Promise<void> {
     const keys = this.adapter.input.answerPrompt(choice);
     const task = async (): Promise<void> => {

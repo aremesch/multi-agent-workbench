@@ -56,9 +56,24 @@ export function bootstrap(): Promise<void> {
     supervisor = new AgentSupervisor(registry);
     const { reattached, crashed } = await supervisor.init();
     console.log(`[maw] supervisor: ${reattached} agents reattached, ${crashed} crashed`);
+
+    // 5. Periodic reaper: scans every ~5s for runtimes whose tmux session
+    //    has disappeared (user typed /exit in the CLI, crashed, was killed
+    //    externally, …) and flips them to `exited` so the dashboard moves
+    //    them into the archive on the next poll/invalidate.
+    //    The `started` guard in bootstrap() ensures we only schedule one
+    //    interval per process even across HMR reloads in dev.
+    const sup = supervisor;
+    setInterval(() => {
+      sup.reap().catch((err) => {
+        console.error('[maw] supervisor: reap failed:', err);
+      });
+    }, REAP_INTERVAL_MS).unref();
   })();
   return started;
 }
+
+const REAP_INTERVAL_MS = 5000;
 
 export function getSupervisor(): AgentSupervisor {
   if (!supervisor) {

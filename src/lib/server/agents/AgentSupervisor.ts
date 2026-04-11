@@ -88,6 +88,53 @@ export class AgentSupervisor {
     this.runtimes.clear();
   }
 
+  /**
+   * Check every live runtime against the set of surviving tmux sessions and
+   * transition any whose session has disappeared into `exited`. This is how
+   * an agent that the user quit from inside the CLI (e.g. typing `/exit` in
+   * claude code) gets moved out of the dashboard into the archive: the CLI
+   * exits → sh exits → tmux session dies → we notice here and flip status.
+   *
+   * Also stops the runtime (tears down fifo + pipe-pane) and removes it from
+   * the in-memory registry so we don't leak FDs.
+   */
+  async reap(): Promise<number> {
+    if (this.runtimes.size === 0) return 0;
+    const liveSessions = new Set(await Tmux.listMawSessions());
+    let reaped = 0;
+    for (const [agentId, runtime] of Array.from(this.runtimes.entries())) {
+      if (!liveSessions.has(runtime.tmuxSession)) {
+        await this.finishAsExited(agentId, runtime);
+        reaped++;
+      }
+    }
+    return reaped;
+  }
+
+  /**
+   * Force the "session ended" transition for a single agent. Used by the
+   * snapshot API route the moment it detects a dead session — so the UI sees
+   * the agent move to the archive on its very next poll, without having to
+   * wait up to a full reap-loop interval.
+   */
+  async reapAgent(agentId: string): Promise<boolean> {
+    const runtime = this.runtimes.get(agentId);
+    if (!runtime) return false;
+    if (await Tmux.hasSession(runtime.tmuxSession)) return false;
+    await this.finishAsExited(agentId, runtime);
+    return true;
+  }
+
+  private async finishAsExited(agentId: string, runtime: AgentRuntime): Promise<void> {
+    try {
+      await runtime.stop();
+    } catch (err) {
+      console.error(`[AgentSupervisor] reap: stop failed for ${agentId}:`, err);
+    }
+    this.runtimes.delete(agentId);
+    updateAgentStatus(agentId, 'exited');
+  }
+
   get(agentId: string): AgentRuntime | undefined {
     return this.runtimes.get(agentId);
   }
