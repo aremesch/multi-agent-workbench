@@ -2,23 +2,63 @@
   import { onDestroy, onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import type { AgentCardRow } from '$lib/shared/types';
+  import { ansiToHtml, stripAnsi } from '$lib/client/ansi';
 
   // TODO (plan §15b): per-agent opt-in "live xterm thumbnail" mode.
   // Default stays poll-based: we fetch /api/agents/:id/snapshot every 5s,
-  // strip ANSI server-side, and render as plain <pre>.
+  // parse the SGR escapes into colored <span>s, and drop them into a <pre>.
   let {
     agent,
-    onOpen
+    onOpen,
+    onMeasure
   }: {
     agent: AgentCardRow;
     onOpen: (agent: AgentCardRow) => void;
+    onMeasure?: (agentId: string, cols: number, rows: number) => void;
   } = $props();
 
-  let snapshotText = $state<string>('');
+  let firstMeasureReported = false;
+
+  let snapshotHtml = $state<string>('');
+  let hasContent = $state<boolean>(false);
+  let contentCols = $state<number>(1);
+  let contentRows = $state<number>(1);
   let alive = $state<boolean>(true);
   let lastFetchTs = $state<number>(0);
   let loading = $state<boolean>(false);
   let intervalId: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Trim trailing blank rows from the raw capture, then derive the
+   * smallest pane box that still contains every visible glyph. The plain
+   * version drives the measurement (cols/rows → CSS vars) so the font
+   * scales to fit *actual* content, not the nominal 200×50 spawn size
+   * (which goes stale the moment an xterm viewer resizes the pane, and is
+   * wrong anyway for sparse startup screens like Claude Code's welcome).
+   *
+   * The colored version is produced by running the retained raw lines
+   * through `ansiToHtml`, so we only parse the portion of the capture
+   * we're actually rendering.
+   */
+  function measure(
+    raw: string
+  ): { html: string; cols: number; rows: number } {
+    const rawLines = raw.split('\n');
+    const plainLines = rawLines.map((l) => stripAnsi(l).replace(/\s+$/, ''));
+    let keep = plainLines.length;
+    while (keep > 0 && (plainLines[keep - 1] ?? '') === '') keep--;
+    let cols = 0;
+    for (let i = 0; i < keep; i++) {
+      const l = plainLines[i] ?? '';
+      if (l.length > cols) cols = l.length;
+    }
+    const keptRaw = rawLines.slice(0, keep).join('\n');
+    return {
+      html: ansiToHtml(keptRaw),
+      cols: Math.max(1, cols),
+      rows: Math.max(1, keep)
+    };
+  }
 
   async function fetchSnapshot(): Promise<void> {
     if (loading) return;
@@ -40,9 +80,20 @@
       }
       if (!res.ok) return;
       const data = (await res.json()) as { text: string; ts: number; alive: boolean };
-      snapshotText = data.text;
+      const m = measure(data.text);
+      snapshotHtml = m.html;
+      hasContent = m.rows > 0 && m.cols > 0 && m.html.length > 0;
+      contentCols = m.cols;
+      contentRows = m.rows;
       lastFetchTs = data.ts;
       alive = data.alive;
+      // Report the measured content box once (first non-empty snapshot) so
+      // the parent grid can shrink this widget to match the terminal's
+      // aspect ratio — keeps the card tight with no trailing blank space.
+      if (!firstMeasureReported && m.cols > 1 && m.rows > 1) {
+        firstMeasureReported = true;
+        onMeasure?.(agent.id, m.cols, m.rows);
+      }
     } catch {
       // Network hiccup — keep whatever we had.
     } finally {
@@ -93,10 +144,14 @@
   >
     {#if !alive}
       <div class="placeholder">(tmux session gone)</div>
-    {:else if snapshotText.length === 0}
+    {:else if !hasContent}
       <div class="placeholder">{loading ? 'loading…' : '(empty)'}</div>
     {:else}
-      <pre class="snapshot">{snapshotText}</pre>
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+      <pre
+        class="snapshot"
+        style="--cols: {contentCols}; --rows: {contentRows};"
+      >{@html snapshotHtml}</pre>
     {/if}
   </div>
 </article>
@@ -189,12 +244,20 @@
     overflow: hidden;
     width: 100%;
     height: 100%;
-    /* Tmux spawns panes at 200 cols x 50 rows (see TmuxSession.newSession).
-       A monospace glyph is ~0.6em wide, so we pick the smaller of the
-       horizontal and vertical limits so the full pane fits the card:
-       horizontal: font * 0.6 * 200 ≤ width  → font ≤ width / 120
-       vertical:   font * 1.0 *  50 ≤ height → font ≤ height / 50      */
-    font-size: min(0.82cqw, 1.95cqh);
+    /* --cols / --rows are set inline from the *measured* content box
+       (trailing blank rows stripped, max non-blank line length). A
+       monospace glyph is ~0.6em wide, so the font that fits the card is:
+         horizontal: font * 0.6 * cols ≤ cqw  → font ≤ cqw / (cols*0.6)
+         vertical:   font * 1.0 * rows ≤ cqh  → font ≤ cqh / rows
+       min() picks the binding constraint so content fills whichever
+       dimension is tighter with no overflow. Unlike the old hard-coded
+       200×50 formula, this tracks the real pane size after xterm resize
+       and sparse startup screens, so the snapshot isn't drowned in blank
+       space when the card is taller/wider than the content aspect. */
+    font-size: min(
+      calc(100cqw / (var(--cols) * 0.6)),
+      calc(100cqh / var(--rows))
+    );
     line-height: 1;
   }
   .placeholder {

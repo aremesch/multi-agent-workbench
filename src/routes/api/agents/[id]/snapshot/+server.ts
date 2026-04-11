@@ -1,9 +1,9 @@
 /**
  * GET /api/agents/:id/snapshot
  *
- * Returns a ~50-line text snapshot of the agent's tmux pane for the dashboard
- * thumbnail card. ANSI escapes stripped server-side so the client can render
- * it in a plain <pre> without a terminal emulator.
+ * Returns a text snapshot of the agent's tmux pane for the dashboard
+ * thumbnail card, with SGR escape sequences preserved so the client
+ * can parse them into colored <span>s (see `$lib/client/ansi.ts`).
  *
  * 410 Gone when the tmux session no longer exists (agent crashed, exited
  * cleanly, or was killed between polls). Before returning 410 we also ask
@@ -13,7 +13,6 @@
  */
 
 import { error, json } from '@sveltejs/kit';
-import stripAnsi from 'strip-ansi';
 import type { RequestHandler } from './$types';
 import { getAgent } from '$lib/server/db/queries';
 import { Tmux } from '$lib/server/tmux/TmuxSession';
@@ -39,10 +38,12 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
   // Capture the entire visible pane (0 = top of current screen → bottom),
   // not just the last 50 lines of scrollback, so the thumbnail shows what
-  // the user would see if they opened the terminal right now.
+  // the user would see if they opened the terminal right now. capturePane
+  // passes tmux `-e`, so SGR escapes are included — the client parses
+  // them into colored <span>s for the thumbnail render.
   const raw = await Tmux.capturePane(agent.tmux_session, 0);
   return json({
-    text: stripAnsi(raw),
+    text: raw,
     ts: Math.floor(Date.now() / 1000),
     alive: true
   });
