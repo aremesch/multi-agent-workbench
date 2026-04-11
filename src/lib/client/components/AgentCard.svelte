@@ -9,15 +9,11 @@
   // parse the SGR escapes into colored <span>s, and drop them into a <pre>.
   let {
     agent,
-    onOpen,
-    onMeasure
+    onOpen
   }: {
     agent: AgentCardRow;
     onOpen: (agent: AgentCardRow) => void;
-    onMeasure?: (agentId: string, cols: number, rows: number) => void;
   } = $props();
-
-  let firstMeasureReported = false;
 
   let snapshotHtml = $state<string>('');
   let hasContent = $state<boolean>(false);
@@ -26,19 +22,42 @@
   let alive = $state<boolean>(true);
   let lastFetchTs = $state<number>(0);
   let loading = $state<boolean>(false);
-  let intervalId: ReturnType<typeof setInterval> | null = null;
+  let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
-   * Trim trailing blank rows from the raw capture, then derive the
-   * smallest pane box that still contains every visible glyph. The plain
-   * version drives the measurement (cols/rows → CSS vars) so the font
-   * scales to fit *actual* content, not the nominal 200×50 spawn size
-   * (which goes stale the moment an xterm viewer resizes the pane, and is
-   * wrong anyway for sparse startup screens like Claude Code's welcome).
+   * Poll cadence. A freshly-spawned agent sits in `(empty)` while its CLI
+   * boots (claude code, codex, gemini all take ~0.5–1 s to paint their
+   * welcome banner), and a 5 s steady-state interval means the thumbnail
+   * stays blank for up to 5 s — the user sees an empty card slide in and
+   * think the spawn did nothing. Poll fast until the pane has content,
+   * then settle to the steady-state rate.
+   */
+  const POLL_FAST_MS = 500;
+  const POLL_SLOW_MS = 5000;
+
+  /**
+   * Hard cap on the "logical" column count we report for a thumbnail.
+   * CLIs like Claude Code paint a full-width horizontal rule and prompt
+   * box that stretch across the entire 200-col pane, so the longest
+   * non-blank line is almost always 200 — which in turn forces wide
+   * landscape cards. Pretending the pane is narrower lets the font-size
+   * formula zoom in on the leftmost THUMB_MAX_COLS columns (the rest
+   * gets clipped by `.body { overflow: hidden }`), which is plenty to
+   * show the branding/welcome content that actually matters in a
+   * thumbnail.
+   */
+  const THUMB_MAX_COLS = 80;
+
+  /**
+   * Measure the smallest content box that still contains every visible
+   * glyph — trailing blank rows stripped, longest non-blank line length
+   * clamped to THUMB_MAX_COLS. The card itself has a fixed grid size
+   * (see AgentGrid); these numbers only feed the CSS `font-size`
+   * formula so the rendered text fills as much of that fixed box as
+   * possible without overflow.
    *
    * The colored version is produced by running the retained raw lines
-   * through `ansiToHtml`, so we only parse the portion of the capture
-   * we're actually rendering.
+   * through `ansiToHtml` so SGR escapes become colored <span>s.
    */
   function measure(
     raw: string
@@ -49,9 +68,10 @@
     while (keep > 0 && (plainLines[keep - 1] ?? '') === '') keep--;
     let cols = 0;
     for (let i = 0; i < keep; i++) {
-      const l = plainLines[i] ?? '';
-      if (l.length > cols) cols = l.length;
+      const len = (plainLines[i] ?? '').length;
+      if (len > cols) cols = len;
     }
+    if (cols > THUMB_MAX_COLS) cols = THUMB_MAX_COLS;
     const keptRaw = rawLines.slice(0, keep).join('\n');
     return {
       html: ansiToHtml(keptRaw),
@@ -71,9 +91,9 @@
         // so the page data refreshes: this card leaves `liveAgents` and
         // reappears in the archive drawer without a manual reload.
         alive = false;
-        if (intervalId) {
-          clearInterval(intervalId);
-          intervalId = null;
+        if (pollTimer) {
+          clearTimeout(pollTimer);
+          pollTimer = null;
         }
         await invalidateAll();
         return;
@@ -87,13 +107,6 @@
       contentRows = m.rows;
       lastFetchTs = data.ts;
       alive = data.alive;
-      // Report the measured content box once (first non-empty snapshot) so
-      // the parent grid can shrink this widget to match the terminal's
-      // aspect ratio — keeps the card tight with no trailing blank space.
-      if (!firstMeasureReported && m.cols > 1 && m.rows > 1) {
-        firstMeasureReported = true;
-        onMeasure?.(agent.id, m.cols, m.rows);
-      }
     } catch {
       // Network hiccup — keep whatever we had.
     } finally {
@@ -101,13 +114,28 @@
     }
   }
 
+  /**
+   * Chain the next poll after the previous fetch resolves, at the rate
+   * chosen by `hasContent`. Using setTimeout instead of setInterval keeps
+   * the cadence honest even when a fetch takes longer than the interval
+   * would have been — we always wait a full delay after the response.
+   */
+  async function tick(): Promise<void> {
+    await fetchSnapshot();
+    if (!alive) return;
+    const delay = hasContent ? POLL_SLOW_MS : POLL_FAST_MS;
+    pollTimer = setTimeout(() => {
+      pollTimer = null;
+      void tick();
+    }, delay);
+  }
+
   onMount(() => {
-    fetchSnapshot();
-    intervalId = setInterval(fetchSnapshot, 5000);
+    void tick();
   });
 
   onDestroy(() => {
-    if (intervalId) clearInterval(intervalId);
+    if (pollTimer) clearTimeout(pollTimer);
   });
 
   function handleOpen(): void {
@@ -208,7 +236,9 @@
   .cli {
     font-size: 0.7rem;
     color: #6b7280;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .status {
     font-size: 0.68rem;
@@ -255,16 +285,13 @@
     overflow: hidden;
     width: 100%;
     height: 100%;
-    /* --cols / --rows are set inline from the *measured* content box
-       (trailing blank rows stripped, max non-blank line length). A
-       monospace glyph is ~0.6em wide, so the font that fits the card is:
+    /* --cols / --rows come from measure() (trailing blank rows stripped,
+       longest non-blank line capped at THUMB_MAX_COLS). A monospace
+       glyph is ~0.6em wide, so the font that fits the fixed-size card is:
          horizontal: font * 0.6 * cols ≤ cqw  → font ≤ cqw / (cols*0.6)
          vertical:   font * 1.0 * rows ≤ cqh  → font ≤ cqh / rows
        min() picks the binding constraint so content fills whichever
-       dimension is tighter with no overflow. Unlike the old hard-coded
-       200×50 formula, this tracks the real pane size after xterm resize
-       and sparse startup screens, so the snapshot isn't drowned in blank
-       space when the card is taller/wider than the content aspect. */
+       dimension is tighter with no overflow. */
     font-size: min(
       calc(100cqw / (var(--cols) * 0.6)),
       calc(100cqh / var(--rows))

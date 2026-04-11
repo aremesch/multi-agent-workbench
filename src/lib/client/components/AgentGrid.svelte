@@ -29,14 +29,17 @@
     string,
     { el: HTMLDivElement; dispose: () => void }
   >();
+
   /**
-   * Agents that were spawned into the grid with a default size (no saved
-   * layout row in `initialLayout`) are the only ones we auto-fit to match
-   * their measured terminal content. We track them here so a later user
-   * resize isn't overwritten on the next snapshot, and so agents with
-   * deliberately-sized saved layouts are left alone.
+   * Default "small computer screen" size for fresh cards. Because the
+   * grid is configured with `cellHeight: 'auto'` (square cells equal in
+   * pixel height to cellWidth), a 3 × 2 box is always 3:2 landscape —
+   * close enough to a 16:10 monitor and tiles 4 cards per row on the
+   * 12-column grid. Users can resize individual cards after the fact
+   * and their new size is persisted via scheduleChange.
    */
-  const autoFitPending = new Set<string>();
+  const DEFAULT_GS_W = 3;
+  const DEFAULT_GS_H = 2;
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleChange(): void {
@@ -77,15 +80,13 @@
       el.setAttribute('gs-w', String(saved.w));
       el.setAttribute('gs-h', String(saved.h));
     } else {
-      // Start with a modest landscape box, then snap to the real terminal
-      // aspect once the first snapshot reports its measured cols/rows.
-      el.setAttribute('gs-w', '4');
-      el.setAttribute('gs-h', '2');
+      // Uniform "small computer screen" default (~16:10 landscape).
+      el.setAttribute('gs-w', String(DEFAULT_GS_W));
+      el.setAttribute('gs-h', String(DEFAULT_GS_H));
       // Flow new cards left-to-right, then wrap down. Without this the
       // missing gs-x/gs-y default to (0,0) and — because float:true lets
       // items overlap — every fresh spawn stacks on the top-left corner.
       el.setAttribute('gs-auto-position', 'true');
-      autoFitPending.add(agent.id);
     }
     const content = document.createElement('div');
     content.className = 'grid-stack-item-content';
@@ -95,48 +96,10 @@
 
     const dispose = mount(AgentCard, {
       target: content,
-      props: {
-        agent,
-        onOpen,
-        onMeasure: handleMeasure
-      }
+      props: { agent, onOpen }
     });
 
     widgets.set(agent.id, { el, dispose: () => unmount(dispose) });
-  }
-
-  /**
-   * First-snapshot content measurement from an AgentCard. We only act on
-   * it if the agent has no saved layout row (i.e. was just spawned) — then
-   * we resize the widget so its pixel aspect matches the terminal content,
-   * eliminating the blank rectangle that would otherwise surround a small
-   * startup banner inside a generically-sized card.
-   */
-  function handleMeasure(agentId: string, cols: number, rows: number): void {
-    if (!grid || !autoFitPending.has(agentId)) return;
-    const w = widgets.get(agentId);
-    if (!w) return;
-    autoFitPending.delete(agentId);
-
-    // Pixel width of one grid column (margins included) and the configured
-    // cell height. cellWidth() returns a rounded pixel value; cellHeight is
-    // 80 (see grid init). The gridstack API gives us direct access.
-    const cellW = grid.cellWidth();
-    const cellH = 80;
-    if (!cellW || !cellH) return;
-
-    // Terminal content aspect (pixels wide / pixels tall), assuming a
-    // monospace glyph is 0.6em × 1em.
-    const contentAspect = (cols * 0.6) / rows;
-    // Keep the current column span (4); derive a height that matches the
-    // content aspect. Bound by sensible min/max so we never produce a
-    // sliver or an oversized block.
-    const gsW = 4;
-    const pxW = gsW * cellW;
-    const pxH = pxW / contentAspect;
-    const gsH = Math.max(1, Math.min(6, Math.round(pxH / cellH)));
-
-    grid.update(w.el, { w: gsW, h: gsH });
   }
 
   function removeWidget(agentId: string): void {
@@ -145,7 +108,6 @@
     w.dispose();
     grid.removeWidget(w.el, true);
     widgets.delete(agentId);
-    autoFitPending.delete(agentId);
   }
 
   onMount(async () => {
@@ -154,7 +116,11 @@
     grid = GridStackCtor.init(
       {
         column: 12,
-        cellHeight: 80,
+        // 'auto' keeps cellHeight == cellWidth, so each grid cell is
+        // square. Combined with DEFAULT_GS_W=3 / DEFAULT_GS_H=2 that
+        // gives every fresh card a uniform 3:2 landscape aspect
+        // (~16:10) regardless of container width.
+        cellHeight: 'auto',
         float: true,
         margin: 8,
         draggable: { handle: '.agent-card-header' }
