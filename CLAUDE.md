@@ -66,7 +66,14 @@ Two driving goals:
   refresh it; if it is still broken after refresh, that is an upstream
   bug or a config/registry mismatch — fix the cause, not the file.
 - **Planning:** Always update "Development Plans" before executing complex changes.
-- **Persistence:** Save finalized roadmaps to `docs/plans/` if they exceed 50 lines.
+- **Persistence:** Plan files land directly in `docs/plans/` via the
+  `plansDirectory` setting in `.claude/settings.json` — no manual copy
+  step. **Immediately after plan approval** (before starting
+  implementation), rename the auto-generated plan file to the repo
+  convention `v0.X-<kebab-topic>.md` (e.g. `v0.1-dashboard-v2.md`) so
+  it matches the other entries in the index below. Use `git mv`.
+  Commit the plan file alongside the implementation, or in its own
+  `docs: plan` commit if the plan itself lands first.
 - **Sync:** Reflect completed tasks in this file immediately after a successful build.
 
 ## Development Plans
@@ -74,4 +81,5 @@ Two driving goals:
 Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 
 - [`docs/plans/v0.1-foundation.md`](docs/plans/v0.1-foundation.md) — original v0.1 design & scope (executed).
-- [`docs/plans/v0.1-crud-ui.md`](docs/plans/v0.1-crud-ui.md) — housekeeping + full CRUD UI for projects/repos/roles/spawn agent (current).
+- [`docs/plans/v0.1-crud-ui.md`](docs/plans/v0.1-crud-ui.md) — housekeeping + full CRUD UI for projects/repos/roles/spawn agent (executed).
+- [`docs/plans/v0.1-dashboard-v2.md`](docs/plans/v0.1-dashboard-v2.md) — gridstack dashboard, per-agent thumbnails, modal terminal, archive drawer, spawn-form modal, supervisor reaper, tmux resize sync (executed).

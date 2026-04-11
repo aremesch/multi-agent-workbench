@@ -211,7 +211,10 @@ Persisted plans live in [`docs/plans/`](docs/plans/):
 - [`v0.1-foundation.md`](docs/plans/v0.1-foundation.md) — original v0.1
   design & scope (executed).
 - [`v0.1-crud-ui.md`](docs/plans/v0.1-crud-ui.md) — housekeeping + full
-  CRUD UI for projects/repos/roles/spawn agent (current).
+  CRUD UI for projects/repos/roles/spawn agent (executed).
+- [`v0.1-dashboard-v2.md`](docs/plans/v0.1-dashboard-v2.md) — gridstack
+  dashboard, per-agent thumbnails, modal terminal, archive drawer,
+  spawn-form modal, supervisor reaper, tmux resize sync (executed).
 
 v0.2 and beyond: PWA + service worker + Web Push, alert pipeline, MCP
 server, `maw` CLI binary, LLM overseer, tuned adapter patterns for
