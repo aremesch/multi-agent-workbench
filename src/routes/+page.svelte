@@ -86,7 +86,9 @@
 <Modal
   open={openAgent !== null}
   onClose={closeModal}
-  title={openAgent ? `${openAgent.role_name} — ${openAgent.cli_kind}` : ''}
+  title={openAgent
+    ? `${openAgent.project_name}${openAgent.task_title ? `/${openAgent.task_title}` : ''} — ${openAgent.role_name} — ${openAgent.cli_kind}`
+    : ''}
   headerRight={openAgentStatus ? statusBadge : undefined}
 >
   {#if openAgent}
