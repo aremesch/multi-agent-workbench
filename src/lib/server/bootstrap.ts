@@ -58,9 +58,12 @@ export function bootstrap(): Promise<void> {
     console.log(`[maw] supervisor: ${reattached} agents reattached, ${crashed} crashed`);
 
     // 5. Periodic reaper: scans every ~5s for runtimes whose tmux session
-    //    has disappeared (user typed /exit in the CLI, crashed, was killed
-    //    externally, …) and flips them to `exited` so the dashboard moves
-    //    them into the archive on the next poll/invalidate.
+    //    has disappeared and flips them to `exited`. This is the slow-path
+    //    safety net — the fast path is the per-agent session-closed hook
+    //    installed in AgentSupervisor.startExitWatcher, which fires within
+    //    milliseconds of a CLI exiting. The reaper still exists to catch
+    //    edge cases the hook cannot (tmux server restart, hook lost on a
+    //    reattach race, external `tmux kill-session`, …).
     //    The `started` guard in bootstrap() ensures we only schedule one
     //    interval per process even across HMR reloads in dev.
     const sup = supervisor;

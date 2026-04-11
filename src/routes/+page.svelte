@@ -22,6 +22,21 @@
     openAgentStatus = '';
   }
 
+  // Auto-close the terminal modal when the underlying agent ends — same UX
+  // as an ssh session or local shell, where Ctrl-D twice closes the window
+  // immediately. `liveAgents` already excludes archived statuses, so the
+  // initial `openAgentStatus` can never start as exited/crashed; the only
+  // way to hit this branch is a live → dead transition while the modal is
+  // open. We also invalidateAll() so the card leaves the grid and reappears
+  // in the archive drawer without a manual refresh.
+  $effect(() => {
+    if (!openAgent) return;
+    if (openAgentStatus === 'exited' || openAgentStatus === 'crashed') {
+      closeModal();
+      void invalidateAll();
+    }
+  });
+
   async function saveLayout(layout: LayoutEntry[]): Promise<void> {
     try {
       await fetch('/api/user/dashboard-layout', {

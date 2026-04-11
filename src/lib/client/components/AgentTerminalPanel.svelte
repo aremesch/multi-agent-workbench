@@ -38,12 +38,29 @@
 
   // Debounce resize broadcasts: xterm fires onResize during the initial fit
   // as well as for every wheel of a window-drag, and we don't need to spam
-  // tmux with 30 resize-window calls per drag.
+  // tmux with 30 resize-window calls per drag. The *first* resize after
+  // mount bypasses the debounce though — the modal may have opened at a
+  // size that doesn't match tmux's current pane (user resized the browser
+  // while the modal was closed), and we want SIGWINCH to reach the CLI
+  // immediately so it repaints at the right size instead of painting for
+  // a few hundred ms at the stale dims.
   let lastSentCols = 0;
   let lastSentRows = 0;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  let sentInitialResize = false;
   function scheduleResize(cols: number, rows: number): void {
     if (cols === lastSentCols && rows === lastSentRows) return;
+    if (!sentInitialResize) {
+      sentInitialResize = true;
+      if (resizeTimer) {
+        clearTimeout(resizeTimer);
+        resizeTimer = null;
+      }
+      lastSentCols = cols;
+      lastSentRows = rows;
+      client?.sendResize(agent.id, cols, rows);
+      return;
+    }
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       lastSentCols = cols;

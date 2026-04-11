@@ -6,7 +6,7 @@
  * can filter `tmux list-sessions`).
  */
 
-import { execa, type ExecaError } from 'execa';
+import { execa, type ExecaError, type ResultPromise } from 'execa';
 
 export const SESSION_PREFIX = 'maw-agent-';
 
@@ -155,6 +155,41 @@ export class Tmux {
       const stderr = typeof e.stderr === 'string' ? e.stderr : '';
       if (!/can't find session|session not found/i.test(stderr)) throw err;
     }
+  }
+
+  /**
+   * Install a `session-closed` hook on the given tmux session so that when
+   * the session ends (CLI exited, window closed, killed, …) tmux signals a
+   * wait-for channel we can block on from Node. Paired with
+   * `spawnWaitForChannel` to get event-driven exit detection instead of
+   * polling `tmux list-sessions` every REAP_INTERVAL_MS.
+   *
+   * The hook command is parsed directly by tmux's command parser — no shell
+   * involved — so keep `channel` alphanumeric + dashes. We use
+   * `maw-exit-<agentId>` in AgentSupervisor, which is safe.
+   */
+  static async setSessionClosedSignal(session: string, channel: string): Promise<void> {
+    await execa('tmux', [
+      'set-hook',
+      '-t',
+      session,
+      'session-closed',
+      `wait-for -S ${channel}`
+    ]);
+  }
+
+  /**
+   * Fork a `tmux wait-for <channel>` client that blocks until another tmux
+   * command signals the channel via `wait-for -S <channel>` (typically from
+   * the session-closed hook installed by `setSessionClosedSignal`).
+   *
+   * Returns the execa subprocess so the caller can both `await` its
+   * resolution AND `kill()` it if the agent is torn down through another
+   * path (manual `killSession`, supervisor shutdown, etc.) so we don't
+   * leak a subprocess per reaped-another-way agent.
+   */
+  static spawnWaitForChannel(channel: string): ResultPromise {
+    return execa('tmux', ['wait-for', channel]);
   }
 
   /** List every `maw-agent-*` session currently present on the host. */

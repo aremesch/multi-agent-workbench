@@ -39,8 +39,72 @@ export interface SpawnAgentArgs {
 
 export class AgentSupervisor {
   private runtimes = new Map<string, AgentRuntime>();
+  /**
+   * One `tmux wait-for` subprocess per live agent. Resolves the instant the
+   * session-closed hook fires, giving us event-driven exit detection with
+   * no polling. Tracked here so we can kill the waiter cleanly when an
+   * agent is reaped via some other path (shutdown, explicit kill, snapshot
+   * 410, …) — otherwise we'd leak a subprocess per dead agent.
+   */
+  private exitWaiters = new Map<string, ReturnType<typeof Tmux.spawnWaitForChannel>>();
 
   constructor(public readonly registry: AdapterRegistry) {}
+
+  /**
+   * Install a per-session `session-closed` hook on tmux that signals a
+   * unique wait-for channel, then fork a blocking `tmux wait-for` client
+   * that resolves the moment tmux fires the hook. When it resolves we
+   * reap the agent immediately — so Ctrl-D twice in a shell closes the
+   * terminal modal in single-digit milliseconds, without any polling.
+   *
+   * Set the hook *first* and then start the waiter: both happen while the
+   * session is still alive (we've only just spawned/reattached it), so
+   * there's no race where the hook could fire before the waiter exists.
+   * Errors are non-fatal — the periodic reaper in bootstrap.ts is still
+   * the safety net for edge cases (tmux server restart, external hook
+   * clearing, external kill-session, …).
+   */
+  private startExitWatcher(agentId: string, session: string): void {
+    const channel = `maw-exit-${agentId}`;
+    Tmux.setSessionClosedSignal(session, channel).catch((err) => {
+      console.warn(`[AgentSupervisor] set-hook failed for ${agentId}:`, err);
+    });
+    const proc = Tmux.spawnWaitForChannel(channel);
+    this.exitWaiters.set(agentId, proc);
+    proc.then(
+      () => {
+        this.exitWaiters.delete(agentId);
+        const rt = this.runtimes.get(agentId);
+        if (rt) {
+          this.finishAsExited(agentId, rt).catch((err) => {
+            console.error(`[AgentSupervisor] exit-watcher finish failed for ${agentId}:`, err);
+          });
+        }
+      },
+      () => {
+        // Killed via stopExitWatcher (another reap path beat us to it) OR
+        // the tmux server went away. Either way the periodic reaper will
+        // clean up anything that slipped through.
+        this.exitWaiters.delete(agentId);
+      }
+    );
+  }
+
+  /**
+   * Abort a live exit-watcher subprocess. Called whenever the agent is
+   * being reaped through a different code path so we don't leak the
+   * blocked `tmux wait-for` child. Safe to call when no waiter exists.
+   */
+  private stopExitWatcher(agentId: string): void {
+    const proc = this.exitWaiters.get(agentId);
+    if (!proc) return;
+    this.exitWaiters.delete(agentId);
+    try {
+      proc.kill();
+    } catch {
+      // ignore — already exited
+    }
+  }
 
   /** Called once at boot. Reattaches to any surviving tmux sessions. */
   async init(): Promise<{ reattached: number; crashed: number }> {
@@ -70,6 +134,7 @@ export class AgentSupervisor {
         const runtime = new AgentRuntime(row, adapter, cfg.fifoDir);
         await runtime.start();
         this.runtimes.set(row.id, runtime);
+        this.startExitWatcher(row.id, row.tmux_session);
         reattached++;
       } catch (err) {
         console.error(`[AgentSupervisor] reattach failed for ${row.id}:`, err);
@@ -82,6 +147,9 @@ export class AgentSupervisor {
   }
 
   async shutdown(): Promise<void> {
+    for (const agentId of Array.from(this.exitWaiters.keys())) {
+      this.stopExitWatcher(agentId);
+    }
     for (const rt of this.runtimes.values()) {
       await rt.stop();
     }
@@ -126,6 +194,7 @@ export class AgentSupervisor {
   }
 
   private async finishAsExited(agentId: string, runtime: AgentRuntime): Promise<void> {
+    this.stopExitWatcher(agentId);
     try {
       await runtime.stop();
     } catch (err) {
@@ -133,6 +202,11 @@ export class AgentSupervisor {
     }
     this.runtimes.delete(agentId);
     updateAgentStatus(agentId, 'exited');
+    // Notify anyone still subscribed to this runtime (e.g. an open terminal
+    // modal on the dashboard) so their UI can react immediately — without
+    // this emit, clients only learn the agent ended on their next snapshot
+    // poll, which means the modal stays stuck until the user closes it.
+    runtime.emit('state', 'exited');
   }
 
   get(agentId: string): AgentRuntime | undefined {
@@ -200,6 +274,7 @@ export class AgentSupervisor {
     const runtime = new AgentRuntime(row, adapter, cfg.fifoDir);
     await runtime.start();
     this.runtimes.set(agentId, runtime);
+    this.startExitWatcher(agentId, tmuxSession);
 
     insertAgentRun({
       id: ulid(),
@@ -222,6 +297,7 @@ export class AgentSupervisor {
   }
 
   async kill(agentId: string): Promise<void> {
+    this.stopExitWatcher(agentId);
     const runtime = this.runtimes.get(agentId);
     if (runtime) {
       await runtime.stop();
@@ -231,6 +307,7 @@ export class AgentSupervisor {
     if (row) {
       await Tmux.killSession(row.tmux_session);
       updateAgentStatus(agentId, 'exited');
+      runtime?.emit('state', 'exited');
     }
   }
 }

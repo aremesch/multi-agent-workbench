@@ -86,6 +86,14 @@
       }
       if (onResize) {
         term.onResize(({ cols, rows }) => onResize(cols, rows));
+        // Also report the post-fit dimensions unconditionally. `term.onResize`
+        // only fires when xterm's internal cols/rows *change*, so if the fit
+        // happens to produce the exact dims xterm was already holding (fresh
+        // xterm defaults, or a reopen at a size the tmux pane doesn't match)
+        // the caller would never hear about the dimensions otherwise — and
+        // tmux would keep painting at its old (possibly stale) size, leaving
+        // the CLI's prompt lines wrapping wrong until the next real resize.
+        onResize(term.cols, term.rows);
       }
 
       for (const chunk of pending) term.write(chunk);
