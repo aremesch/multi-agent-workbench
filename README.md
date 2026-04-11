@@ -73,6 +73,71 @@ server.js         adapter-node handler + ws server + boot sequence
 - `git` and `tmux` on `PATH`
 - Local (non-NFS) disk for SQLite WAL and FIFOs
 
+MAW is Linux-first. macOS works. **Windows is not supported** — the
+agent runtime depends on `tmux` and POSIX named pipes (FIFOs), neither
+of which exist natively on Windows. Use WSL2 if you must, and treat it
+as Linux.
+
+### Ubuntu 24.04
+
+Ubuntu 24.04's default `apt` repo ships Node 18, so Node 22 comes from
+NodeSource (or `nvm` / `fnm` if you prefer a version manager).
+
+```bash
+# system packages
+sudo apt update
+sudo apt install -y git tmux curl ca-certificates
+
+# Node.js 22 LTS via NodeSource
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# pnpm via Corepack (bundled with Node 22)
+sudo corepack enable
+corepack prepare pnpm@latest --activate
+
+# verify
+node --version   # v22.x
+pnpm --version
+tmux -V
+git --version
+```
+
+If `pnpm install` ever falls back to building `better-sqlite3` from
+source, also install a C/C++ toolchain and Python:
+
+```bash
+sudo apt install -y build-essential python3
+```
+
+### macOS (13+, Apple Silicon or Intel)
+
+Install via [Homebrew](https://brew.sh):
+
+```bash
+# Homebrew itself (skip if already installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# runtime + tools
+brew install node@22 pnpm tmux git
+
+# node@22 is keg-only; link it so `node` resolves to v22
+brew link --overwrite --force node@22
+
+# verify
+node --version   # v22.x
+pnpm --version
+tmux -V
+git --version
+```
+
+If a native module ever falls back to a source build, install the
+Xcode Command Line Tools:
+
+```bash
+xcode-select --install
+```
+
 ## Quickstart
 
 ```bash
