@@ -10,7 +10,7 @@
 
 import type { AdapterEventKind } from './adapterTypes.js';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 // ---------- client → server ----------
 
@@ -21,8 +21,13 @@ export interface CS_Hello {
 export interface CS_SubscribeAgent {
   type: 'subscribe_agent';
   agentId: string;
-  /** Last seq the client has seen; server will gap-replay from here. */
-  lastSeq?: number;
+  /**
+   * Client's current xterm dimensions. When present, the server resizes the
+   * tmux pane to these dims *before* capturing the reconnect snapshot, so the
+   * snapshot's line widths match what the viewer will render them at.
+   */
+  cols?: number;
+  rows?: number;
 }
 export interface CS_UnsubscribeAgent {
   type: 'unsubscribe_agent';
@@ -93,6 +98,12 @@ export interface SC_Welcome {
   serverVersion: number;
   userId: string;
 }
+/**
+ * Reconnect snapshot. Sent once in response to `subscribe_agent`, carrying a
+ * single `tmux capture-pane -e` frame sized to the client's declared dims.
+ * The `chunks` array is kept for protocol stability but in practice always
+ * holds exactly one entry; clients should `term.reset()` before applying it.
+ */
 export interface SC_Scrollback {
   type: 'scrollback';
   agentId: string;

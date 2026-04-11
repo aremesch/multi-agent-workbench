@@ -39,8 +39,13 @@ export class Tmux {
    * We delegate to `sh -lc` so we can carry the env vars through cleanly.
    */
   static async newSession(opts: SpawnOptions): Promise<void> {
-    const cols = opts.cols ?? 200;
-    const rows = opts.rows ?? 50;
+    // Sensible default for headless spawns and for agents viewed before
+    // their first xterm resize lands. Once any client subscribes, the
+    // hub's resize-then-capture path will re-size the pane to the real
+    // viewer dims — so this value only governs the short window before
+    // a first viewer attaches, plus the dashboard thumbnail snapshots.
+    const cols = opts.cols ?? 120;
+    const rows = opts.rows ?? 32;
 
     // Build `env VAR=val ... command args...` as a single shell string.
     const envParts = Object.entries(opts.env).map(
@@ -125,9 +130,18 @@ export class Tmux {
   }
 
   /**
-   * Scrollback snapshot for new viewers. -e includes escape sequences so the
-   * xterm.js client can render colors; -S <startLine> chooses how far back to
-   * grab (default -10000 ≈ 10k lines). Pass e.g. -50 for a compact thumbnail.
+   * Pane snapshot. `-e` preserves ANSI escapes so xterm can render colors;
+   * `-S <startLine>` chooses where the capture window begins.
+   *
+   *   startLine =    0  → visible pane only (tmux "first visible line"),
+   *                       the right mode for a reconnect snapshot.
+   *   startLine =  -50  → compact thumbnail (dashboard card snapshot).
+   *   startLine = -10000 → dump essentially all scrollback (default, legacy).
+   *
+   * Careful: the legacy default grabs every byte tmux has remembered for the
+   * pane, including every partial TUI redraw that landed in the main buffer
+   * history. For live viewers always pass `0` — you want what's on screen,
+   * not what used to be on screen.
    */
   static async capturePane(session: string, startLine = -10000): Promise<string> {
     try {

@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { MawWsClient } from '$lib/client/ws';
+  import { getMawWsClient, type AgentHandlers } from '$lib/client/ws';
   import Terminal from '$lib/client/components/Terminal.svelte';
 
   /**
    * Self-contained agent terminal panel. Used by both the dedicated
    * /agents/[id] route and the dashboard modal, so the two views stay in
-   * lock-step. Owns its own WS client so it can be mounted/unmounted freely.
+   * lock-step. Owns its own xterm instance via the child `<Terminal>`
+   * component and subscribes to the shared (tab-wide) `MawWsClient` via
+   * `getMawWsClient()`.
    *
    * Status is bubbled up via `onStatusChange` so the host (e.g. the
    * dashboard modal) can render it next to its own title bar instead of
@@ -33,39 +35,64 @@
   let pendingPrompt = $state<{ choices?: string[]; detail?: Record<string, unknown> } | null>(
     null
   );
-  let client: MawWsClient | null = null;
   let term: Terminal | undefined = $state();
 
   // Debounce resize broadcasts: xterm fires onResize during the initial fit
   // as well as for every wheel of a window-drag, and we don't need to spam
-  // tmux with 30 resize-window calls per drag. The *first* resize after
-  // mount bypasses the debounce though — the modal may have opened at a
-  // size that doesn't match tmux's current pane (user resized the browser
-  // while the modal was closed), and we want SIGWINCH to reach the CLI
-  // immediately so it repaints at the right size instead of painting for
-  // a few hundred ms at the stale dims.
+  // tmux with 30 resize-window calls per drag.
+  //
+  // The *first* onResize after mount is special: it's how we learn the real
+  // xterm dimensions, and it's what we use to issue the very first
+  // `subscribe_agent` (so the server's reconnect snapshot is captured at
+  // the viewer's actual width). Until that lands we haven't subscribed at
+  // all — there's nothing to send a resize for.
   let lastSentCols = 0;
   let lastSentRows = 0;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-  let sentInitialResize = false;
-  function scheduleResize(cols: number, rows: number): void {
-    if (cols === lastSentCols && rows === lastSentRows) return;
-    if (!sentInitialResize) {
-      sentInitialResize = true;
-      if (resizeTimer) {
-        clearTimeout(resizeTimer);
-        resizeTimer = null;
+  let subscribed = false;
+
+  const handlers: AgentHandlers = {
+    onOutput: ({ b64 }) => {
+      term?.write(b64ToBytes(b64));
+    },
+    onScrollback: ({ chunks }) => {
+      // Reconnect snapshot: wipe parser state so nothing carries over
+      // from a previous frame (e.g. a warm-up write before this panel
+      // mounted, or a stale alt-screen mode), then apply.
+      term?.reset();
+      for (const c of chunks) term?.write(b64ToBytes(c.b64));
+    },
+    onEvent: ({ kind, choices, detail }) => {
+      if (kind === 'prompt_detected') {
+        pendingPrompt = { choices, detail };
+      } else if (kind === 'task_done' || kind === 'ready') {
+        pendingPrompt = null;
       }
+    },
+    onState: (s) => {
+      status = s;
+      onStatusChange?.(s);
+    }
+  };
+
+  function scheduleResize(cols: number, rows: number): void {
+    const ws = getMawWsClient();
+    if (!subscribed) {
+      // First onResize after fit: kick off the subscribe with real dims so
+      // the server resize-then-captures at the right width. No debounce —
+      // we want the snapshot in flight ASAP.
+      subscribed = true;
       lastSentCols = cols;
       lastSentRows = rows;
-      client?.sendResize(agent.id, cols, rows);
+      ws.subscribe(agent.id, handlers, cols, rows);
       return;
     }
+    if (cols === lastSentCols && rows === lastSentRows) return;
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       lastSentCols = cols;
       lastSentRows = rows;
-      client?.sendResize(agent.id, cols, rows);
+      ws.sendResize(agent.id, cols, rows);
     }, 120);
   }
 
@@ -77,31 +104,15 @@
   }
 
   onMount(() => {
-    client = new MawWsClient({
-      onOutput: ({ b64 }) => {
-        term?.write(b64ToBytes(b64));
-      },
-      onScrollback: ({ chunks }) => {
-        for (const c of chunks) term?.write(b64ToBytes(c.b64));
-      },
-      onEvent: ({ kind, choices, detail }) => {
-        if (kind === 'prompt_detected') {
-          pendingPrompt = { choices, detail };
-        } else if (kind === 'task_done' || kind === 'ready') {
-          pendingPrompt = null;
-        }
-      },
-      onState: (s) => {
-        status = s;
-        onStatusChange?.(s);
-      }
-    });
-    client.connect();
-    client.subscribe(agent.id);
+    // Shared ws singleton; layout already kicked it open, but this call is
+    // idempotent and guarantees a client exists before any keystrokes go
+    // out. Subscribe is deferred until the first `onTerminalResize` fires
+    // with real xterm dimensions — see `scheduleResize` above.
+    getMawWsClient();
   });
 
   function onTerminalData(bytes: string): void {
-    client?.sendKeys(agent.id, bytes);
+    getMawWsClient().sendKeys(agent.id, bytes);
   }
 
   function onTerminalResize(cols: number, rows: number): void {
@@ -110,15 +121,15 @@
 
   onDestroy(() => {
     if (resizeTimer) clearTimeout(resizeTimer);
-    client?.close();
+    if (subscribed) getMawWsClient().unsubscribe(agent.id);
   });
 
   function send(text: string): void {
-    client?.sendInput(agent.id, text, true);
+    getMawWsClient().sendInput(agent.id, text, true);
   }
 
   function answer(choice: string): void {
-    client?.answerPrompt(agent.id, choice);
+    getMawWsClient().answerPrompt(agent.id, choice);
     pendingPrompt = null;
   }
 

@@ -4,9 +4,9 @@
   xterm.css is imported statically — Vite ships it to the client bundle and
   leaves the server alone.
 
-  Exposes an imperative write()/clear() API via `bind:this`. Writes that land
-  before onMount finishes (e.g. scrollback replay racing the dynamic import)
-  are queued and flushed once xterm is ready.
+  Exposes an imperative write()/clear()/reset() API via `bind:this`. Writes
+  that land before onMount finishes (e.g. scrollback replay racing the
+  dynamic import) are queued and flushed once xterm is ready.
 
   Sizing: the host fills 100% of its parent. A ResizeObserver reflows
   FitAddon whenever the parent changes, and each fit bubbles the resulting
@@ -47,6 +47,18 @@
     else pending = [];
   }
 
+  /**
+   * Full state wipe — clears the grid AND rebuilds xterm's parser state.
+   * Used by `AgentTerminalPanel` right before applying a reconnect snapshot
+   * so nothing from a previous dynamic-import warm-up write can bleed into
+   * how the snapshot is interpreted (e.g. stale cursor position, lingering
+   * alt-screen mode, half-parsed CSI sequence).
+   */
+  export function reset(): void {
+    if (term) term.reset();
+    else pending = [];
+  }
+
   onMount(() => {
     let disposed = false;
     let cleanup: (() => void) | null = null;
@@ -73,8 +85,10 @@
       fit = new FitAddon();
       term.loadAddon(fit);
       term.open(container);
+      let initialFitOk = false;
       try {
         fit.fit();
+        initialFitOk = true;
       } catch {
         // xterm throws if the container is 0-sized on first open (e.g. when
         // inside a <dialog> that hasn't laid out yet). The ResizeObserver
@@ -86,14 +100,19 @@
       }
       if (onResize) {
         term.onResize(({ cols, rows }) => onResize(cols, rows));
-        // Also report the post-fit dimensions unconditionally. `term.onResize`
-        // only fires when xterm's internal cols/rows *change*, so if the fit
-        // happens to produce the exact dims xterm was already holding (fresh
-        // xterm defaults, or a reopen at a size the tmux pane doesn't match)
-        // the caller would never hear about the dimensions otherwise — and
-        // tmux would keep painting at its old (possibly stale) size, leaving
-        // the CLI's prompt lines wrapping wrong until the next real resize.
-        onResize(term.cols, term.rows);
+        // Also report the post-fit dimensions unconditionally if the initial
+        // fit succeeded. `term.onResize` only fires when xterm's internal
+        // cols/rows *change*, so if the fit happened to produce the exact
+        // dims xterm was already holding, the caller would never hear about
+        // the dimensions otherwise — and tmux would keep painting at its old
+        // (possibly stale) size. Skip this call if fit threw, though: the
+        // cols/rows would be xterm's defaults (80×24), not real dims, and
+        // downstream code that subscribes-on-first-resize would pick the
+        // wrong width. The ResizeObserver below will fire a correct one
+        // once the container lays out.
+        if (initialFitOk) {
+          onResize(term.cols, term.rows);
+        }
       }
 
       for (const chunk of pending) term.write(chunk);

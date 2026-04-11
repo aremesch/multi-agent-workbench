@@ -1,11 +1,19 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { page } from '$app/state';
   import type { AgentCardRow } from '$lib/shared/types';
   import AgentArchiveDrawer from '$lib/client/components/AgentArchiveDrawer.svelte';
+  import { getMawWsClient } from '$lib/client/ws';
 
   let { children, data }: { children: Snippet; data: { user: { username: string } | null } } =
     $props();
+
+  onMount(() => {
+    // Kick off the shared ws connection as soon as the app hydrates so the
+    // first modal open finds it already `OPEN` and the first subscribe
+    // doesn't have to wait on the handshake.
+    getMawWsClient();
+  });
 
   let menuOpen = $state(false);
   let drawerOpen = $state(false);

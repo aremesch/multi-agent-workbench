@@ -32,6 +32,20 @@ Two driving goals:
   correctly. Client-side keystrokes (arrows, Ctrl-C, etc.) forward as a
   new `send_keys` WS message → `AgentRuntime.enqueueRawKeys` →
   `tmux send-keys -l`, preserving VT220 escape sequences verbatim.
+- Reconnect snapshot = 500-line `tmux capture-pane -S -500` piped
+  through `collapseRepeatingTailBlocks` (the repeating-tail-block
+  dedup helper in `hub.ts`). Line-based CLIs get real session
+  history; TUI CLIs (Claude Code et al.) get their redraw stacks
+  folded down before shipping. Client `term.reset()`s before
+  applying. Fresh snapshot on every modal open — xterm state does
+  not persist across close/reopen, which eliminates the reattach-
+  redraw-pollution failure mode. Spawn defaults 120×32; protocol
+  stays at v2.
+- `MawWsClient` is a module-level tab-wide shared singleton
+  (`getMawWsClient()`) with per-agent handler dispatch — one `/ws`
+  connection per tab, all panels fan out through it. Layout kicks
+  the connection open on mount so first-modal subscribe doesn't
+  wait on the handshake.
 - FifoStreamer fixed: dropped `O_NONBLOCK` (kept `O_RDWR`) so libuv does
   blocking reads in the threadpool instead of crashing on EAGAIN.
 - Smoke adapter `cli-adapters/shell.jsonc` exercises the pipeline end
@@ -83,3 +97,6 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-foundation.md`](docs/plans/v0.1-foundation.md) — original v0.1 design & scope (executed).
 - [`docs/plans/v0.1-crud-ui.md`](docs/plans/v0.1-crud-ui.md) — housekeeping + full CRUD UI for projects/repos/roles/spawn agent (executed).
 - [`docs/plans/v0.1-dashboard-v2.md`](docs/plans/v0.1-dashboard-v2.md) — gridstack dashboard, per-agent thumbnails, modal terminal, archive drawer, spawn-form modal, supervisor reaper, tmux resize sync (executed).
+- [`docs/plans/v0.1-terminal-replay.md`](docs/plans/v0.1-terminal-replay.md) — snapshot-on-subscribe reconnect (atomic resize + `capture-pane`), drops byte-log replay for live viewers, lowers spawn defaults to 120×32, protocol v2 (executed).
+- [`docs/plans/v0.1-terminal-persistence.md`](docs/plans/v0.1-terminal-persistence.md) — `TerminalRegistry` that reparented xterm hosts between a hidden pool and the active panel; **superseded by v0.1-terminal-scrollback-v2** after TUI-CLI redraw pollution and reattach-resize races made persisted xterm scrollback unusable. Only the shared `MawWsClient` singleton from this plan survived.
+- [`docs/plans/v0.1-terminal-scrollback-v2.md`](docs/plans/v0.1-terminal-scrollback-v2.md) — reverts the terminal registry, switches reconnect snapshot to `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`; tmux becomes the source of truth for backing scrollback, every modal open gets a fresh deduped snapshot (executed).

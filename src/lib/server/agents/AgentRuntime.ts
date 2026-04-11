@@ -34,6 +34,15 @@ export class AgentRuntime extends EventEmitter {
   private inputQueue: Promise<void> = Promise.resolve();
   private fifo: FifoStreamer;
   private stopped = false;
+  // Cache of the last `resize()` call so we don't send a redundant
+  // `tmux resize-window` every time a new viewer attaches at the same size.
+  // Each real resize delivers SIGWINCH to the CLI, and CLIs that don't use
+  // the alt-screen buffer tend to react by re-emitting their current UI,
+  // which scrolls the previous version into tmux's main-buffer history.
+  // Over many reconnects this accumulates duplicate copies in scrollback
+  // that no downstream heuristic can fully recover from.
+  private lastResizeCols = 0;
+  private lastResizeRows = 0;
 
   constructor(
     public readonly agent: AgentRow,
@@ -94,9 +103,22 @@ export class AgentRuntime extends EventEmitter {
    * Resize the underlying tmux pane to the given dimensions. Called when an
    * xterm.js viewer fits its container and needs the CLI to redraw at those
    * columns/rows (otherwise output wraps at the original spawn size).
+   *
+   * No-op if the pane was already resized to these dimensions — see
+   * `lastResizeCols`/`lastResizeRows` above for the reasoning. Idempotent
+   * on identical calls, so viewers repeatedly re-attaching at the same
+   * size never provoke a redraw burst.
    */
   async resize(cols: number, rows: number): Promise<void> {
+    if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols < 1 || rows < 1) {
+      return;
+    }
+    if (cols === this.lastResizeCols && rows === this.lastResizeRows) {
+      return;
+    }
     await Tmux.resizeWindow(this.agent.tmux_session, cols, rows);
+    this.lastResizeCols = cols;
+    this.lastResizeRows = rows;
   }
 
   enqueueAnswer(choice: string | number): Promise<void> {

@@ -1,28 +1,35 @@
 /**
- * Reconnecting WebSocket client with per-agent last-seq replay.
+ * Reconnecting WebSocket client with snapshot-on-subscribe reconnect.
  *
- * Usage:
- *   const c = new MawWsClient({ onOutput, onEvent, onState, onScrollback });
- *   c.connect();
- *   c.subscribe(agentId);
+ * Single shared client per tab: the module-level `getMawWsClient()` lazily
+ * creates one instance on first call and auto-connects. Consumers register
+ * per-agent handlers via `subscribe(agentId, cols, rows, handlers)` — the
+ * dispatch loop routes `output`/`event`/`agent_state`/`scrollback` by
+ * `msg.agentId` to the right entry in the handler map.
  *
  * On disconnect, exponential backoff up to 30s. On reconnect, every active
- * subscription is re-issued carrying its last-seen seq so the server can
- * replay missed terminal_log chunks.
+ * subscription is re-issued carrying its last known xterm dims so the
+ * server can resize the tmux pane and ship back a fresh capture-pane
+ * snapshot (subscribers `term.reset()` before applying it).
  */
 
 import type { ClientMessage, ServerMessage, SC_Output, SC_Scrollback, SC_AgentEvent } from '$shared/protocol';
 
-export interface MawWsHandlers {
+export interface AgentHandlers {
   onOutput: (msg: SC_Output) => void;
   onScrollback: (msg: SC_Scrollback) => void;
   onEvent: (msg: SC_AgentEvent) => void;
   onState: (status: string) => void;
 }
 
+export type ConnectionState = 'open' | 'closed' | 'reconnecting';
+
 interface Sub {
   agentId: string;
-  lastSeq: number;
+  handlers: AgentHandlers;
+  /** Last xterm dims reported for this subscription; re-sent on reconnect. */
+  cols?: number;
+  rows?: number;
 }
 
 export class MawWsClient {
@@ -31,20 +38,29 @@ export class MawWsClient {
   private backoff = 500;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private closed = false;
-
-  constructor(private readonly handlers: MawWsHandlers) {}
+  private connectionState: ConnectionState = 'closed';
+  private connectionListeners = new Set<(s: ConnectionState) => void>();
+  private globalStateListeners = new Set<(agentId: string, status: string) => void>();
 
   connect(): void {
     if (typeof window === 'undefined') return;
+    if (this.ws && this.ws.readyState !== WebSocket.CLOSED) return;
     const url = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
     const ws = new WebSocket(url);
     this.ws = ws;
+    this.setConnectionState('reconnecting');
 
     ws.onopen = () => {
       this.backoff = 500;
+      this.setConnectionState('open');
       this.send({ type: 'hello', clientVersion: 1 });
       for (const sub of this.subs.values()) {
-        this.send({ type: 'subscribe_agent', agentId: sub.agentId, lastSeq: sub.lastSeq });
+        this.send({
+          type: 'subscribe_agent',
+          agentId: sub.agentId,
+          ...(sub.cols !== undefined ? { cols: sub.cols } : {}),
+          ...(sub.rows !== undefined ? { rows: sub.rows } : {})
+        });
       }
       this.startHeartbeat();
     };
@@ -61,7 +77,11 @@ export class MawWsClient {
 
     ws.onclose = () => {
       this.stopHeartbeat();
-      if (this.closed) return;
+      if (this.closed) {
+        this.setConnectionState('closed');
+        return;
+      }
+      this.setConnectionState('reconnecting');
       setTimeout(() => this.connect(), this.backoff);
       this.backoff = Math.min(this.backoff * 2, 30_000);
     };
@@ -77,11 +97,25 @@ export class MawWsClient {
     this.ws?.close();
   }
 
-  subscribe(agentId: string): void {
-    if (!this.subs.has(agentId)) {
-      this.subs.set(agentId, { agentId, lastSeq: 0 });
-    }
-    this.send({ type: 'subscribe_agent', agentId, lastSeq: this.subs.get(agentId)!.lastSeq });
+  /**
+   * Register per-agent handlers and send a subscribe message. Subsequent
+   * calls for the same agentId replace the stored cols/rows (handlers stay
+   * the same — the caller is the single owner of the entry). On reconnect
+   * the latest cols/rows are re-issued automatically.
+   */
+  subscribe(agentId: string, handlers: AgentHandlers, cols?: number, rows?: number): void {
+    const existing = this.subs.get(agentId);
+    const sub: Sub = existing ?? { agentId, handlers };
+    sub.handlers = handlers;
+    if (cols !== undefined) sub.cols = cols;
+    if (rows !== undefined) sub.rows = rows;
+    this.subs.set(agentId, sub);
+    this.send({
+      type: 'subscribe_agent',
+      agentId,
+      ...(sub.cols !== undefined ? { cols: sub.cols } : {}),
+      ...(sub.rows !== undefined ? { rows: sub.rows } : {})
+    });
   }
 
   unsubscribe(agentId: string): void {
@@ -116,7 +150,32 @@ export class MawWsClient {
 
   /** Inform the server of the current xterm.js viewer size so tmux resizes its pane to match. */
   sendResize(agentId: string, cols: number, rows: number): void {
+    const sub = this.subs.get(agentId);
+    if (sub) {
+      sub.cols = cols;
+      sub.rows = rows;
+    }
     this.send({ type: 'resize', agentId, cols, rows });
+  }
+
+  addConnectionListener(cb: (s: ConnectionState) => void): () => void {
+    this.connectionListeners.add(cb);
+    cb(this.connectionState);
+    return () => {
+      this.connectionListeners.delete(cb);
+    };
+  }
+
+  /**
+   * Global listener for agent_state messages across every agent — fires
+   * even before (or without) a per-agent subscription. Used by the terminal
+   * registry to tear down entries when the underlying agent dies.
+   */
+  addGlobalAgentStateListener(cb: (agentId: string, status: string) => void): () => void {
+    this.globalStateListeners.add(cb);
+    return () => {
+      this.globalStateListeners.delete(cb);
+    };
   }
 
   // ---------- internals ----------
@@ -127,30 +186,33 @@ export class MawWsClient {
     }
   }
 
+  private setConnectionState(state: ConnectionState): void {
+    if (this.connectionState === state) return;
+    this.connectionState = state;
+    for (const cb of this.connectionListeners) cb(state);
+  }
+
   private dispatch(msg: ServerMessage): void {
     switch (msg.type) {
       case 'welcome':
         break;
       case 'output': {
-        const sub = this.subs.get(msg.agentId);
-        if (sub && msg.seq > sub.lastSeq) sub.lastSeq = msg.seq;
-        this.handlers.onOutput(msg);
+        this.subs.get(msg.agentId)?.handlers.onOutput(msg);
         break;
       }
       case 'scrollback': {
-        const sub = this.subs.get(msg.agentId);
-        if (sub) {
-          for (const c of msg.chunks) if (c.seq > sub.lastSeq) sub.lastSeq = c.seq;
-        }
-        this.handlers.onScrollback(msg);
+        this.subs.get(msg.agentId)?.handlers.onScrollback(msg);
         break;
       }
-      case 'event':
-        this.handlers.onEvent(msg);
+      case 'event': {
+        this.subs.get(msg.agentId)?.handlers.onEvent(msg);
         break;
-      case 'agent_state':
-        this.handlers.onState(msg.status);
+      }
+      case 'agent_state': {
+        for (const cb of this.globalStateListeners) cb(msg.agentId, msg.status);
+        this.subs.get(msg.agentId)?.handlers.onState(msg.status);
         break;
+      }
       case 'pong':
       case 'ack':
       case 'alert':
@@ -173,4 +235,23 @@ export class MawWsClient {
       this.heartbeatTimer = null;
     }
   }
+}
+
+// ---------- module-level singleton ----------
+
+let singleton: MawWsClient | null = null;
+
+/**
+ * Returns the tab-wide shared `MawWsClient`, creating and connecting it on
+ * first call. Safe to call during SSR — it no-ops until a real `window` is
+ * available (the first browser-side call wins).
+ */
+export function getMawWsClient(): MawWsClient {
+  if (!singleton) {
+    singleton = new MawWsClient();
+    if (typeof window !== 'undefined') {
+      singleton.connect();
+    }
+  }
+  return singleton;
 }
