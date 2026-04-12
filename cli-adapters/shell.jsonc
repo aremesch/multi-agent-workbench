@@ -3,6 +3,11 @@
   "kind": "shell",
   "displayName": "Shell (bash smoke test)",
 
+  // Line-based REPL: every prompt/command/output is an append to the pane,
+  // never a full-UI redraw. The hub should hand the reconnect modal real
+  // session backlog (deduped) instead of just the visible screen.
+  "scrollbackMode": "history",
+
   // Minimal adapter with no pattern matching — exists only to exercise the
   // tmux + FIFO + WebSocket pipeline end-to-end without depending on any
   // third-party CLI being installed. No prompts, no task interpolation.

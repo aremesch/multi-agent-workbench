@@ -3,6 +3,10 @@
   "kind": "gemini",
   "displayName": "Gemini CLI",
 
+  // TUI CLI — full-UI repaints in the main buffer, same class as Claude
+  // Code. Keep reconnect snapshots to the visible pane only.
+  "scrollbackMode": "visible",
+
   // Starter patterns — must be tuned against a real recording.
   "spawn": {
     "command": "gemini",

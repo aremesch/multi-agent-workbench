@@ -23,10 +23,34 @@ const patternSchema = z.object({
 
 export type AdapterPatternConfig = z.infer<typeof patternSchema>;
 
+/**
+ * How the hub should capture the reconnect snapshot for agents of this kind.
+ *
+ * - `'visible'` — capture only what's on the pane right now (`capture-pane -S 0`).
+ *   Correct for TUI CLIs that repaint their whole UI in the main buffer (Claude
+ *   Code, Codex, Gemini). Tmux scrollback for those CLIs is a stack of redraw
+ *   ghosts — including byte-unequal variants produced by things like Claude
+ *   Code's Ctrl-O expand/collapse widget — that no dedup heuristic can fully
+ *   clean up, so we just drop it on reopen.
+ *
+ * - `'history'` — capture `-S -500` and pipe through `collapseRepeatingTailBlocks`.
+ *   Correct for line-based CLIs (shells, REPLs) where real backlog is what the
+ *   user wants to see when they reopen the modal, and where scrollback doesn't
+ *   contain full-UI redraws.
+ */
+export const scrollbackModeEnum = z.enum(['visible', 'history']);
+export type ScrollbackMode = z.infer<typeof scrollbackModeEnum>;
+
 export const adapterConfigSchema = z.object({
   $schema: z.string().optional(),
   kind: z.string().min(1),
   displayName: z.string().min(1),
+  /**
+   * Reconnect-snapshot capture mode. Defaults to `'visible'` because most
+   * agents in MAW are ink/react-style TUI CLIs; explicit `'history'` is only
+   * right for line-based CLIs like the shell smoke adapter.
+   */
+  scrollbackMode: scrollbackModeEnum.default('visible'),
 
   spawn: z.object({
     command: z.string().min(1),

@@ -3,6 +3,12 @@
   "kind": "claude-code",
   "displayName": "Claude Code",
 
+  // TUI CLI: repaints its whole UI in the main buffer on every streaming
+  // tick, and its Ctrl-O "expand long output" widget produces byte-unequal
+  // variants that slip past the repeating-tail dedup. Capture only the
+  // currently visible pane on reconnect — tmux scrollback is all ghosts.
+  "scrollbackMode": "visible",
+
   // NOTE: these patterns are starting points. Tune against real captured
   // sessions with `pnpm test:adapter cli-adapters/claude-code.jsonc <session.txt>`.
   "spawn": {

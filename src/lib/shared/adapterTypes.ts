@@ -46,9 +46,19 @@ export type AdapterRuntimeState =
   | 'IDLE'
   | 'EXITED';
 
+/**
+ * How the hub should build a reconnect snapshot for an agent using this
+ * adapter. See `adapter.config.schema.ts` for the full rationale — the
+ * short version is: TUI CLIs want `'visible'` (drop scrollback ghosts),
+ * line-based CLIs want `'history'` (keep real backlog, deduped).
+ */
+export type ScrollbackMode = 'visible' | 'history';
+
 export interface CliAdapter {
   kind: CliKind;
   displayName: string;
+  /** Reconnect snapshot strategy — see {@link ScrollbackMode}. */
+  readonly scrollbackMode: ScrollbackMode;
   buildSpawnSpec(opts: {
     role: { systemPrompt: string; toolConfig: unknown };
     worktreeCwd: string;

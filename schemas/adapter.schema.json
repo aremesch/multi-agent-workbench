@@ -8,6 +8,11 @@
     "$schema": { "type": "string" },
     "kind": { "type": "string", "minLength": 1 },
     "displayName": { "type": "string", "minLength": 1 },
+    "scrollbackMode": {
+      "type": "string",
+      "enum": ["visible", "history"],
+      "description": "Reconnect snapshot mode. 'visible' captures only what's on screen (right for TUI CLIs like Claude Code, Codex, Gemini). 'history' captures ~500 lines of tmux scrollback through the repeating-tail dedup (right for line-based CLIs like shell). Defaults to 'visible'."
+    },
     "spawn": {
       "type": "object",
       "required": ["command"],

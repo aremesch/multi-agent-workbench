@@ -18,6 +18,7 @@ import type {
   AdapterRuntimeState,
   CliAdapter,
   InputEncoding,
+  ScrollbackMode,
   SpawnSpec
 } from '$shared/adapterTypes';
 import type { AdapterConfig, AdapterPatternConfig } from './adapter.config.schema.js';
@@ -32,6 +33,7 @@ interface CompiledPattern {
 export class ConfigDrivenAdapter implements CliAdapter {
   readonly kind: string;
   readonly displayName: string;
+  readonly scrollbackMode: ScrollbackMode;
   readonly input: InputEncoding;
 
   private readonly cfg: AdapterConfig;
@@ -44,6 +46,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
     this.cfg = cfg;
     this.kind = cfg.kind;
     this.displayName = cfg.displayName;
+    this.scrollbackMode = cfg.scrollbackMode;
     this.patterns = cfg.patterns.map((p) => ({
       cfg: p,
       re: new RegExp(p.regex, p.flags ?? '')

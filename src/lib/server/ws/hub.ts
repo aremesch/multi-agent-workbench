@@ -161,6 +161,20 @@ class HubClient {
    * lets Claude Code / Codex / Gemini finish their redraw. Failures are
    * swallowed (agent may be dying) but we still try to capture so the
    * viewer at least sees something.
+   *
+   * The capture strategy is adapter-driven (`runtime.scrollbackMode`):
+   *
+   *   - `'visible'` (TUI CLIs like Claude Code) → `capture-pane -S 0`,
+   *     i.e. only what's on screen right now. Tmux's scrollback for those
+   *     agents is a stack of redraw ghosts that no dedup can fully clean
+   *     up — in particular Claude Code's Ctrl-O expand/collapse widget
+   *     produces byte-unequal variants that slip past
+   *     `collapseRepeatingTailBlocks`. Dropping scrollback on reopen is
+   *     the right answer for them.
+   *
+   *   - `'history'` (line-based CLIs like the shell smoke adapter) →
+   *     `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`,
+   *     giving real session backlog on reopen.
    */
   private async sendReconnectSnapshot(
     runtime: AgentRuntime,
@@ -185,15 +199,13 @@ class HubClient {
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
     }
 
-    // Capture ~500 lines of tmux scrollback (bounded by the default
-    // `history-limit=2000`). For line-based CLIs this is real session
-    // history; for TUI CLIs that redraw on every streaming tick,
-    // `collapseRepeatingTailBlocks` folds byte-equal repeating
-    // banner/prompt blocks out before we ship it. Residual jitter
-    // (progress counters, spinner frames) is unavoidable but bounded.
-    const raw = await Tmux.capturePane(runtime.tmuxSession, -500).catch(() => '');
+    const mode = runtime.scrollbackMode;
+    const startLine = mode === 'history' ? -500 : 0;
+    const raw = await Tmux.capturePane(runtime.tmuxSession, startLine).catch(() => '');
     if (!raw) return;
-    const snapshot = collapseRepeatingTailBlocks(raw);
+    // Dedup only applies to the `'history'` path — the `'visible'` capture
+    // is one screenful of current state, no repeating banners to fold.
+    const snapshot = mode === 'history' ? collapseRepeatingTailBlocks(raw) : raw;
 
     // tmux capture-pane separates lines with bare `\n` (it reconstructs them
     // from the grid), but the client xterm runs with `convertEol: false` so
@@ -281,7 +293,7 @@ class HubClient {
   }
 
   private cleanup(): void {
-    for (const [id, _sub] of this.subs) {
+    for (const id of Array.from(this.subs.keys())) {
       this.handleUnsubscribe(id);
     }
   }
