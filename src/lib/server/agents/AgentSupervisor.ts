@@ -72,14 +72,23 @@ export class AgentSupervisor {
     const proc = Tmux.spawnWaitForChannel(channel);
     this.exitWaiters.set(agentId, proc);
     proc.then(
-      () => {
+      async () => {
         this.exitWaiters.delete(agentId);
         const rt = this.runtimes.get(agentId);
-        if (rt) {
-          this.finishAsExited(agentId, rt).catch((err) => {
-            console.error(`[AgentSupervisor] exit-watcher finish failed for ${agentId}:`, err);
-          });
+        if (!rt) return;
+        // Guard against stale pre-signaled tmux channels from a previous
+        // backend run: if the session is still alive, the channel fired
+        // spuriously (e.g. a previous `wait-for` was killed before consuming
+        // the signal). Log and let the periodic reaper handle real exits.
+        if (await Tmux.hasSession(rt.tmuxSession)) {
+          console.warn(
+            `[AgentSupervisor] exit-watcher fired for live session ${agentId} — ignoring (stale channel?)`
+          );
+          return;
         }
+        this.finishAsExited(agentId, rt).catch((err) => {
+          console.error(`[AgentSupervisor] exit-watcher finish failed for ${agentId}:`, err);
+        });
       },
       () => {
         // Killed via stopExitWatcher (another reap path beat us to it) OR

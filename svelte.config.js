@@ -7,8 +7,7 @@ const config = {
   kit: {
     adapter: adapter({
       out: 'build',
-      precompress: false,
-      envPrefix: 'MAW_'
+      precompress: false
     }),
     alias: {
       $shared: 'src/lib/shared',
