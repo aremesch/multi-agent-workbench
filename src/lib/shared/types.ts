@@ -36,6 +36,14 @@ export interface AgentCardRow {
   task_title: string | null;
 }
 
+/** A repo node in the sidebar treeview, with its agents. */
+export interface SidebarRepoNode {
+  repoId: string;
+  repoPath: string;
+  projectName: string;
+  agents: AgentCardRow[];
+}
+
 /** Persisted gridstack position for one agent card. */
 export interface LayoutEntry {
   agentId: string;

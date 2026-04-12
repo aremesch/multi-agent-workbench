@@ -271,6 +271,30 @@ export function listAgentCardsForUser(
   return prep<unknown[], AgentCardRow>(sql).all(userId, ...statuses);
 }
 
+export function listAgentCardsForRepo(
+  userId: string,
+  repoId: string,
+  statuses: AgentStatus[]
+): AgentCardRow[] {
+  if (statuses.length === 0) return [];
+  const placeholders = statuses.map(() => '?').join(',');
+  const sql = `
+    SELECT a.*,
+           r.name AS role_name,
+           rp.path AS repo_path,
+           p.name AS project_name,
+           t.title AS task_title
+    FROM agents a
+    JOIN roles r ON r.id = a.role_id
+    JOIN repos rp ON rp.id = a.repo_id
+    JOIN projects p ON p.id = rp.project_id
+    LEFT JOIN tasks t ON t.id = a.current_task_id
+    WHERE a.user_id = ? AND a.repo_id = ? AND a.status IN (${placeholders})
+    ORDER BY a.created_at DESC
+  `;
+  return prep<unknown[], AgentCardRow>(sql).all(userId, repoId, ...statuses);
+}
+
 export function deleteAgent(id: string): void {
   prep<[string]>('DELETE FROM agents WHERE id = ?').run(id);
 }

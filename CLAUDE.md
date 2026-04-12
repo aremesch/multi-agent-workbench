@@ -20,6 +20,14 @@ Two driving goals:
 ## Current status
 
 - v0.1 foundation + CRUD UI landed, `pnpm check` clean (0/0).
+- New persistent left sidebar (`RepoTreeSidebar`) shows a Repo→Agents
+  treeview with an `Archive` top-level node grouping archived agents by
+  repo. Click a repo to open its per-repo dashboard at `/repos/[id]`
+  (own gridstack layout key, `dashboard.layout.repo.<id>.v1`); click an
+  agent to land on `/repos/[id]?agent=<id>` with the terminal modal
+  pre-opened. Sidebar collapsed state is per-user
+  (`ui.sidebar.collapsed`). Right-side archive drawer is gone; the
+  hamburger menu now contains only **Settings** and **Logout**.
 - Full create flow in SvelteKit form actions: project → repo → role →
   spawn agent, reachable from the dashboard. Pre-generated `agentId`
   keeps worktree dir, branch (`maw/<agentId>`) and DB row in lock-step.
@@ -110,3 +118,4 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-terminal-persistence.md`](docs/plans/v0.1-terminal-persistence.md) — `TerminalRegistry` that reparented xterm hosts between a hidden pool and the active panel; **superseded by v0.1-terminal-scrollback-v2** after TUI-CLI redraw pollution and reattach-resize races made persisted xterm scrollback unusable. Only the shared `MawWsClient` singleton from this plan survived.
 - [`docs/plans/v0.1-terminal-scrollback-v2.md`](docs/plans/v0.1-terminal-scrollback-v2.md) — reverts the terminal registry, switches reconnect snapshot to `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`; tmux becomes the source of truth for backing scrollback, every modal open gets a fresh deduped snapshot (executed).
 - [`docs/plans/v0.1-inline-spawn.md`](docs/plans/v0.1-inline-spawn.md) — inline project/role/repo creation within the spawn form modal; three JSON API routes, no page navigation required (executed).
+- [`docs/plans/v0.1-left-sidebar-treeview.md`](docs/plans/v0.1-left-sidebar-treeview.md) — persistent collapsible left sidebar with Repo→Agents tree (plus Archive→Repo→Agents), per-repo dashboard at `/repos/[id]` with its own gridstack layout key, hamburger reduced to Settings + Logout, right-side archive drawer removed (executed).

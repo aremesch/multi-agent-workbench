@@ -1,7 +1,63 @@
 import type { LayoutServerLoad } from './$types';
+import { getUserSetting, listAgentCardsForUser } from '$lib/server/db/queries';
+import type { AgentStatus } from '$lib/server/db/types';
+import { SIDEBAR_COLLAPSED_KEY } from '$lib/shared/dashboard';
+import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
+
+const ALL_STATUSES: AgentStatus[] = [
+  'spawning',
+  'running',
+  'waiting_input',
+  'idle',
+  'exited',
+  'crashed'
+];
+
+function groupByRepo(agents: AgentCardRow[]): SidebarRepoNode[] {
+  const byRepo = new Map<string, SidebarRepoNode>();
+  for (const a of agents) {
+    let node = byRepo.get(a.repo_id);
+    if (!node) {
+      node = {
+        repoId: a.repo_id,
+        repoPath: a.repo_path,
+        projectName: a.project_name,
+        agents: []
+      };
+      byRepo.set(a.repo_id, node);
+    }
+    node.agents.push(a);
+  }
+  return [...byRepo.values()].sort((a, b) => a.repoPath.localeCompare(b.repoPath));
+}
+
+function parseCollapsed(raw: string | null): boolean {
+  if (!raw) return false;
+  try {
+    const v = JSON.parse(raw) as { collapsed?: boolean };
+    return v.collapsed === true;
+  } catch {
+    return false;
+  }
+}
 
 export const load: LayoutServerLoad = async ({ locals }) => {
+  if (!locals.user) {
+    return { user: null, sidebar: null };
+  }
+  const cards = listAgentCardsForUser(locals.user.id, ALL_STATUSES);
+  const live: AgentCardRow[] = [];
+  const archived: AgentCardRow[] = [];
+  for (const c of cards) {
+    if (c.status === 'exited' || c.status === 'crashed') archived.push(c);
+    else live.push(c);
+  }
   return {
-    user: locals.user ? { id: locals.user.id, username: locals.user.username } : null
+    user: { id: locals.user.id, username: locals.user.username },
+    sidebar: {
+      activeRepos: groupByRepo(live),
+      archivedRepos: groupByRepo(archived),
+      collapsed: parseCollapsed(getUserSetting(locals.user.id, SIDEBAR_COLLAPSED_KEY))
+    }
   };
 };

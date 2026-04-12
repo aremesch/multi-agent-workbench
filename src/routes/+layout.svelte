@@ -1,12 +1,24 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
-  import { page } from '$app/state';
-  import type { AgentCardRow } from '$lib/shared/types';
-  import AgentArchiveDrawer from '$lib/client/components/AgentArchiveDrawer.svelte';
+  import { goto } from '$app/navigation';
+  import RepoTreeSidebar from '$lib/client/components/RepoTreeSidebar.svelte';
+  import type { SidebarRepoNode } from '$lib/shared/types';
   import { getMawWsClient } from '$lib/client/ws';
 
-  let { children, data }: { children: Snippet; data: { user: { username: string } | null } } =
-    $props();
+  let {
+    children,
+    data
+  }: {
+    children: Snippet;
+    data: {
+      user: { username: string } | null;
+      sidebar: {
+        activeRepos: SidebarRepoNode[];
+        archivedRepos: SidebarRepoNode[];
+        collapsed: boolean;
+      } | null;
+    };
+  } = $props();
 
   onMount(() => {
     // Kick off the shared ws connection as soon as the app hydrates so the
@@ -16,26 +28,17 @@
   });
 
   let menuOpen = $state(false);
-  let drawerOpen = $state(false);
-
-  // Archived agents are loaded by the dashboard page's load function. On
-  // other routes this will simply be undefined/empty, which hides the count
-  // and leaves the drawer empty if the user opens it.
-  const archivedAgents = $derived<AgentCardRow[]>(
-    ((page.data as { archivedAgents?: AgentCardRow[] }).archivedAgents ?? []) as AgentCardRow[]
-  );
 
   function toggleMenu(): void {
     menuOpen = !menuOpen;
   }
-
   function closeMenu(): void {
     menuOpen = false;
   }
 
-  function openArchive(): void {
-    drawerOpen = true;
-    menuOpen = false;
+  function gotoSettings(): void {
+    closeMenu();
+    void goto('/settings');
   }
 
   // Close the dropdown on outside click / Escape.
@@ -54,7 +57,7 @@
 
 <svelte:window onclick={onDocClick} onkeydown={onKey} />
 
-<main class="app">
+<div class="app">
   <header class="topbar">
     <a href="/" class="brand">Multi-Agent Workbench</a>
     {#if data.user}
@@ -74,8 +77,8 @@
         </button>
         {#if menuOpen}
           <div class="menu" role="menu">
-            <button type="button" class="menu-item" role="menuitem" onclick={openArchive}>
-              Archive ({archivedAgents.length})
+            <button type="button" class="menu-item" role="menuitem" onclick={gotoSettings}>
+              Settings
             </button>
             <form method="POST" action="/login?/logout" class="menu-form">
               <button type="submit" class="menu-item" role="menuitem">Logout</button>
@@ -85,18 +88,19 @@
       </div>
     {/if}
   </header>
-  <section class="content">
-    {@render children()}
-  </section>
-</main>
-
-{#if data.user}
-  <AgentArchiveDrawer
-    open={drawerOpen}
-    onClose={() => (drawerOpen = false)}
-    {archivedAgents}
-  />
-{/if}
+  <div class="body">
+    {#if data.user && data.sidebar}
+      <RepoTreeSidebar
+        activeRepos={data.sidebar.activeRepos}
+        archivedRepos={data.sidebar.archivedRepos}
+        collapsed={data.sidebar.collapsed}
+      />
+    {/if}
+    <section class="content">
+      {@render children()}
+    </section>
+  </div>
+</div>
 
 <style>
   :global(html, body) {
@@ -109,6 +113,8 @@
     color: #e5e5e5;
     background: #0a0a0a;
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
   }
   .topbar {
     display: flex;
@@ -188,7 +194,14 @@
   .menu-item:hover {
     background: #1f2937;
   }
+  .body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
   .content {
+    flex: 1;
+    min-width: 0;
     padding: 1rem;
   }
 </style>

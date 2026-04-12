@@ -13,9 +13,10 @@ import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { RequestHandler } from './$types';
 import { getUserSetting, setUserSetting } from '$lib/server/db/queries';
-import { DASHBOARD_LAYOUT_KEY } from '$lib/shared/dashboard';
+import { DASHBOARD_LAYOUT_KEY, isValidLayoutKey } from '$lib/shared/dashboard';
 
 const layoutSchema = z.object({
+  key: z.string().min(1).optional(),
   layout: z.array(
     z.object({
       agentId: z.string().min(1),
@@ -29,9 +30,16 @@ const layoutSchema = z.object({
 
 type DashboardLayout = z.infer<typeof layoutSchema>;
 
-export const GET: RequestHandler = async ({ locals }) => {
+function resolveKey(raw: string | null | undefined): string | null {
+  const key = raw ?? DASHBOARD_LAYOUT_KEY;
+  return isValidLayoutKey(key) ? key : null;
+}
+
+export const GET: RequestHandler = async ({ locals, url }) => {
   if (!locals.user) throw error(401, 'Unauthorized');
-  const raw = getUserSetting(locals.user.id, DASHBOARD_LAYOUT_KEY);
+  const key = resolveKey(url.searchParams.get('key'));
+  if (!key) throw error(400, 'Invalid key');
+  const raw = getUserSetting(locals.user.id, key);
   if (!raw) return json({ layout: null });
   try {
     const parsed = layoutSchema.parse(JSON.parse(raw));
@@ -54,6 +62,12 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
   if (!result.success) {
     throw error(400, 'Invalid layout shape');
   }
-  setUserSetting(locals.user.id, DASHBOARD_LAYOUT_KEY, JSON.stringify(result.data));
+  const key = resolveKey(result.data.key);
+  if (!key) throw error(400, 'Invalid key');
+  setUserSetting(
+    locals.user.id,
+    key,
+    JSON.stringify({ layout: result.data.layout })
+  );
   return new Response(null, { status: 204 });
 };

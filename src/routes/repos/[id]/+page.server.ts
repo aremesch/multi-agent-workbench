@@ -1,22 +1,31 @@
-import { redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import {
+  getRepo,
   getUserSetting,
-  listAgentCardsForUser,
+  listAgentCardsForRepo,
   listProjects,
   listReposForProject,
   listRoles
 } from '$lib/server/db/queries';
 import type { AgentStatus } from '$lib/server/db/types';
-import { DASHBOARD_LAYOUT_KEY } from '$lib/shared/dashboard';
+import { repoDashboardLayoutKey } from '$lib/shared/dashboard';
 import type { LayoutEntry } from '$lib/shared/types';
+
+const ALL_STATUSES: AgentStatus[] = [
+  'spawning',
+  'running',
+  'waiting_input',
+  'idle',
+  'exited',
+  'crashed'
+];
 
 interface DashboardRepoOption {
   id: string;
   path: string;
   projectName: string;
 }
-
 interface DashboardRoleOption {
   id: string;
   name: string;
@@ -33,8 +42,6 @@ function loadRepoOptions(userId: string): DashboardRepoOption[] {
   return options;
 }
 
-const LIVE_STATUSES: AgentStatus[] = ['spawning', 'running', 'waiting_input', 'idle'];
-
 function parseLayout(raw: string | null): LayoutEntry[] | null {
   if (!raw) return null;
   try {
@@ -45,14 +52,13 @@ function parseLayout(raw: string | null): LayoutEntry[] | null {
   }
 }
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, params }) => {
   if (!locals.user) throw redirect(303, '/login');
-  const liveAgents = listAgentCardsForUser(locals.user.id, LIVE_STATUSES);
-  const dashboardLayout = parseLayout(
-    getUserSetting(locals.user.id, DASHBOARD_LAYOUT_KEY)
-  );
-  // Loaded eagerly so the spawn-agent modal on the dashboard doesn't need a
-  // separate /agents/new round-trip before it can render its form.
+  const repo = getRepo(params.id);
+  if (!repo || repo.user_id !== locals.user.id) throw error(404, 'Repo not found');
+  const layoutKey = repoDashboardLayoutKey(repo.id);
+  const liveAgents = listAgentCardsForRepo(locals.user.id, repo.id, ALL_STATUSES);
+  const dashboardLayout = parseLayout(getUserSetting(locals.user.id, layoutKey));
   const spawnRoles: DashboardRoleOption[] = listRoles(locals.user.id).map((r) => ({
     id: r.id,
     name: r.name,
@@ -62,6 +68,8 @@ export const load: PageServerLoad = async ({ locals }) => {
   const spawnProjects = listProjects(locals.user.id);
   const spawnCliKinds = locals.supervisor.registry.list();
   return {
+    repo: { id: repo.id, path: repo.path },
+    layoutKey,
     liveAgents,
     dashboardLayout,
     spawnRoles,
