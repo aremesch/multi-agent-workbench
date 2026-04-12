@@ -29,7 +29,22 @@ async function main() {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? '127.0.0.1';
 
-  const server = http.createServer(handler);
+  // Wrap the SvelteKit handler so `/ws` never reaches the router — it
+  // belongs exclusively to the `upgrade` event below.  Without this guard
+  // a reverse proxy that strips the `Upgrade` header (common nginx/caddy
+  // misconfiguration) would forward a plain `GET /ws` into SvelteKit,
+  // which logs a noisy 404 and confuses debugging.
+  const server = http.createServer((req, res) => {
+    if (req.url === '/ws' || req.url?.startsWith('/ws?')) {
+      res.writeHead(426, { 'Content-Type': 'text/plain' });
+      res.end(
+        'WebSocket upgrade required. If you are behind a reverse proxy, ' +
+        'make sure it forwards Upgrade and Connection headers.'
+      );
+      return;
+    }
+    handler(req, res);
+  });
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req, socket, head) => {

@@ -167,7 +167,7 @@ export class Tmux {
       const e = err as ExecaError;
       // "can't find session" is fine — idempotent kill.
       const stderr = typeof e.stderr === 'string' ? e.stderr : '';
-      if (!/can't find session|session not found/i.test(stderr)) throw err;
+      if (!/can't find session|session not found|no server running/i.test(stderr)) throw err;
     }
   }
 
