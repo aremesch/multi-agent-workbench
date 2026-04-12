@@ -54,6 +54,11 @@ Two driving goals:
   blocking reads in the threadpool instead of crashing on EAGAIN.
 - Smoke adapter `cli-adapters/shell.jsonc` exercises the pipeline end
   to end without needing claude/codex/gemini installed.
+- Production server is bundled: `pnpm build` runs `vite build` then
+  `esbuild` to emit `build/server.js` — a single ESM file that wraps
+  the SvelteKit handler with the `/ws` WebSocket upgrade listener.
+  No `tsx` or `src/` needed on prod; native addons (`better-sqlite3`,
+  `@node-rs/argon2`) stay external. Launch: `node build/server.js`.
 - Backend skeleton (auth, SQLite+migrations, tmux+FIFO, supervisor with
   reattach-on-boot, ConfigDrivenAdapter + hot-reloading registry, WS
   hub) unchanged and still clean.

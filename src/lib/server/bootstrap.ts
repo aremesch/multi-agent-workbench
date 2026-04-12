@@ -21,13 +21,20 @@ import { AdapterRegistry } from './agents/adapters/AdapterRegistry.js';
 import { AgentSupervisor } from './agents/AgentSupervisor.js';
 import { hashPassword } from './auth/password.js';
 
-let started: Promise<void> | null = null;
-let supervisor: AgentSupervisor | null = null;
-let registry: AdapterRegistry | null = null;
+// ---------- globalThis-backed singletons ----------
+// In production the esbuild-bundled server.js and SvelteKit's chunk copy of
+// this file are two separate module scopes with their own `let` variables.
+// Using globalThis ensures whichever scope runs first wins; the second call
+// is a no-op.
+const G = globalThis as unknown as {
+  __maw_started?: Promise<void>;
+  __maw_supervisor?: AgentSupervisor;
+  __maw_registry?: AdapterRegistry;
+};
 
 export function bootstrap(): Promise<void> {
-  if (started) return started;
-  started = (async () => {
+  if (G.__maw_started) return G.__maw_started;
+  G.__maw_started = (async () => {
     const cfg = getConfig();
     console.log(`[maw] booting (dataDir=${cfg.dataDir}, isDev=${cfg.isDev})`);
 
@@ -46,15 +53,15 @@ export function bootstrap(): Promise<void> {
     }
 
     // 3. Adapter registry.
-    registry = new AdapterRegistry(cfg.cliAdaptersDir);
-    const loadResult = registry.loadAll();
+    G.__maw_registry = new AdapterRegistry(cfg.cliAdaptersDir);
+    const loadResult = G.__maw_registry.loadAll();
     console.log(`[maw] cli-adapters loaded: ${loadResult.loaded}`);
     for (const err of loadResult.errors) console.warn(`[maw] cli-adapter: ${err}`);
-    registry.startWatching((kind) => console.log(`[maw] cli-adapter reloaded: ${kind}`));
+    G.__maw_registry.startWatching((kind) => console.log(`[maw] cli-adapter reloaded: ${kind}`));
 
     // 4. Supervisor + reattach.
-    supervisor = new AgentSupervisor(registry);
-    const { reattached, crashed } = await supervisor.init();
+    G.__maw_supervisor = new AgentSupervisor(G.__maw_registry);
+    const { reattached, crashed } = await G.__maw_supervisor.init();
     console.log(`[maw] supervisor: ${reattached} agents reattached, ${crashed} crashed`);
 
     // 5. Periodic reaper: scans every ~5s for runtimes whose tmux session
@@ -66,28 +73,28 @@ export function bootstrap(): Promise<void> {
     //    reattach race, external `tmux kill-session`, …).
     //    The `started` guard in bootstrap() ensures we only schedule one
     //    interval per process even across HMR reloads in dev.
-    const sup = supervisor;
+    const sup = G.__maw_supervisor;
     setInterval(() => {
       sup.reap().catch((err) => {
         console.error('[maw] supervisor: reap failed:', err);
       });
     }, REAP_INTERVAL_MS).unref();
   })();
-  return started;
+  return G.__maw_started;
 }
 
 const REAP_INTERVAL_MS = 5000;
 
 export function getSupervisor(): AgentSupervisor {
-  if (!supervisor) {
+  if (!G.__maw_supervisor) {
     throw new Error('bootstrap() has not completed — getSupervisor() called too early');
   }
-  return supervisor;
+  return G.__maw_supervisor;
 }
 
 export function getRegistry(): AdapterRegistry {
-  if (!registry) {
+  if (!G.__maw_registry) {
     throw new Error('bootstrap() has not completed — getRegistry() called too early');
   }
-  return registry;
+  return G.__maw_registry;
 }

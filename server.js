@@ -5,22 +5,18 @@
  * handler. We wrap it in our own http.Server so we can also mount the `ws`
  * server on the same listener at '/ws'.
  *
- * The bootstrap singleton lives in TypeScript source — in production we run
- * this file via `tsx server.js` (strictly speaking tsx doesn't do .js → .ts,
- * but `import('./src/lib/server/bootstrap.ts')` works when invoked via
- * `tsx server.js`). For pure-Node deployments without tsx, install
- * `@esbuild-kit/esm-loader` or bundle the bootstrap separately.
+ * At build time `pnpm build` runs `vite build` (SvelteKit) followed by
+ * `esbuild` which bundles this file + all src/lib/server/** TypeScript into
+ * `build/server.js`. Native addons (better-sqlite3, @node-rs/argon2) and
+ * the SvelteKit handler are kept external.
  *
- * To launch: `node --import tsx server.js`  OR  `tsx server.js`.
+ * To launch: `node build/server.js`
  */
 
 import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import { handler } from './build/handler.js';
-// These imports resolve via tsx's TS loader at runtime.
-// eslint-disable-next-line import/extensions
 import { bootstrap } from './src/lib/server/bootstrap.ts';
-// eslint-disable-next-line import/extensions
 import { getWsHub } from './src/lib/server/ws/hub.ts';
 
 async function main() {

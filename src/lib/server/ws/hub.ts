@@ -339,10 +339,12 @@ function extractCookie(header: string, name: string): string | undefined {
   return undefined;
 }
 
-let _hub: WsHub | null = null;
+// globalThis-backed so the esbuild-bundled server.js and SvelteKit's chunk
+// copy of this module share the same hub instance.
+const G = globalThis as unknown as { __maw_ws_hub?: WsHub };
 export function getWsHub(): WsHub {
-  if (!_hub) _hub = new WsHub();
-  return _hub;
+  if (!G.__maw_ws_hub) G.__maw_ws_hub = new WsHub();
+  return G.__maw_ws_hub;
 }
 
 /**
