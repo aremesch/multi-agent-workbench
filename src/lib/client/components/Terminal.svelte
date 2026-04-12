@@ -124,6 +124,16 @@
         if (!term || !fit) return;
         try {
           fit.fit();
+          // Always report dimensions explicitly: `term.onResize` only fires
+          // when cols/rows actually *change*. When the initial fit threw
+          // (container was 0-sized inside a not-yet-laid-out <dialog>), the
+          // ResizeObserver is the recovery path — but if the first successful
+          // fit happens to produce dimensions matching xterm's defaults
+          // (80×24), `term.onResize` never fires, the caller never learns
+          // the real dims, and subscribe-on-first-resize never triggers.
+          // Callers (AgentTerminalPanel.scheduleResize) already dedup, so
+          // the extra call on subsequent resizes is harmless.
+          onResize?.(term.cols, term.rows);
         } catch {
           // Container temporarily detached; ignore.
         }
