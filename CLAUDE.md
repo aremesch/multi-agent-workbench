@@ -21,15 +21,20 @@ Two driving goals:
 
 - v0.1 foundation + CRUD UI landed, `pnpm check` clean (0/0).
 - New persistent left sidebar (`RepoTreeSidebar`) shows a Repo→Agents
-  treeview with an `Archive` top-level node grouping archived agents by
-  repo. Sidebar bg matches the page (`#0a0a0a`), no left-rail connector
-  on agents, collapsed width trimmed to `1.75rem`. Every repo the user
-  owns is listed under **Repositories** even with zero agents (data
-  merged in `+layout.server.ts` via `listReposWithProjectForUser`); empty
-  repos render with an inert disclosure spacer. Click a repo to open
-  its per-repo dashboard at `/repos/[id]` (own gridstack layout key,
+  treeview with an `Archive` top-level node listing only repos that
+  have archived agents (no per-agent expansion). Sidebar bg matches
+  the page (`#0a0a0a`), no left-rail connector on agents, collapsed
+  width trimmed to `1.75rem`. Every repo the user owns is listed under
+  **Repositories** even with zero agents (data merged in
+  `+layout.server.ts` via `listReposWithProjectForUser`); empty repos
+  render with an inert disclosure spacer. Click a repo to open its
+  per-repo dashboard at `/repos/[id]` (own gridstack layout key,
   `dashboard.layout.repo.<id>.v1`); click an agent to land on
-  `/repos/[id]?agent=<id>` with the terminal modal pre-opened. Sidebar
+  `/repos/[id]?agent=<id>` with the terminal modal pre-opened. Click
+  an archived repo to open `/repos/[id]/archive` — a table of that
+  repo's exited/crashed agents with total/active/idle time and a
+  **View logs** button that opens an xterm replay of the persisted
+  `terminal_log` (served by `/api/agents/[id]/log`). Sidebar
   collapsed state is per-user (`ui.sidebar.collapsed`). Right-side
   archive drawer is gone; the hamburger menu now contains only
   **Settings** and **Logout**.
@@ -139,3 +144,4 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-left-sidebar-treeview.md`](docs/plans/v0.1-left-sidebar-treeview.md) — persistent collapsible left sidebar with Repo→Agents tree (plus Archive→Repo→Agents), per-repo dashboard at `/repos/[id]` with its own gridstack layout key, hamburger reduced to Settings + Logout, right-side archive drawer removed (executed).
 - [`docs/plans/v0.1-sidebar-polish.md`](docs/plans/v0.1-sidebar-polish.md) — sidebar bg matches page, lighter treeview hierarchy, smaller collapsed width, all user repos listed even with zero agents (executed).
 - [`docs/plans/v0.1-jsonl-history.md`](docs/plans/v0.1-jsonl-history.md) — out-of-band reconnect history sourced from Claude Code's `~/.claude/projects/.../<sessionId>.jsonl` transcript instead of tmux scrollback; `historySource` adapter field, deterministic `--session-id <uuid>` spawn, `history_snapshot` WS message (protocol v3) prepended to the live capture (executed).
+- [`docs/plans/v0.1-archive-dashboard.md`](docs/plans/v0.1-archive-dashboard.md) — sidebar Archive lists repos only (no per-agent expansion); new `/repos/[id]/archive` dashboard table for exited/crashed agents with total/active/idle time and an xterm log-replay modal backed by `/api/agents/[id]/log` (executed).

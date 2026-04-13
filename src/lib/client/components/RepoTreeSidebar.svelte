@@ -13,7 +13,6 @@
   } = $props();
 
   let openRepos = $state<Record<string, boolean>>({});
-  let openArchiveRepos = $state<Record<string, boolean>>({});
 
   $effect(() => {
     const m = page.url.pathname.match(/^\/repos\/([^/]+)/);
@@ -24,9 +23,13 @@
   function toggleRepo(id: string): void {
     openRepos[id] = !openRepos[id];
   }
-  function toggleArchiveRepo(id: string): void {
-    openArchiveRepos[id] = !openArchiveRepos[id];
+  function archiveHref(repoId: string): string {
+    return `/repos/${repoId}/archive`;
   }
+  function isArchiveActive(repoId: string): boolean {
+    return page.url.pathname === `/repos/${repoId}/archive`;
+  }
+
   function repoLabel(r: SidebarRepoNode): string {
     const tail = r.repoPath.split('/').filter(Boolean).pop() ?? r.repoPath;
     return tail;
@@ -123,44 +126,17 @@
           <ul class="list">
             {#each archivedRepos as repo (repo.repoId)}
               <li>
-                <div class="row">
-                  <button
-                    type="button"
-                    class="disclosure"
-                    class:open={openArchiveRepos[repo.repoId]}
-                    aria-label={openArchiveRepos[repo.repoId] ? 'Collapse' : 'Expand'}
-                    onclick={() => toggleArchiveRepo(repo.repoId)}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                      <path fill="currentColor" d="M9 6l6 6-6 6V6z" />
-                    </svg>
-                  </button>
+                <div class="row" class:active={isArchiveActive(repo.repoId)}>
+                  <span class="disclosure spacer" aria-hidden="true"></span>
                   <a
                     class="row-link"
-                    href={repoHref(repo.repoId)}
+                    href={archiveHref(repo.repoId)}
                     title={`${repo.projectName} — ${repo.repoPath}`}
                   >
                     <span class="label">{repoLabel(repo)}</span>
                     <span class="count">{repo.agents.length}</span>
                   </a>
                 </div>
-                {#if openArchiveRepos[repo.repoId]}
-                  <ul class="agents">
-                    {#each repo.agents as agent (agent.id)}
-                      <li>
-                        <a
-                          class="row-link agent"
-                          class:active={isAgentActive(agent)}
-                          href={agentHref(agent)}
-                          title={agentLabel(agent)}
-                        >
-                          <span class="dot status-{agent.status}" aria-hidden="true"></span>
-                          <span class="label">{agentLabel(agent)}</span>
-                        </a>
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
               </li>
             {/each}
           </ul>

@@ -418,6 +418,64 @@ export function listAgentRuns(agentId: string): AgentRunRow[] {
   ).all(agentId);
 }
 
+export function getLatestRunForAgent(agentId: string): AgentRunRow | undefined {
+  return prep<[string], AgentRunRow>(
+    'SELECT * FROM agent_runs WHERE agent_id = ? ORDER BY started_at DESC LIMIT 1'
+  ).get(agentId);
+}
+
+export interface TerminalActivitySummary {
+  activeSec: number;
+  idleSec: number;
+  firstTs: number | null;
+  lastTs: number | null;
+  chunkCount: number;
+}
+
+/**
+ * Walk an agent's terminal_log chunks in time order, summing the wall-clock
+ * gap between consecutive chunks. Gaps shorter than `idleThresholdSec` count
+ * as "active" (the agent or user was producing output regularly); longer
+ * gaps count as "idle". This is a heuristic — it doesn't distinguish AI
+ * output from user keystrokes, but it gives a useful "how busy was this
+ * session" signal without any new instrumentation.
+ */
+export function summarizeTerminalActivity(
+  agentId: string,
+  idleThresholdSec = 30
+): TerminalActivitySummary {
+  const rows = prep<[string], { ts: number }>(
+    'SELECT ts FROM terminal_log WHERE agent_id = ? ORDER BY seq'
+  ).all(agentId);
+  if (rows.length === 0) {
+    return { activeSec: 0, idleSec: 0, firstTs: null, lastTs: null, chunkCount: 0 };
+  }
+  let activeSec = 0;
+  let idleSec = 0;
+  let prev = rows[0]!.ts;
+  for (let i = 1; i < rows.length; i++) {
+    const cur = rows[i]!.ts;
+    const gap = cur - prev;
+    prev = cur;
+    if (gap <= 0) continue;
+    if (gap <= idleThresholdSec) activeSec += gap;
+    else idleSec += gap;
+  }
+  return {
+    activeSec,
+    idleSec,
+    firstTs: rows[0]!.ts,
+    lastTs: rows[rows.length - 1]!.ts,
+    chunkCount: rows.length
+  };
+}
+
+export function listAllTerminalChunks(agentId: string): TerminalLogRow[] {
+  return prep<[string], TerminalLogRow>(
+    'SELECT * FROM terminal_log WHERE agent_id = ? ORDER BY seq'
+  ).all(agentId);
+}
+
 // --------------- tasks ---------------
 
 export function insertTask(row: {
