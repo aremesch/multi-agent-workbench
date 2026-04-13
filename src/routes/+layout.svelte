@@ -74,7 +74,7 @@
 
 <svelte:window onclick={onDocClick} onkeydown={onKey} />
 
-<div class="flex min-h-screen flex-col bg-surface text-on-surface">
+<div class="flex h-screen flex-col overflow-hidden bg-surface text-on-surface">
   <header
     class="flex items-center gap-3 border-b border-outline-variant bg-surface-container px-4 py-2.5"
   >
@@ -166,7 +166,7 @@
         collapsed={sidebarCollapsed}
       />
     {/if}
-    <section class="min-w-0 flex-1 p-4">
+    <section class="min-w-0 flex-1 overflow-y-auto p-4">
       {@render children()}
     </section>
   </div>
