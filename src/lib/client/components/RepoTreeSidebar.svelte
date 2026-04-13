@@ -18,14 +18,10 @@
   let openRepos = $state<Record<string, boolean>>({});
   let openArchiveRepos = $state<Record<string, boolean>>({});
 
-  // Auto-expand the repo whose dashboard is currently shown so the user
-  // can see the agents inside it without an extra click.
   $effect(() => {
     const m = page.url.pathname.match(/^\/repos\/([^/]+)/);
     const id = m?.[1];
-    if (id) {
-      openRepos[id] = true;
-    }
+    if (id) openRepos[id] = true;
   });
 
   async function toggleCollapsed(): Promise<void> {
@@ -63,28 +59,37 @@
   function repoHref(repoId: string): string {
     return `/repos/${repoId}`;
   }
-
   function agentHref(a: AgentCardRow): string {
     return `/repos/${a.repo_id}?agent=${a.id}`;
   }
-
   function isRepoActive(id: string): boolean {
     return page.url.pathname === `/repos/${id}`;
+  }
+  function isAgentActive(a: AgentCardRow): boolean {
+    return (
+      page.url.pathname === `/repos/${a.repo_id}` && page.url.searchParams.get('agent') === a.id
+    );
   }
 </script>
 
 <aside class="sidebar" class:collapsed={isCollapsed}>
   <header class="head">
     {#if !isCollapsed}
-      <span class="title">Workspace</span>
+      <span class="section-label m-0 border-0 p-0">Workspace</span>
     {/if}
     <button
       type="button"
-      class="toggle"
+      class="icon-btn"
       aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       onclick={toggleCollapsed}
     >
-      {isCollapsed ? '›' : '‹'}
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+        {#if isCollapsed}
+          <path fill="currentColor" d="M9 6l6 6-6 6V6z" />
+        {:else}
+          <path fill="currentColor" d="M15 6l-6 6 6 6V6z" />
+        {/if}
+      </svg>
     </button>
   </header>
 
@@ -97,35 +102,45 @@
         <ul class="list">
           {#each activeRepos as repo (repo.repoId)}
             <li>
-              <div class="repo-row" class:active={isRepoActive(repo.repoId)}>
+              <div class="row" class:active={isRepoActive(repo.repoId)}>
                 {#if repo.agents.length > 0}
                   <button
                     type="button"
                     class="disclosure"
+                    class:open={openRepos[repo.repoId]}
                     aria-label={openRepos[repo.repoId] ? 'Collapse' : 'Expand'}
                     onclick={() => toggleRepo(repo.repoId)}
                   >
-                    {openRepos[repo.repoId] ? '▾' : '▸'}
+                    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="currentColor" d="M9 6l6 6-6 6V6z" />
+                    </svg>
                   </button>
                 {:else}
                   <span class="disclosure spacer" aria-hidden="true"></span>
                 {/if}
                 <a
-                  class="repo-link"
+                  class="row-link"
                   href={repoHref(repo.repoId)}
                   title={`${repo.projectName} — ${repo.repoPath}`}
                 >
-                  <span class="repo-name">{repoLabel(repo)}</span>
-                  <span class="count">{repo.agents.length}</span>
+                  <span class="label">{repoLabel(repo)}</span>
+                  {#if repo.agents.length > 0}
+                    <span class="count">{repo.agents.length}</span>
+                  {/if}
                 </a>
               </div>
               {#if openRepos[repo.repoId] && repo.agents.length > 0}
                 <ul class="agents">
                   {#each repo.agents as agent (agent.id)}
                     <li>
-                      <a class="agent-link" href={agentHref(agent)} title={agentLabel(agent)}>
-                        <span class="dot status-{agent.status}"></span>
-                        <span class="agent-name">{agentLabel(agent)}</span>
+                      <a
+                        class="row-link agent"
+                        class:active={isAgentActive(agent)}
+                        href={agentHref(agent)}
+                        title={agentLabel(agent)}
+                      >
+                        <span class="dot status-{agent.status}" aria-hidden="true"></span>
+                        <span class="label">{agentLabel(agent)}</span>
                       </a>
                     </li>
                   {/each}
@@ -138,9 +153,20 @@
 
       <div class="section-label archive-label">
         <button type="button" class="archive-toggle" onclick={toggleArchive}>
-          <span>{archiveOpen ? '▾' : '▸'}</span>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            class="caret"
+            class:open={archiveOpen}
+          >
+            <path fill="currentColor" d="M9 6l6 6-6 6V6z" />
+          </svg>
           <span>Archive</span>
-          <span class="count">{archivedRepos.reduce((n, r) => n + r.agents.length, 0)}</span>
+          <span class="count ml-auto"
+            >{archivedRepos.reduce((n, r) => n + r.agents.length, 0)}</span
+          >
         </button>
       </div>
       {#if archiveOpen}
@@ -150,21 +176,24 @@
           <ul class="list">
             {#each archivedRepos as repo (repo.repoId)}
               <li>
-                <div class="repo-row">
+                <div class="row">
                   <button
                     type="button"
                     class="disclosure"
+                    class:open={openArchiveRepos[repo.repoId]}
                     aria-label={openArchiveRepos[repo.repoId] ? 'Collapse' : 'Expand'}
                     onclick={() => toggleArchiveRepo(repo.repoId)}
                   >
-                    {openArchiveRepos[repo.repoId] ? '▾' : '▸'}
+                    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="currentColor" d="M9 6l6 6-6 6V6z" />
+                    </svg>
                   </button>
                   <a
-                    class="repo-link"
+                    class="row-link"
                     href={repoHref(repo.repoId)}
                     title={`${repo.projectName} — ${repo.repoPath}`}
                   >
-                    <span class="repo-name">{repoLabel(repo)}</span>
+                    <span class="label">{repoLabel(repo)}</span>
                     <span class="count">{repo.agents.length}</span>
                   </a>
                 </div>
@@ -172,9 +201,14 @@
                   <ul class="agents">
                     {#each repo.agents as agent (agent.id)}
                       <li>
-                        <a class="agent-link" href={agentHref(agent)} title={agentLabel(agent)}>
-                          <span class="dot status-{agent.status}"></span>
-                          <span class="agent-name">{agentLabel(agent)}</span>
+                        <a
+                          class="row-link agent"
+                          class:active={isAgentActive(agent)}
+                          href={agentHref(agent)}
+                          title={agentLabel(agent)}
+                        >
+                          <span class="dot status-{agent.status}" aria-hidden="true"></span>
+                          <span class="label">{agentLabel(agent)}</span>
                         </a>
                       </li>
                     {/each}
@@ -193,11 +227,12 @@
   .sidebar {
     width: 16rem;
     flex: 0 0 16rem;
-    background: #0a0a0a;
-    border-right: 1px solid #1f2937;
+    background: var(--md-sys-color-surface);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    transition: width var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
   }
   .sidebar.collapsed {
     width: 1.75rem;
@@ -208,49 +243,46 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #1f2937;
-    background: transparent;
-    min-height: 2.25rem;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    min-height: 2.5rem;
   }
   .sidebar.collapsed .head {
     padding: 0.25rem;
     justify-content: center;
   }
-  .title {
-    font-size: 0.8rem;
-    color: #9ca3af;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .toggle {
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: var(--md-sys-shape-corner-full);
     background: transparent;
-    border: 1px solid #374151;
-    color: #d1d5db;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 0.25rem;
+    color: var(--md-sys-color-on-surface-variant);
+    border: none;
     cursor: pointer;
-    line-height: 1;
-    padding: 0;
+    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
   }
-  .toggle:hover {
-    background: #1f2937;
+  .icon-btn:hover {
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
   }
   .tree {
     flex: 1;
     overflow-y: auto;
-    padding: 0.5rem 0;
+    padding: 0.5rem 0.5rem 1rem;
   }
   .section-label {
     font-size: 0.7rem;
-    color: #6b7280;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.5rem 0.75rem 0.25rem;
+    letter-spacing: 0.08em;
+    padding: 0.75rem 0.5rem 0.25rem;
   }
   .archive-label {
-    margin-top: 0.5rem;
-    border-top: 1px solid #1f2937;
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
     padding-top: 0.75rem;
   }
   .archive-toggle {
@@ -267,8 +299,12 @@
     letter-spacing: inherit;
     width: 100%;
   }
-  .archive-toggle .count {
-    margin-left: auto;
+  .archive-toggle .caret {
+    transition: transform var(--md-sys-motion-duration-short)
+      var(--md-sys-motion-easing-standard);
+  }
+  .archive-toggle .caret.open {
+    transform: rotate(90deg);
   }
   ul.list,
   ul.agents {
@@ -277,47 +313,63 @@
     padding: 0;
   }
   ul.agents {
-    padding-left: 1.25rem;
-    margin-left: 0.6rem;
+    padding-left: 1.6rem;
   }
-  .repo-row {
+  .row {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.2rem 0.25rem;
-  }
-  .repo-row.active {
-    background: #1f2937;
+    gap: 0.1rem;
+    padding: 0;
   }
   .disclosure {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.75rem;
     background: transparent;
     border: none;
-    color: #9ca3af;
+    color: var(--md-sys-color-on-surface-variant);
     cursor: pointer;
-    width: 1.1rem;
     padding: 0;
-    line-height: 1;
-    font-size: 0.8rem;
+    transition: transform var(--md-sys-motion-duration-short)
+      var(--md-sys-motion-easing-standard);
+  }
+  .disclosure.open {
+    transform: rotate(90deg);
   }
   .disclosure.spacer {
     cursor: default;
     display: inline-block;
   }
-  .repo-link {
+  .row-link {
     display: flex;
     align-items: center;
+    gap: 0.5rem;
     flex: 1;
     min-width: 0;
-    color: #e5e7eb;
+    height: 2rem;
+    padding: 0 0.75rem;
+    color: var(--md-sys-color-on-surface);
     text-decoration: none;
     font-size: 0.85rem;
-    padding: 0.15rem 0.25rem;
-    border-radius: 0.25rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    transition: background var(--md-sys-motion-duration-short)
+      var(--md-sys-motion-easing-standard);
   }
-  .repo-link:hover {
-    background: #1f2937;
+  .row-link.agent {
+    font-size: 0.8rem;
+    color: var(--md-sys-color-on-surface-variant);
   }
-  .repo-name {
+  .row-link:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  }
+  .row-link.active,
+  .row.active > .row-link {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  .label {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -325,58 +377,38 @@
   }
   .count {
     font-size: 0.7rem;
-    color: #9ca3af;
-    background: #1f2937;
-    padding: 0.05rem 0.4rem;
-    border-radius: 0.5rem;
-    margin-left: 0.4rem;
-  }
-  .agent-link {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: #d1d5db;
-    text-decoration: none;
-    padding: 0.2rem 0.4rem;
-    border-radius: 0.25rem;
-    font-size: 0.8rem;
-    min-width: 0;
-  }
-  .agent-link:hover {
-    background: #1f2937;
-  }
-  .agent-name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container-high);
+    padding: 0.05rem 0.45rem;
+    border-radius: var(--md-sys-shape-corner-full);
   }
   .dot {
     width: 0.5rem;
     height: 0.5rem;
     border-radius: 50%;
     flex: 0 0 0.5rem;
-    background: #4b5563;
+    background: var(--md-sys-color-outline);
+    box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 0%, transparent);
   }
   .dot.status-running {
-    background: #10b981;
+    background: var(--md-sys-color-success);
   }
   .dot.status-waiting_input {
-    background: #f59e0b;
+    background: var(--md-sys-color-warning);
   }
   .dot.status-spawning,
   .dot.status-idle {
-    background: #3b82f6;
+    background: var(--md-sys-color-info);
   }
   .dot.status-exited {
-    background: #6b7280;
+    background: var(--md-sys-color-outline);
   }
   .dot.status-crashed {
-    background: #ef4444;
+    background: var(--md-sys-color-error);
   }
   .empty {
-    padding: 0.4rem 0.9rem;
-    color: #6b7280;
+    padding: 0.5rem 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
     font-size: 0.8rem;
     font-style: italic;
   }

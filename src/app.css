@@ -1,0 +1,216 @@
+@import 'tailwindcss';
+
+/* ─────────────────────────────────────────────────────────────
+ * Material Design 3 token layer
+ *
+ * Tokens live as CSS variables on `:root` (default theme) with
+ * theme overrides scoped by `[data-theme="..."]` on <html>. All
+ * shell styling reads these variables (directly or via the
+ * Tailwind @theme mapping below), so flipping `data-theme`
+ * recolors the app live without a reload.
+ * ───────────────────────────────────────────────────────────── */
+
+:root,
+[data-theme='dark-slate'] {
+  color-scheme: dark;
+  --md-sys-color-surface: #0a0a0a;
+  --md-sys-color-surface-dim: #050505;
+  --md-sys-color-surface-bright: #2a2a2a;
+  --md-sys-color-surface-container-lowest: #050505;
+  --md-sys-color-surface-container-low: #121212;
+  --md-sys-color-surface-container: #171717;
+  --md-sys-color-surface-container-high: #1f1f1f;
+  --md-sys-color-surface-container-highest: #2a2a2a;
+  --md-sys-color-surface-variant: #1f1f1f;
+  --md-sys-color-on-surface: #e5e5e5;
+  --md-sys-color-on-surface-variant: #a3a3a3;
+  --md-sys-color-primary: #a5d6ff;
+  --md-sys-color-on-primary: #003258;
+  --md-sys-color-primary-container: #00497d;
+  --md-sys-color-on-primary-container: #d1e4ff;
+  --md-sys-color-secondary-container: #3f4756;
+  --md-sys-color-on-secondary-container: #dbe3f4;
+  --md-sys-color-outline: #8a8a8a;
+  --md-sys-color-outline-variant: #2f2f2f;
+  --md-sys-color-success: #10b981;
+  --md-sys-color-warning: #f59e0b;
+  --md-sys-color-error: #ef4444;
+  --md-sys-color-info: #3b82f6;
+
+  --md-sys-shape-corner-xs: 4px;
+  --md-sys-shape-corner-sm: 8px;
+  --md-sys-shape-corner-md: 12px;
+  --md-sys-shape-corner-lg: 16px;
+  --md-sys-shape-corner-full: 9999px;
+
+  --md-sys-motion-duration-short: 150ms;
+  --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --md-sys-elevation-level-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --md-sys-elevation-level-2: 0 2px 6px rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+[data-theme='dark-midnight'] {
+  color-scheme: dark;
+  --md-sys-color-surface: #0d1117;
+  --md-sys-color-surface-dim: #070a0f;
+  --md-sys-color-surface-bright: #303858;
+  --md-sys-color-surface-container-lowest: #070a0f;
+  --md-sys-color-surface-container-low: #131826;
+  --md-sys-color-surface-container: #1a2036;
+  --md-sys-color-surface-container-high: #242b45;
+  --md-sys-color-surface-container-highest: #303858;
+  --md-sys-color-surface-variant: #1f2640;
+  --md-sys-color-on-surface: #e1e7f5;
+  --md-sys-color-on-surface-variant: #a8b2cf;
+  --md-sys-color-primary: #89b4ff;
+  --md-sys-color-on-primary: #002b6a;
+  --md-sys-color-primary-container: #1b3e7e;
+  --md-sys-color-on-primary-container: #d6e3ff;
+  --md-sys-color-secondary-container: #354066;
+  --md-sys-color-on-secondary-container: #dce3f8;
+  --md-sys-color-outline: #7884a8;
+  --md-sys-color-outline-variant: #2a3352;
+  --md-sys-color-success: #10b981;
+  --md-sys-color-warning: #f59e0b;
+  --md-sys-color-error: #ef4444;
+  --md-sys-color-info: #60a5fa;
+}
+
+[data-theme='amoled'] {
+  color-scheme: dark;
+  --md-sys-color-surface: #000000;
+  --md-sys-color-surface-dim: #000000;
+  --md-sys-color-surface-bright: #242424;
+  --md-sys-color-surface-container-lowest: #000000;
+  --md-sys-color-surface-container-low: #0a0a0a;
+  --md-sys-color-surface-container: #111111;
+  --md-sys-color-surface-container-high: #1a1a1a;
+  --md-sys-color-surface-container-highest: #242424;
+  --md-sys-color-surface-variant: #1a1a1a;
+  --md-sys-color-on-surface: #ffffff;
+  --md-sys-color-on-surface-variant: #cccccc;
+  --md-sys-color-primary: #bb86fc;
+  --md-sys-color-on-primary: #000000;
+  --md-sys-color-primary-container: #3700b3;
+  --md-sys-color-on-primary-container: #ffffff;
+  --md-sys-color-secondary-container: #2a2a2a;
+  --md-sys-color-on-secondary-container: #ffffff;
+  --md-sys-color-outline: #888888;
+  --md-sys-color-outline-variant: #1f1f1f;
+  --md-sys-color-success: #34d399;
+  --md-sys-color-warning: #fbbf24;
+  --md-sys-color-error: #f87171;
+  --md-sys-color-info: #60a5fa;
+}
+
+[data-theme='light-default'] {
+  color-scheme: light;
+  --md-sys-color-surface: #fef7ff;
+  --md-sys-color-surface-dim: #ded8e1;
+  --md-sys-color-surface-bright: #fef7ff;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f7f2fa;
+  --md-sys-color-surface-container: #f3edf7;
+  --md-sys-color-surface-container-high: #ece6f0;
+  --md-sys-color-surface-container-highest: #e6e0e9;
+  --md-sys-color-surface-variant: #e7e0ec;
+  --md-sys-color-on-surface: #1d1b20;
+  --md-sys-color-on-surface-variant: #49454f;
+  --md-sys-color-primary: #6750a4;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #eaddff;
+  --md-sys-color-on-primary-container: #21005d;
+  --md-sys-color-secondary-container: #e8def8;
+  --md-sys-color-on-secondary-container: #1d192b;
+  --md-sys-color-outline: #79747e;
+  --md-sys-color-outline-variant: #cac4d0;
+  --md-sys-color-success: #059669;
+  --md-sys-color-warning: #d97706;
+  --md-sys-color-error: #dc2626;
+  --md-sys-color-info: #2563eb;
+  --md-sys-elevation-level-1: 0 1px 2px rgb(0 0 0 / 0.12), 0 1px 3px 1px rgb(0 0 0 / 0.08);
+  --md-sys-elevation-level-2: 0 2px 6px rgb(0 0 0 / 0.12), 0 1px 2px rgb(0 0 0 / 0.1);
+}
+
+[data-theme='expressive-plum'] {
+  color-scheme: dark;
+  --md-sys-color-surface: #1a1220;
+  --md-sys-color-surface-dim: #120a18;
+  --md-sys-color-surface-bright: #493a59;
+  --md-sys-color-surface-container-lowest: #120a18;
+  --md-sys-color-surface-container-low: #22192b;
+  --md-sys-color-surface-container: #2c2036;
+  --md-sys-color-surface-container-high: #3a2c48;
+  --md-sys-color-surface-container-highest: #493a59;
+  --md-sys-color-surface-variant: #2c2036;
+  --md-sys-color-on-surface: #f0e0f5;
+  --md-sys-color-on-surface-variant: #c8b8d5;
+  --md-sys-color-primary: #f8b4c0;
+  --md-sys-color-on-primary: #5a0e2c;
+  --md-sys-color-primary-container: #7e2848;
+  --md-sys-color-on-primary-container: #ffd9e0;
+  --md-sys-color-secondary-container: #2d5e58;
+  --md-sys-color-on-secondary-container: #b5ece6;
+  --md-sys-color-outline: #998ca8;
+  --md-sys-color-outline-variant: #3d3048;
+  --md-sys-color-success: #5eead4;
+  --md-sys-color-warning: #fbbf24;
+  --md-sys-color-error: #fb7185;
+  --md-sys-color-info: #a5b4fc;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Tailwind v4 theme mapping
+ *
+ * Expose the M3 tokens to Tailwind as color/radius utilities so
+ * markup can use `bg-surface`, `text-on-surface`, `rounded-md`,
+ * etc. Every utility resolves through the var layer → flipping
+ * `data-theme` on <html> recolors everything at once.
+ * ───────────────────────────────────────────────────────────── */
+
+@theme inline {
+  --color-surface: var(--md-sys-color-surface);
+  --color-surface-dim: var(--md-sys-color-surface-dim);
+  --color-surface-bright: var(--md-sys-color-surface-bright);
+  --color-surface-container-lowest: var(--md-sys-color-surface-container-lowest);
+  --color-surface-container-low: var(--md-sys-color-surface-container-low);
+  --color-surface-container: var(--md-sys-color-surface-container);
+  --color-surface-container-high: var(--md-sys-color-surface-container-high);
+  --color-surface-container-highest: var(--md-sys-color-surface-container-highest);
+  --color-surface-variant: var(--md-sys-color-surface-variant);
+  --color-on-surface: var(--md-sys-color-on-surface);
+  --color-on-surface-variant: var(--md-sys-color-on-surface-variant);
+  --color-primary: var(--md-sys-color-primary);
+  --color-on-primary: var(--md-sys-color-on-primary);
+  --color-primary-container: var(--md-sys-color-primary-container);
+  --color-on-primary-container: var(--md-sys-color-on-primary-container);
+  --color-secondary-container: var(--md-sys-color-secondary-container);
+  --color-on-secondary-container: var(--md-sys-color-on-secondary-container);
+  --color-outline: var(--md-sys-color-outline);
+  --color-outline-variant: var(--md-sys-color-outline-variant);
+  --color-success: var(--md-sys-color-success);
+  --color-warning: var(--md-sys-color-warning);
+  --color-error-token: var(--md-sys-color-error);
+  --color-info: var(--md-sys-color-info);
+
+  --radius-xs: var(--md-sys-shape-corner-xs);
+  --radius-sm: var(--md-sys-shape-corner-sm);
+  --radius-md: var(--md-sys-shape-corner-md);
+  --radius-lg: var(--md-sys-shape-corner-lg);
+  --radius-full: var(--md-sys-shape-corner-full);
+
+  --shadow-e1: var(--md-sys-elevation-level-1);
+  --shadow-e2: var(--md-sys-elevation-level-2);
+}
+
+/* Global body defaults read from the token layer so logged-out
+ * and un-hydrated pages already respect the active theme. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}

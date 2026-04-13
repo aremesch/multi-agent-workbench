@@ -12,6 +12,8 @@ import type { Handle } from '@sveltejs/kit';
 import { bootstrap, getSupervisor } from '$lib/server/bootstrap';
 import { resolveSession } from '$lib/server/auth/session';
 import { ensureCsrfCookie } from '$lib/server/auth/csrf';
+import { getUserSetting } from '$lib/server/db/queries';
+import { DEFAULT_THEME, THEME_SETTING_KEY, parseTheme } from '$lib/shared/dashboard';
 
 await bootstrap();
 
@@ -23,5 +25,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   ensureCsrfCookie(event.cookies);
 
-  return resolve(event);
+  // Inject the user's active theme into <html data-theme="..."> so the
+  // first paint already uses the right token set (no FOUC).
+  const theme = user ? parseTheme(getUserSetting(user.id, THEME_SETTING_KEY)) : DEFAULT_THEME;
+
+  return resolve(event, {
+    transformPageChunk: ({ html }) => html.replace('%maw.theme%', theme)
+  });
 };

@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type PluginOption } from 'vite';
 import { WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'http';
@@ -52,7 +53,7 @@ function devWebSocketPlugin(): PluginOption {
 }
 
 export default defineConfig({
-  plugins: [sveltekit(), devWebSocketPlugin()],
+  plugins: [tailwindcss(), sveltekit(), devWebSocketPlugin()],
   server: {
     host: '127.0.0.1',
     port: 5173

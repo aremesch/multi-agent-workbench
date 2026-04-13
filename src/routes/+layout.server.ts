@@ -5,7 +5,12 @@ import {
   listReposWithProjectForUser
 } from '$lib/server/db/queries';
 import type { AgentStatus } from '$lib/server/db/types';
-import { SIDEBAR_COLLAPSED_KEY } from '$lib/shared/dashboard';
+import {
+  DEFAULT_THEME,
+  SIDEBAR_COLLAPSED_KEY,
+  THEME_SETTING_KEY,
+  parseTheme
+} from '$lib/shared/dashboard';
 import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
 
 const ALL_STATUSES: AgentStatus[] = [
@@ -47,7 +52,7 @@ function parseCollapsed(raw: string | null): boolean {
 
 export const load: LayoutServerLoad = async ({ locals }) => {
   if (!locals.user) {
-    return { user: null, sidebar: null };
+    return { user: null, sidebar: null, theme: DEFAULT_THEME };
   }
   const cards = listAgentCardsForUser(locals.user.id, ALL_STATUSES);
   const live: AgentCardRow[] = [];
@@ -74,6 +79,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
       activeRepos,
       archivedRepos: groupByRepo(archived),
       collapsed: parseCollapsed(getUserSetting(locals.user.id, SIDEBAR_COLLAPSED_KEY))
-    }
+    },
+    theme: parseTheme(getUserSetting(locals.user.id, THEME_SETTING_KEY))
   };
 };
