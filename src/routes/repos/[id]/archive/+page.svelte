@@ -37,7 +37,7 @@
       <table>
         <thead>
           <tr>
-            <th>Name</th>
+            <th>Title</th>
             <th>Role</th>
             <th>CLI</th>
             <th>Status</th>
