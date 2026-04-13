@@ -19,19 +19,32 @@ import type {
 } from '$shared/adapterTypes';
 import type { AgentRow } from '../db/types.js';
 import {
+  insertAlert,
   insertEvent,
   insertTerminalChunk,
+  listRecentAlerts,
+  getUserSetting,
   updateAgentAttention,
   updateAgentStatus,
   getLatestTerminalSeq
 } from '../db/queries.js';
+import { getPushService } from '../bootstrap.js';
+import { PUSH_PREFS_KEY, DEFAULT_NOTIFY_KINDS, parseNotifyKinds, type NotifyKind } from '../push/pushPrefs.js';
 import { FifoStreamer } from '../tmux/FifoStreamer.js';
 import { Tmux } from '../tmux/TmuxSession.js';
+
+export interface AlertPayload {
+  id: string;
+  agentId: string;
+  severity: string;
+  reason: string;
+}
 
 export interface AgentRuntimeEvents {
   output: (payload: { seq: number; chunk: Buffer }) => void;
   event: (ev: AdapterEvent) => void;
   state: (status: AgentRow['status']) => void;
+  alert: (alert: AlertPayload) => void;
 }
 
 export class AgentRuntime extends EventEmitter {
@@ -204,6 +217,78 @@ export class AgentRuntime extends EventEmitter {
         updateAgentStatus(this.agent.id, 'exited');
         this.emit('state', 'exited');
       }
+
+      // Alert pipeline — `exited` is handled by AgentSupervisor.
+      if (ev.kind === 'prompt_detected' || ev.kind === 'task_done' || ev.kind === 'error') {
+        this.maybeAlert(ev);
+      }
     }
+  }
+
+  private maybeAlert(ev: AdapterEvent): void {
+    const notifyKind: NotifyKind = ev.kind as NotifyKind;
+
+    // Check user preferences.
+    const prefsRaw = getUserSetting(this.agent.user_id, PUSH_PREFS_KEY);
+    const kinds = prefsRaw ? parseNotifyKinds(prefsRaw) : DEFAULT_NOTIFY_KINDS;
+    if (!kinds.includes(notifyKind)) return;
+
+    // Dedup: skip if an unacked alert for same (agent, patternId) within 30s.
+    const evTs = Math.floor(ev.at / 1000);
+    const recent = listRecentAlerts(this.agent.id, evTs - 30);
+    const isDupe = recent.some((a) => {
+      try {
+        return JSON.parse(a.payload_json).patternId === ev.patternId && !a.acknowledged_at;
+      } catch { return false; }
+    });
+    if (isDupe) return;
+
+    const alertId = ulid();
+    const reason = alertReason(ev);
+    const severity = ev.kind === 'error' ? 'error' as const : 'info' as const;
+
+    insertAlert({
+      id: alertId,
+      user_id: this.agent.user_id,
+      agent_id: this.agent.id,
+      severity,
+      reason,
+      payload_json: JSON.stringify({ patternId: ev.patternId, choices: ev.choices, detail: ev.detail }),
+      ts: evTs
+    });
+
+    this.emit('alert', { id: alertId, agentId: this.agent.id, severity, reason });
+
+    getPushService().notifyUser(this.agent.user_id, {
+      title: `${this.agent.cli_kind}: ${reason}`,
+      body: alertBody(ev),
+      data: { agentId: this.agent.id, alertId, url: `/repos/${this.agent.repo_id}?agent=${this.agent.id}` }
+    }).catch(() => {}); // fire-and-forget
+  }
+}
+
+function alertReason(ev: AdapterEvent): string {
+  switch (ev.kind) {
+    case 'prompt_detected':
+      return ev.detail?.tool ? `Permission needed: ${ev.detail.tool}` : 'Permission needed';
+    case 'task_done':
+      return 'Task complete';
+    case 'error':
+      return ev.patternId ? `Error: ${ev.patternId}` : 'Error';
+    default:
+      return ev.kind;
+  }
+}
+
+function alertBody(ev: AdapterEvent): string {
+  switch (ev.kind) {
+    case 'prompt_detected':
+      return ev.choices?.length ? `Choices: ${ev.choices.join(', ')}` : 'Agent needs your input.';
+    case 'task_done':
+      return 'Agent has finished its task.';
+    case 'error':
+      return ev.detail?.message ? String(ev.detail.message) : 'Agent encountered an error.';
+    default:
+      return '';
   }
 }

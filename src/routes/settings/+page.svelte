@@ -3,12 +3,42 @@
   import { ALL_THEMES, type ThemeId } from '$lib/shared/dashboard';
   import { currentTheme, setTheme } from '$lib/client/stores/theme';
   import { currentLocale, setLocale } from '$lib/client/stores/locale';
+  import { registerPush } from '$lib/client/push';
   import { SUPPORTED_LOCALES, LOCALE_NAMES, t as translate, type Locale } from '$lib/i18n';
   import { useT } from '$lib/client/i18n.svelte';
 
   const t = useT();
 
   let { data }: { data: PageData } = $props();
+
+  // ── Push notification state ────────────────────────────────────────
+  const NOTIFY_KINDS = ['prompt_detected', 'task_done', 'error', 'exited'] as const;
+  // svelte-ignore state_referenced_locally
+  let pushKinds = $state<string[]>([...(data.pushNotifyKinds ?? NOTIFY_KINDS)]);
+  let pushPermission = $state<NotificationPermission>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  );
+
+  async function enablePush(): Promise<void> {
+    const parentData = (data as unknown as { vapidPublicKey?: string });
+    const vapidKey = parentData.vapidPublicKey ?? '';
+    if (!vapidKey) return;
+    await registerPush(vapidKey);
+    pushPermission = Notification.permission;
+  }
+
+  async function toggleNotifyKind(kind: string, enabled: boolean): Promise<void> {
+    if (enabled && !pushKinds.includes(kind)) {
+      pushKinds = [...pushKinds, kind];
+    } else if (!enabled) {
+      pushKinds = pushKinds.filter((k) => k !== kind);
+    }
+    await fetch('/api/user/push-preferences', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kinds: pushKinds })
+    });
+  }
 
   // Agent defaults: per-cli-kind toggle state.
   let agentDefaults = $state<Record<string, Record<string, boolean>>>({});
@@ -178,6 +208,38 @@
         {/if}
       </div>
     {/each}
+  </section>
+
+  <section class="group" aria-labelledby="notifications-heading">
+    <header class="group-head">
+      <h2 id="notifications-heading">{t('settings.notifications')}</h2>
+      <p class="muted">{t('settings.notificationsDesc')}</p>
+    </header>
+
+    {#if !data.vapidConfigured}
+      <p class="muted small">{t('settings.pushNotConfigured')}</p>
+    {:else if pushPermission === 'granted'}
+      <p class="push-status enabled">{t('settings.pushEnabled')}</p>
+      <p class="notify-when-label">{t('settings.notifyWhen')}</p>
+      {#each NOTIFY_KINDS as kind (kind)}
+        <label class="defaults-toggle">
+          <input
+            type="checkbox"
+            checked={pushKinds.includes(kind)}
+            onchange={(e) => toggleNotifyKind(kind, (e.target as HTMLInputElement).checked)}
+          />
+          <span class="defaults-label">
+            <span>{t(`settings.notify.${kind}`)}</span>
+          </span>
+        </label>
+      {/each}
+    {:else if pushPermission === 'denied'}
+      <p class="muted small">Push notifications are blocked by your browser. Allow them in site settings to enable.</p>
+    {:else}
+      <button class="push-enable-btn" type="button" onclick={enablePush}>
+        {t('settings.pushEnable')}
+      </button>
+    {/if}
   </section>
 </section>
 
@@ -404,5 +466,30 @@
   .defaults-desc {
     color: var(--md-sys-color-on-surface-variant);
     font-size: 0.8rem;
+  }
+  .push-status.enabled {
+    color: var(--md-sys-color-primary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin: 0 0 0.75rem;
+  }
+  .notify-when-label {
+    font-size: 0.9rem;
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 0 0 0.5rem;
+  }
+  .push-enable-btn {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    border: none;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--md-sys-shape-corner-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+  }
+  .push-enable-btn:hover {
+    opacity: 0.9;
   }
 </style>

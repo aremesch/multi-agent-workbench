@@ -30,6 +30,7 @@ interface Subscription {
   offOutput: () => void;
   offEvent: () => void;
   offState: () => void;
+  offAlert: () => void;
 }
 
 class HubClient {
@@ -141,17 +142,29 @@ class HubClient {
     const onState = (status: string): void => {
       this.send({ type: 'agent_state', agentId, status });
     };
+    const onAlert = (alert: { id: string; agentId: string; severity: string; reason: string }): void => {
+      this.send({
+        type: 'alert',
+        id: alert.id,
+        agentId: alert.agentId,
+        severity: alert.severity as import('$shared/protocol').SC_Alert['severity'],
+        reason: alert.reason,
+        ts: Math.floor(Date.now() / 1000)
+      });
+    };
 
     runtime.on('output', onOutput);
     runtime.on('event', onEvent);
     runtime.on('state', onState);
+    runtime.on('alert', onAlert);
 
     this.subs.set(agentId, {
       agentId,
       runtime,
       offOutput: () => runtime.off('output', onOutput),
       offEvent: () => runtime.off('event', onEvent),
-      offState: () => runtime.off('state', onState)
+      offState: () => runtime.off('state', onState),
+      offAlert: () => runtime.off('alert', onAlert)
     });
   }
 
@@ -261,6 +274,7 @@ class HubClient {
     sub.offOutput();
     sub.offEvent();
     sub.offState();
+    sub.offAlert();
     this.subs.delete(agentId);
   }
 

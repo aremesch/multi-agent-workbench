@@ -6,6 +6,7 @@
   import type { SidebarRepoNode } from '$lib/shared/types';
   import type { ThemeId } from '$lib/shared/dashboard';
   import { getMawWsClient } from '$lib/client/ws';
+  import { registerPush } from '$lib/client/push';
   import { initTheme } from '$lib/client/stores/theme';
   import { initLocale, currentLocale } from '$lib/client/stores/locale';
   import { t as translate, type Locale } from '$lib/i18n';
@@ -24,6 +25,7 @@
       } | null;
       theme: ThemeId;
       locale: Locale;
+      vapidPublicKey?: string;
     };
   } = $props();
 
@@ -44,6 +46,10 @@
     // first modal open finds it already `OPEN` and the first subscribe
     // doesn't have to wait on the handshake.
     getMawWsClient();
+    // Register push subscription if VAPID keys are configured.
+    if (data.user && data.vapidPublicKey) {
+      registerPush(data.vapidPublicKey).catch(() => {});
+    }
   });
 
   // svelte-ignore state_referenced_locally

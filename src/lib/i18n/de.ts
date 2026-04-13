@@ -55,6 +55,18 @@ const de: Partial<Record<TranslationKey, string>> = {
   'settings.agentDefaultsDesc':
     'Standard-Startoptionen f\u00fcr jeden CLI-Typ. Kann beim Starten pro Agent \u00fcberschrieben werden.',
   'settings.noOptionalFlags': 'Keine optionalen Flags.',
+  'settings.notifications': 'Benachrichtigungen',
+  'settings.notificationsDesc':
+    'Push-Benachrichtigungen informieren Sie, wenn Agenten Aufmerksamkeit brauchen.',
+  'settings.pushNotConfigured':
+    'VAPID-Schl\u00fcssel nicht konfiguriert. F\u00fchren Sie pnpm vapid:gen aus und f\u00fcgen Sie Schl\u00fcssel zu .env hinzu.',
+  'settings.pushEnable': 'Push-Benachrichtigungen aktivieren',
+  'settings.pushEnabled': 'Push-Benachrichtigungen aktiviert',
+  'settings.notifyWhen': 'Benachrichtigen bei:',
+  'settings.notify.prompt_detected': 'Agent ben\u00f6tigt Erlaubnis',
+  'settings.notify.task_done': 'Agent hat Aufgabe beendet',
+  'settings.notify.error': 'Agent hat einen Fehler',
+  'settings.notify.exited': 'Agent unerwartet beendet',
 
   'theme.desc.dark-slate': 'Fast schwarze Neutrale mit k\u00fchlem Blauakzent.',
   'theme.desc.dark-midnight': 'Tiefblau get\u00f6nte Fl\u00e4chen, weicherer Kontrast.',

@@ -55,6 +55,18 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'settings.agentDefaultsDesc':
     'Options de lancement par d\u00e9faut pour chaque type CLI. Modifiable par agent au lancement.',
   'settings.noOptionalFlags': 'Aucun flag optionnel.',
+  'settings.notifications': 'Notifications',
+  'settings.notificationsDesc':
+    'Les notifications push vous alertent quand vos agents ont besoin d\u2019attention.',
+  'settings.pushNotConfigured':
+    'Cl\u00e9s VAPID non configur\u00e9es. Ex\u00e9cutez pnpm vapid:gen et ajoutez les cl\u00e9s dans .env.',
+  'settings.pushEnable': 'Activer les notifications push',
+  'settings.pushEnabled': 'Notifications push activ\u00e9es',
+  'settings.notifyWhen': 'Me notifier quand\u00a0:',
+  'settings.notify.prompt_detected': 'Agent a besoin d\u2019une autorisation',
+  'settings.notify.task_done': 'Agent a termin\u00e9 la t\u00e2che',
+  'settings.notify.error': 'Agent rencontre une erreur',
+  'settings.notify.exited': 'Agent s\u2019arr\u00eate de mani\u00e8re inattendue',
 
   'theme.desc.dark-slate': 'Tons neutres quasi noirs avec un accent bleu froid.',
   'theme.desc.dark-midnight': 'Surfaces teint\u00e9es bleu profond, contraste plus doux.',

@@ -57,6 +57,18 @@ const en = {
   'settings.agentDefaultsDesc':
     'Default spawn flags for each CLI kind. Override per-agent when spawning.',
   'settings.noOptionalFlags': 'No optional flags.',
+  'settings.notifications': 'Notifications',
+  'settings.notificationsDesc':
+    'Push notifications let your phone buzz when agents need attention.',
+  'settings.pushNotConfigured':
+    'VAPID keys not configured. Run pnpm vapid:gen and add keys to .env to enable push.',
+  'settings.pushEnable': 'Enable push notifications',
+  'settings.pushEnabled': 'Push notifications enabled',
+  'settings.notifyWhen': 'Notify me when:',
+  'settings.notify.prompt_detected': 'Agent needs permission',
+  'settings.notify.task_done': 'Agent finishes task',
+  'settings.notify.error': 'Agent hits an error',
+  'settings.notify.exited': 'Agent exits unexpectedly',
 
   // Theme descriptions (keyed by theme id)
   'theme.desc.dark-slate': 'Near-black neutrals with a cool blue accent.',

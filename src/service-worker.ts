@@ -109,5 +109,41 @@ Check your network and try again.</p>
 	);
 }
 
-// Phase B: self.addEventListener('push', ...);
-// Phase B: self.addEventListener('notificationclick', ...);
+// ── Push notifications ──────────────────────────────────────────────
+self.addEventListener('push', (event) => {
+	if (!event.data) return;
+	const payload = event.data.json() as {
+		title: string;
+		body: string;
+		data: { agentId: string; alertId: string; url: string };
+	};
+	event.waitUntil(
+		self.registration.showNotification(payload.title, {
+			body: payload.body,
+			icon: '/icons/icon-192.png',
+			badge: '/icons/icon-192.png',
+			tag: `maw-${payload.data.agentId}`,
+			renotify: true,
+			data: payload.data
+		})
+	);
+});
+
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const url = (event.notification.data as { url?: string })?.url ?? '/';
+	event.waitUntil(
+		self.clients
+			.matchAll({ type: 'window', includeUncontrolled: true })
+			.then((clients) => {
+				for (const client of clients) {
+					if (new URL(client.url).origin === self.location.origin) {
+						client.focus();
+						client.navigate(url);
+						return;
+					}
+				}
+				return self.clients.openWindow(url);
+			})
+	);
+});

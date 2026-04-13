@@ -13,6 +13,7 @@ import {
   parseTheme
 } from '$lib/shared/dashboard';
 import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
+import { getConfig } from '$lib/server/config';
 import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
 
 const ALL_STATUSES: AgentStatus[] = [
@@ -91,6 +92,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
     theme: parseTheme(getUserSetting(locals.user.id, THEME_SETTING_KEY)),
     locale: (locals.locale ?? DEFAULT_LOCALE) as Locale,
     cliKinds,
-    spawnDefaults
+    spawnDefaults,
+    vapidPublicKey: getConfig().vapidPublicKey
   };
 };

@@ -19,6 +19,7 @@ import { runMigrations } from './db/migrate.js';
 import { countUsers, insertUser } from './db/queries.js';
 import { AdapterRegistry } from './agents/adapters/AdapterRegistry.js';
 import { AgentSupervisor } from './agents/AgentSupervisor.js';
+import { PushService } from './push/PushService.js';
 import { hashPassword } from './auth/password.js';
 
 // ---------- globalThis-backed singletons ----------
@@ -30,6 +31,7 @@ const G = globalThis as unknown as {
   __maw_started?: Promise<void>;
   __maw_supervisor?: AgentSupervisor;
   __maw_registry?: AdapterRegistry;
+  __maw_push?: PushService;
 };
 
 export function bootstrap(): Promise<void> {
@@ -52,19 +54,23 @@ export function bootstrap(): Promise<void> {
       );
     }
 
-    // 3. Adapter registry.
+    // 3. Push service (before supervisor so alerts can fire immediately).
+    G.__maw_push = new PushService();
+    G.__maw_push.init();
+
+    // 4. Adapter registry.
     G.__maw_registry = new AdapterRegistry(cfg.cliAdaptersDir);
     const loadResult = G.__maw_registry.loadAll();
     console.log(`[maw] cli-adapters loaded: ${loadResult.loaded}`);
     for (const err of loadResult.errors) console.warn(`[maw] cli-adapter: ${err}`);
     G.__maw_registry.startWatching((kind) => console.log(`[maw] cli-adapter reloaded: ${kind}`));
 
-    // 4. Supervisor + reattach.
+    // 5. Supervisor + reattach.
     G.__maw_supervisor = new AgentSupervisor(G.__maw_registry);
     const { reattached, crashed } = await G.__maw_supervisor.init();
     console.log(`[maw] supervisor: ${reattached} agents reattached, ${crashed} crashed`);
 
-    // 5. Periodic reaper: scans every ~5s for runtimes whose tmux session
+    // 6. Periodic reaper: scans every ~5s for runtimes whose tmux session
     //    has disappeared and flips them to `exited`. This is the slow-path
     //    safety net — the fast path is the per-agent session-closed hook
     //    installed in AgentSupervisor.startExitWatcher, which fires within
@@ -97,4 +103,11 @@ export function getRegistry(): AdapterRegistry {
     throw new Error('bootstrap() has not completed — getRegistry() called too early');
   }
   return G.__maw_registry;
+}
+
+export function getPushService(): PushService {
+  if (!G.__maw_push) {
+    throw new Error('bootstrap() has not completed — getPushService() called too early');
+  }
+  return G.__maw_push;
 }

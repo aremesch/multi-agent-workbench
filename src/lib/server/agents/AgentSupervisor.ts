@@ -13,12 +13,17 @@ import { AdapterRegistry } from './adapters/AdapterRegistry.js';
 import type { AgentRow } from '../db/types.js';
 import {
   getAgent,
+  getRepo,
   getRole,
+  getUserSetting,
   insertAgent,
   insertAgentRun,
+  insertAlert,
   listLiveAgents,
   updateAgentStatus
 } from '../db/queries.js';
+import { getPushService } from '../bootstrap.js';
+import { PUSH_PREFS_KEY, DEFAULT_NOTIFY_KINDS, parseNotifyKinds } from '../push/pushPrefs.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import { WorktreeManager } from '../git/WorktreeManager.js';
 import { getConfig } from '../config.js';
@@ -207,6 +212,9 @@ export class AgentSupervisor {
 
   private async finishAsExited(agentId: string, runtime: AgentRuntime): Promise<void> {
     this.stopExitWatcher(agentId);
+    // Snapshot agent metadata before stopping — runtime.agent may not be
+    // accessible after stop().
+    const agent = runtime.agent;
     try {
       await runtime.stop();
     } catch (err) {
@@ -219,6 +227,30 @@ export class AgentSupervisor {
     // this emit, clients only learn the agent ended on their next snapshot
     // poll, which means the modal stays stuck until the user closes it.
     runtime.emit('state', 'exited');
+
+    // Push notification for agent exit.
+    const kinds = parseNotifyKinds(getUserSetting(agent.user_id, PUSH_PREFS_KEY));
+    if (kinds.includes('exited')) {
+      const alertId = ulid();
+      const nowTs = Math.floor(Date.now() / 1000);
+      const repo = getRepo(agent.repo_id);
+      const repoName = repo?.path.split('/').pop() ?? 'repo';
+      insertAlert({
+        id: alertId,
+        user_id: agent.user_id,
+        agent_id: agentId,
+        severity: 'warning',
+        reason: 'Agent exited',
+        payload_json: '{}',
+        ts: nowTs
+      });
+      runtime.emit('alert', { id: alertId, agentId, severity: 'warning', reason: 'Agent exited' });
+      getPushService().notifyUser(agent.user_id, {
+        title: `${agent.cli_kind}: Agent exited`,
+        body: `Agent in ${repoName} has stopped.`,
+        data: { agentId, alertId, url: `/repos/${agent.repo_id}?agent=${agentId}` }
+      }).catch(() => {});
+    }
   }
 
   get(agentId: string): AgentRuntime | undefined {
