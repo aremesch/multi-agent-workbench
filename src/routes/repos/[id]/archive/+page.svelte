@@ -1,9 +1,16 @@
 <script lang="ts">
   import type { PageData } from './$types';
   import ArchivedAgentLogModal from '$lib/client/components/ArchivedAgentLogModal.svelte';
-  import { formatDuration, formatTimestamp } from '$lib/shared/format';
+  import { formatDurationHMS, formatTimestamp } from '$lib/shared/format';
 
   let { data }: { data: PageData } = $props();
+
+  function fmtTokens(n: number | null | undefined): string {
+    if (n == null || n === 0) return '—';
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+    return String(n);
+  }
 
   let openAgentId = $state<string | null>(null);
   let openAgentTitle = $state<string>('');
@@ -36,9 +43,13 @@
             <th>Exit</th>
             <th>Started</th>
             <th>Ended</th>
-            <th>Total</th>
-            <th>Active</th>
-            <th>Idle</th>
+            <th class="num">Total</th>
+            <th class="num">Active</th>
+            <th class="num">Idle</th>
+            <th class="num">In</th>
+            <th class="num">Out</th>
+            <th class="num">Cache W</th>
+            <th class="num">Cache R</th>
             <th></th>
           </tr>
         </thead>
@@ -56,9 +67,13 @@
               </td>
               <td>{formatTimestamp(entry.run?.started_at ?? entry.agent.created_at)}</td>
               <td>{formatTimestamp(entry.run?.ended_at ?? entry.agent.updated_at)}</td>
-              <td>{formatDuration(entry.totalSec)}</td>
-              <td>{formatDuration(entry.stats.activeSec)}</td>
-              <td>{formatDuration(entry.stats.idleSec)}</td>
+              <td class="num">{formatDurationHMS(entry.totalSec)}</td>
+              <td class="num">{formatDurationHMS(entry.stats.activeSec)}</td>
+              <td class="num">{formatDurationHMS(entry.stats.idleSec)}</td>
+              <td class="num">{fmtTokens(entry.tokens?.inputTokens)}</td>
+              <td class="num">{fmtTokens(entry.tokens?.outputTokens)}</td>
+              <td class="num">{fmtTokens(entry.tokens?.cacheCreationTokens)}</td>
+              <td class="num">{fmtTokens(entry.tokens?.cacheReadTokens)}</td>
               <td>
                 <button type="button" class="view-btn" onclick={() => viewLog(entry)}
                   >View logs</button
@@ -70,8 +85,8 @@
       </table>
     </div>
     <p class="note">
-      AI vs user-time split and token totals require runtime instrumentation that's not yet
-      in place. Active/idle is a 30s-gap heuristic over the persisted terminal log.
+      Active/idle is a 30s-gap heuristic over the persisted terminal log. Token counts are
+      sourced from Claude Code's JSONL transcript (available for claude-code agents only).
     </p>
   {/if}
 </main>
@@ -125,6 +140,10 @@
     text-align: left;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
     white-space: nowrap;
+  }
+  .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   th {
     font-weight: 500;
