@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invalidateAll, goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { untrack } from 'svelte';
   import type { PageData } from './$types';
   import type { AgentCardRow, LayoutEntry } from '$lib/shared/types';
   import AgentGrid from '$lib/client/components/AgentGrid.svelte';
@@ -37,13 +38,22 @@
   // Open the modal automatically when the URL carries ?agent=<id> — both
   // on first mount and on later sidebar clicks that change the param while
   // we're already on this page.
+  //
+  // `untrack` around `openAgent` reads ensures this effect fires ONLY when
+  // the URL changes, not when `openAgent` is set directly (e.g. by onOpen).
+  // Without it, setting openAgent triggers the effect before goto() has
+  // updated the URL → the effect sees no ?agent= param and immediately
+  // closes the modal that was just opened.
   $effect(() => {
     const wantId = page.url.searchParams.get('agent');
     if (!wantId) {
-      if (openAgent) closeModal();
+      if (untrack(() => openAgent)) {
+        openAgent = null;
+        openAgentStatus = '';
+      }
       return;
     }
-    if (openAgent?.id === wantId) return;
+    if (untrack(() => openAgent)?.id === wantId) return;
     const match = (data.liveAgents as AgentCardRow[]).find((a) => a.id === wantId);
     if (match) {
       openAgent = match;
@@ -83,10 +93,6 @@
     }
   }
 </script>
-
-<header class="repo-head">
-  <h1>{data.repo.path}</h1>
-</header>
 
 <main>
   <AgentGrid
@@ -142,16 +148,6 @@
 </Modal>
 
 <style>
-  .repo-head {
-    margin: 0 0 0.75rem;
-  }
-  .repo-head h1 {
-    margin: 0;
-    font-size: 1.05rem;
-    color: #d1d5db;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-weight: 500;
-  }
   main {
     min-height: 60vh;
   }

@@ -99,6 +99,15 @@
       props: { agent, onOpen }
     });
 
+    // Svelte 5 delegates onclick to document, but gridstack's drag/resize
+    // handling can prevent the event from reaching the delegation root.
+    // Attach a direct DOM listener so card-body clicks always fire.
+    content.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('.agent-card-header')) return; // let drag handle pass
+      onOpen(agent);
+    });
+
     widgets.set(agent.id, { el, dispose: () => unmount(dispose) });
   }
 

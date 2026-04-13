@@ -12,9 +12,6 @@
     collapsed: boolean;
   } = $props();
 
-  // svelte-ignore state_referenced_locally
-  let isCollapsed = $state(collapsed);
-  let archiveOpen = $state(false);
   let openRepos = $state<Record<string, boolean>>({});
   let openArchiveRepos = $state<Record<string, boolean>>({});
 
@@ -24,29 +21,12 @@
     if (id) openRepos[id] = true;
   });
 
-  async function toggleCollapsed(): Promise<void> {
-    isCollapsed = !isCollapsed;
-    try {
-      await fetch('/api/user/sidebar-state', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ collapsed: isCollapsed })
-      });
-    } catch {
-      // Non-fatal — preference will revert on next page load.
-    }
-  }
-
   function toggleRepo(id: string): void {
     openRepos[id] = !openRepos[id];
   }
   function toggleArchiveRepo(id: string): void {
     openArchiveRepos[id] = !openArchiveRepos[id];
   }
-  function toggleArchive(): void {
-    archiveOpen = !archiveOpen;
-  }
-
   function repoLabel(r: SidebarRepoNode): string {
     const tail = r.repoPath.split('/').filter(Boolean).pop() ?? r.repoPath;
     return tail;
@@ -72,28 +52,8 @@
   }
 </script>
 
-<aside class="sidebar" class:collapsed={isCollapsed}>
-  <header class="head">
-    {#if !isCollapsed}
-      <span class="section-label m-0 border-0 p-0">Workspace</span>
-    {/if}
-    <button
-      type="button"
-      class="icon-btn"
-      aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      onclick={toggleCollapsed}
-    >
-      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-        {#if isCollapsed}
-          <path fill="currentColor" d="M9 6l6 6-6 6V6z" />
-        {:else}
-          <path fill="currentColor" d="M15 6l-6 6 6 6V6z" />
-        {/if}
-      </svg>
-    </button>
-  </header>
-
-  {#if !isCollapsed}
+<aside class="sidebar" class:collapsed={collapsed}>
+  {#if !collapsed}
     <nav class="tree">
       <div class="section-label">Repositories</div>
       {#if activeRepos.length === 0}
@@ -152,24 +112,11 @@
       {/if}
 
       <div class="section-label archive-label">
-        <button type="button" class="archive-toggle" onclick={toggleArchive}>
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            class="caret"
-            class:open={archiveOpen}
-          >
-            <path fill="currentColor" d="M9 6l6 6-6 6V6z" />
-          </svg>
-          <span>Archive</span>
-          <span class="count ml-auto"
-            >{archivedRepos.reduce((n, r) => n + r.agents.length, 0)}</span
-          >
-        </button>
+        Archive
+        <span class="count" style="margin-left: auto;"
+          >{archivedRepos.reduce((n, r) => n + r.agents.length, 0)}</span
+        >
       </div>
-      {#if archiveOpen}
         {#if archivedRepos.length === 0}
           <div class="empty">No archived agents.</div>
         {:else}
@@ -218,7 +165,6 @@
             {/each}
           </ul>
         {/if}
-      {/if}
     </nav>
   {/if}
 </aside>
@@ -235,37 +181,9 @@
     transition: width var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
   }
   .sidebar.collapsed {
-    width: 1.75rem;
-    flex: 0 0 1.75rem;
-  }
-  .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-    min-height: 2.5rem;
-  }
-  .sidebar.collapsed .head {
-    padding: 0.25rem;
-    justify-content: center;
-  }
-  .icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: transparent;
-    color: var(--md-sys-color-on-surface-variant);
-    border: none;
-    cursor: pointer;
-    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-  }
-  .icon-btn:hover {
-    background: var(--md-sys-color-surface-container-high);
-    color: var(--md-sys-color-on-surface);
+    width: 0;
+    flex: 0 0 0;
+    border-right: none;
   }
   .tree {
     flex: 1;
@@ -284,27 +202,8 @@
     margin-top: 0.75rem;
     border-top: 1px solid var(--md-sys-color-outline-variant);
     padding-top: 0.75rem;
-  }
-  .archive-toggle {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    background: transparent;
-    border: none;
-    color: inherit;
-    cursor: pointer;
-    padding: 0;
-    font: inherit;
-    text-transform: inherit;
-    letter-spacing: inherit;
-    width: 100%;
-  }
-  .archive-toggle .caret {
-    transition: transform var(--md-sys-motion-duration-short)
-      var(--md-sys-motion-easing-standard);
-  }
-  .archive-toggle .caret.open {
-    transform: rotate(90deg);
   }
   ul.list,
   ul.agents {

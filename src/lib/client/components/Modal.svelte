@@ -84,6 +84,10 @@
     color: #e5e5e5;
     max-width: none;
     max-height: none;
+    /* Tailwind preflight resets margin to 0 on *, which strips the
+       margin: auto the browser UA stylesheet applies to dialog:modal
+       for viewport centering. Restore it. */
+    margin: auto;
   }
   .maw-modal::backdrop {
     background: rgba(0, 0, 0, 0.65);
