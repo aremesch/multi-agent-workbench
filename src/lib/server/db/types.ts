@@ -92,6 +92,7 @@ export interface AgentRow {
   status: AgentStatus;
   last_attention_at: number | null;
   current_task_id: string | null;
+  cli_session_id: string | null;
   created_at: number;
   updated_at: number;
 }

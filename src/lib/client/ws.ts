@@ -13,11 +13,20 @@
  * snapshot (subscribers `term.reset()` before applying it).
  */
 
-import type { ClientMessage, ServerMessage, SC_Output, SC_Scrollback, SC_AgentEvent } from '$shared/protocol';
+import type {
+  ClientMessage,
+  ServerMessage,
+  SC_Output,
+  SC_Scrollback,
+  SC_HistorySnapshot,
+  SC_AgentEvent
+} from '$shared/protocol';
 
 export interface AgentHandlers {
   onOutput: (msg: SC_Output) => void;
   onScrollback: (msg: SC_Scrollback) => void;
+  /** Optional: out-of-band CLI transcript prepended before live scrollback. */
+  onHistorySnapshot?: (msg: SC_HistorySnapshot) => void;
   onEvent: (msg: SC_AgentEvent) => void;
   onState: (status: string) => void;
 }
@@ -202,6 +211,10 @@ export class MawWsClient {
       }
       case 'scrollback': {
         this.subs.get(msg.agentId)?.handlers.onScrollback(msg);
+        break;
+      }
+      case 'history_snapshot': {
+        this.subs.get(msg.agentId)?.handlers.onHistorySnapshot?.(msg);
         break;
       }
       case 'event': {

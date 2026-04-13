@@ -43,8 +43,21 @@ Two driving goals:
   main buffer; it specifically kills the Ctrl-O expand/collapse
   ghost-stack that byte-unequal variants slip through the dedup
   heuristic. Client `term.reset()`s before applying. Fresh
-  snapshot on every modal open. Spawn defaults 120×32; protocol
-  stays at v2.
+  snapshot on every modal open. Spawn defaults 120×32.
+- Reconnect history (claude-code) is sourced from Claude's own
+  JSONL transcript, not tmux. Adapter declares
+  `historySource: { kind: 'claude-jsonl' }`; supervisor mints a
+  UUID per spawn and stores it as `agents.cli_session_id` (migration
+  003) so the file path
+  `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` is deterministic.
+  ConfigDrivenAdapter substitutes `{{agent.cliSessionId}}` into the
+  spawn args (`claude --session-id <uuid>`). On subscribe, the hub
+  renders the JSONL to plain ASCII (`──── user ────` / `──── assistant ────`
+  blocks; `tool_use` and `tool_result` reduced to one-line
+  summaries; `thinking` skipped; budget 256 KB) and ships it as a
+  new `history_snapshot` WS message *before* `scrollback`. Client
+  buffers it past the `term.reset()` then writes it ahead of the
+  live capture. Protocol bumped to v3.
 - `MawWsClient` is a module-level tab-wide shared singleton
   (`getMawWsClient()`) with per-agent handler dispatch — one `/ws`
   connection per tab, all panels fan out through it. Layout kicks
@@ -110,3 +123,4 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-terminal-persistence.md`](docs/plans/v0.1-terminal-persistence.md) — `TerminalRegistry` that reparented xterm hosts between a hidden pool and the active panel; **superseded by v0.1-terminal-scrollback-v2** after TUI-CLI redraw pollution and reattach-resize races made persisted xterm scrollback unusable. Only the shared `MawWsClient` singleton from this plan survived.
 - [`docs/plans/v0.1-terminal-scrollback-v2.md`](docs/plans/v0.1-terminal-scrollback-v2.md) — reverts the terminal registry, switches reconnect snapshot to `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`; tmux becomes the source of truth for backing scrollback, every modal open gets a fresh deduped snapshot (executed).
 - [`docs/plans/v0.1-inline-spawn.md`](docs/plans/v0.1-inline-spawn.md) — inline project/role/repo creation within the spawn form modal; three JSON API routes, no page navigation required (executed).
+- [`docs/plans/v0.1-jsonl-history.md`](docs/plans/v0.1-jsonl-history.md) — out-of-band reconnect history sourced from Claude Code's `~/.claude/projects/.../<sessionId>.jsonl` transcript instead of tmux scrollback; `historySource` adapter field, deterministic `--session-id <uuid>` spawn, `history_snapshot` WS message (protocol v3) prepended to the live capture (executed).

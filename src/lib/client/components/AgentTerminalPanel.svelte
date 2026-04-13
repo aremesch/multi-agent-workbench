@@ -50,16 +50,35 @@
   let lastSentRows = 0;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
   let subscribed = false;
+  // Holds the most recent `history_snapshot` body until the matching live
+  // `scrollback` arrives. We can't write history immediately because
+  // `onScrollback` calls `term.reset()` and would wipe it. Server always
+  // sends history first, scrollback second, so this is the simple buffer.
+  let pendingHistory: string | null = null;
 
   const handlers: AgentHandlers = {
     onOutput: ({ b64 }) => {
       term?.write(b64ToBytes(b64));
     },
+    onHistorySnapshot: ({ body }) => {
+      // Out-of-band CLI transcript prepended before the live scrollback. We
+      // arrive *before* `onScrollback`, which calls `term.reset()` — so we
+      // queue the body to be written immediately after that reset, otherwise
+      // the live snapshot would wipe us. See `pendingHistory` below.
+      pendingHistory = body;
+    },
     onScrollback: ({ chunks }) => {
       // Reconnect snapshot: wipe parser state so nothing carries over
       // from a previous frame (e.g. a warm-up write before this panel
-      // mounted, or a stale alt-screen mode), then apply.
+      // mounted, or a stale alt-screen mode), then prepend any history
+      // body that arrived alongside this snapshot, then apply the live
+      // capture. The history body is plain text already CRLF-normalized
+      // server-side; the live capture is the byte-accurate current screen.
       term?.reset();
+      if (pendingHistory) {
+        term?.write(pendingHistory);
+        pendingHistory = null;
+      }
       for (const c of chunks) term?.write(b64ToBytes(c.b64));
     },
     onEvent: ({ kind, choices, detail }) => {

@@ -20,6 +20,8 @@ import { resolveSession, SESSION_COOKIE } from '../auth/session.js';
 import { getSupervisor } from '../bootstrap.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import type { AgentRuntime } from '../agents/AgentRuntime.js';
+import { jsonlPathFor, renderClaudeJsonlHistory } from '../agents/history/ClaudeJsonlHistory.js';
+import { getWorktree } from '../db/queries.js';
 import type { Cookies } from '@sveltejs/kit';
 
 interface Subscription {
@@ -199,6 +201,14 @@ class HubClient {
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
     }
 
+    // Out-of-band history first (if the adapter exposes one) — the client
+    // writes it into xterm scrollback before applying the live capture, so
+    // the user sees real conversation turns above the current screen render
+    // even when scrollbackMode='visible' threw away the tmux backlog.
+    await this.sendHistorySnapshot(runtime, agentId).catch((err) => {
+      console.warn(`[hub] history snapshot failed for ${agentId}:`, err);
+    });
+
     const mode = runtime.scrollbackMode;
     const startLine = mode === 'history' ? -500 : 0;
     const raw = await Tmux.capturePane(runtime.tmuxSession, startLine).catch(() => '');
@@ -219,6 +229,30 @@ class HubClient {
       agentId,
       chunks: [{ seq: 0, b64: Buffer.from(normalized).toString('base64') }]
     });
+  }
+
+  /**
+   * Read the CLI's structured transcript (currently only `claude-jsonl`),
+   * render it to plain text, and ship it as `history_snapshot`. No-op if
+   * the adapter has no historySource, the agent has no `cli_session_id`
+   * recorded, or the transcript file doesn't exist yet (fresh agent that
+   * hasn't written its first turn).
+   */
+  private async sendHistorySnapshot(runtime: AgentRuntime, agentId: string): Promise<void> {
+    const src = runtime.historySource;
+    if (!src) return;
+    if (src.kind !== 'claude-jsonl') return;
+    const sessionId = runtime.agent.cli_session_id;
+    if (!sessionId) return;
+    const wt = getWorktree(runtime.agent.worktree_id);
+    if (!wt) return;
+    const path = jsonlPathFor(wt.path, sessionId);
+    const body = await renderClaudeJsonlHistory(path);
+    if (!body) return;
+    // The renderer signals truncation by prepending a marker line; surface it
+    // on the wire too so a future client can render a UI affordance.
+    const truncated = body.startsWith('--- (history truncated');
+    this.send({ type: 'history_snapshot', agentId, body, truncated });
   }
 
   private handleUnsubscribe(agentId: string): void {

@@ -16,7 +16,9 @@ import stripAnsi from 'strip-ansi';
 import type {
   AdapterEvent,
   AdapterRuntimeState,
+  BuildSpawnSpecOpts,
   CliAdapter,
+  HistorySourceSpec,
   InputEncoding,
   ScrollbackMode,
   SpawnSpec
@@ -34,6 +36,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
   readonly kind: string;
   readonly displayName: string;
   readonly scrollbackMode: ScrollbackMode;
+  readonly historySource: HistorySourceSpec | null;
   readonly input: InputEncoding;
 
   private readonly cfg: AdapterConfig;
@@ -47,6 +50,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
     this.kind = cfg.kind;
     this.displayName = cfg.displayName;
     this.scrollbackMode = cfg.scrollbackMode;
+    this.historySource = cfg.historySource ?? null;
     this.patterns = cfg.patterns.map((p) => ({
       cfg: p,
       re: new RegExp(p.regex, p.flags ?? '')
@@ -132,18 +136,15 @@ export class ConfigDrivenAdapter implements CliAdapter {
     return events;
   }
 
-  buildSpawnSpec(opts: {
-    role: { systemPrompt: string; toolConfig: unknown };
-    worktreeCwd: string;
-    task: { title: string; body: string } | null;
-    env: Record<string, string>;
-  }): SpawnSpec {
+  buildSpawnSpec(opts: BuildSpawnSpecOpts): SpawnSpec {
     const vars: Record<string, string> = {
       worktree: opts.worktreeCwd,
       'role.systemPrompt': opts.role.systemPrompt ?? '',
       'role.toolConfig': JSON.stringify(opts.role.toolConfig ?? {}),
       'task.title': opts.task?.title ?? '',
-      'task.body': opts.task?.body ?? ''
+      'task.body': opts.task?.body ?? '',
+      'agent.id': opts.agent.id,
+      'agent.cliSessionId': opts.agent.cliSessionId ?? ''
     };
     for (const [k, v] of Object.entries(opts.env)) {
       vars[`env.${k}`] = v;

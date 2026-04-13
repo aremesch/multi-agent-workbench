@@ -11,7 +11,12 @@
 
 import { EventEmitter } from 'node:events';
 import { ulid } from 'ulid';
-import type { AdapterEvent, CliAdapter, ScrollbackMode } from '$shared/adapterTypes';
+import type {
+  AdapterEvent,
+  CliAdapter,
+  HistorySourceSpec,
+  ScrollbackMode
+} from '$shared/adapterTypes';
 import type { AgentRow } from '../db/types.js';
 import {
   insertEvent,
@@ -66,6 +71,11 @@ export class AgentRuntime extends EventEmitter {
    */
   get scrollbackMode(): ScrollbackMode {
     return this.adapter.scrollbackMode;
+  }
+
+  /** Adapter-declared structured history reader, or null. See HistorySourceSpec. */
+  get historySource(): HistorySourceSpec | null {
+    return this.adapter.historySource;
   }
 
   async start(): Promise<void> {

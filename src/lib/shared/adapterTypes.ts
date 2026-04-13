@@ -54,17 +54,34 @@ export type AdapterRuntimeState =
  */
 export type ScrollbackMode = 'visible' | 'history';
 
+/**
+ * Out-of-band history reader hint. Tmux scrollback is the *terminal* state;
+ * `historySource` points at the CLI's own structured transcript so the
+ * reconnect snapshot can prepend real conversation history (as opposed to
+ * repaint ghosts). `kind` discriminates the parser; concrete shape lives in
+ * the corresponding reader module (e.g. ClaudeJsonlHistory for `claude-jsonl`).
+ */
+export interface HistorySourceSpec {
+  kind: 'claude-jsonl';
+}
+
+export interface BuildSpawnSpecOpts {
+  role: { systemPrompt: string; toolConfig: unknown };
+  worktreeCwd: string;
+  task: { title: string; body: string } | null;
+  env: Record<string, string>;
+  /** Identity vars exposed to adapter `{{agent.*}}` template substitutions. */
+  agent: { id: string; cliSessionId: string | null };
+}
+
 export interface CliAdapter {
   kind: CliKind;
   displayName: string;
   /** Reconnect snapshot strategy — see {@link ScrollbackMode}. */
   readonly scrollbackMode: ScrollbackMode;
-  buildSpawnSpec(opts: {
-    role: { systemPrompt: string; toolConfig: unknown };
-    worktreeCwd: string;
-    task: { title: string; body: string } | null;
-    env: Record<string, string>;
-  }): SpawnSpec;
+  /** Optional structured history source — see {@link HistorySourceSpec}. */
+  readonly historySource: HistorySourceSpec | null;
+  buildSpawnSpec(opts: BuildSpawnSpecOpts): SpawnSpec;
   ingest(chunk: Buffer): AdapterEvent[];
   input: InputEncoding;
   state(): AdapterRuntimeState;
