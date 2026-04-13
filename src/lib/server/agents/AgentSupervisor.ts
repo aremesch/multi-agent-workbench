@@ -6,6 +6,7 @@
  * fresh FIFO + pipe-pane) or marks it crashed.
  */
 
+import { randomUUID } from 'node:crypto';
 import { ulid } from 'ulid';
 import { AgentRuntime } from './AgentRuntime.js';
 import { AdapterRegistry } from './adapters/AdapterRegistry.js';
@@ -236,6 +237,13 @@ export class AgentSupervisor {
     }
 
     const adapter = this.registry.create(role.cli_kind);
+    const agentId = args.agentId;
+    // Mint a CLI-side session id only when the adapter advertises a history
+    // source that needs one. Currently that's `claude-jsonl` — the UUID gets
+    // both fed to `claude --session-id` (via {{agent.cliSessionId}}
+    // substitution) and stored on the row so the JSONL path is reproducible
+    // across server restarts.
+    const cliSessionId = adapter.historySource ? randomUUID() : null;
     const spec = adapter.buildSpawnSpec({
       role: {
         systemPrompt: role.system_prompt,
@@ -247,10 +255,10 @@ export class AgentSupervisor {
         ANTHROPIC_API_KEY: cfg.anthropicApiKey,
         OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
         GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? ''
-      }
+      },
+      agent: { id: agentId, cliSessionId }
     });
 
-    const agentId = args.agentId;
     const tmuxSession = Tmux.sessionName(agentId);
 
     insertAgent({
@@ -261,7 +269,8 @@ export class AgentSupervisor {
       worktree_id: args.worktreeId,
       cli_kind: role.cli_kind,
       tmux_session: tmuxSession,
-      status: 'spawning'
+      status: 'spawning',
+      cli_session_id: cliSessionId
     });
 
     // Merge env: our agent-id/url identity vars go alongside the adapter's.

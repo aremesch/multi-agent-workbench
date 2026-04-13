@@ -41,6 +41,20 @@ export type AdapterPatternConfig = z.infer<typeof patternSchema>;
 export const scrollbackModeEnum = z.enum(['visible', 'history']);
 export type ScrollbackMode = z.infer<typeof scrollbackModeEnum>;
 
+/**
+ * Out-of-band CLI transcript reader. `claude-jsonl` reads
+ * `~/.claude/projects/<encoded-cwd>/<cli_session_id>.jsonl` — Claude Code's
+ * own append-only session log — and renders it as ANSI text the client
+ * loads into xterm scrollback before the live `capture-pane` snapshot.
+ * Solves the TUI-CLI history-loss problem `scrollbackMode: "visible"` causes
+ * (see CLAUDE.md / docs/plans/v0.1-jsonl-history.md). Optional; adapters
+ * without it (shell, codex, gemini today) skip the history snapshot.
+ */
+export const historySourceSchema = z.object({
+  kind: z.literal('claude-jsonl')
+});
+export type HistorySourceConfig = z.infer<typeof historySourceSchema>;
+
 export const adapterConfigSchema = z.object({
   $schema: z.string().optional(),
   kind: z.string().min(1),
@@ -51,6 +65,8 @@ export const adapterConfigSchema = z.object({
    * right for line-based CLIs like the shell smoke adapter.
    */
   scrollbackMode: scrollbackModeEnum.default('visible'),
+
+  historySource: historySourceSchema.optional(),
 
   spawn: z.object({
     command: z.string().min(1),

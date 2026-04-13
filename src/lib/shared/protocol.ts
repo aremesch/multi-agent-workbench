@@ -10,7 +10,7 @@
 
 import type { AdapterEventKind } from './adapterTypes.js';
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 // ---------- client → server ----------
 
@@ -109,6 +109,21 @@ export interface SC_Scrollback {
   agentId: string;
   chunks: { seq: number; b64: string }[];
 }
+/**
+ * Out-of-band conversation history rendered from the CLI's own transcript
+ * (e.g. Claude Code's JSONL session log). Sent on subscribe *before* the
+ * `scrollback` message so the client can write it into xterm scrollback;
+ * the live `scrollback` snapshot then takes over the visible viewport.
+ * Optional — only adapters with a `historySource` produce this.
+ */
+export interface SC_HistorySnapshot {
+  type: 'history_snapshot';
+  agentId: string;
+  /** UTF-8 text body (already CRLF-normalized for xterm). */
+  body: string;
+  /** Server hit its size budget and elided the oldest entries. */
+  truncated: boolean;
+}
 export interface SC_Output {
   type: 'output';
   agentId: string;
@@ -162,6 +177,7 @@ export interface SC_Pong {
 export type ServerMessage =
   | SC_Welcome
   | SC_Scrollback
+  | SC_HistorySnapshot
   | SC_Output
   | SC_AgentEvent
   | SC_AgentState

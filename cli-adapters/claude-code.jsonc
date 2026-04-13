@@ -9,11 +9,19 @@
   // currently visible pane on reconnect — tmux scrollback is all ghosts.
   "scrollbackMode": "visible",
 
+  // Pair `visible` mode with the JSONL transcript reader so the reconnect
+  // snapshot still surfaces real conversation history (the part that scrolled
+  // out of the visible pane) — see docs/plans/v0.1-jsonl-history.md.
+  "historySource": { "kind": "claude-jsonl" },
+
   // NOTE: these patterns are starting points. Tune against real captured
   // sessions with `pnpm test:adapter cli-adapters/claude-code.jsonc <session.txt>`.
   "spawn": {
     "command": "claude",
-    "args": ["--dangerously-skip-permissions"],
+    // `--session-id <uuid>` makes the JSONL file path deterministic from
+    // spawn time (~/.claude/projects/<encoded-cwd>/<uuid>.jsonl), so the
+    // history reader needs no filesystem watch.
+    "args": ["--session-id", "{{agent.cliSessionId}}", "--dangerously-skip-permissions"],
     "env": {
       "ANTHROPIC_API_KEY": "{{env.ANTHROPIC_API_KEY}}"
     },
