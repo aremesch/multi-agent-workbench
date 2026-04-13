@@ -12,14 +12,7 @@ import type { AgentStatus } from '$lib/server/db/types';
 import { repoDashboardLayoutKey } from '$lib/shared/dashboard';
 import type { LayoutEntry } from '$lib/shared/types';
 
-const ALL_STATUSES: AgentStatus[] = [
-  'spawning',
-  'running',
-  'waiting_input',
-  'idle',
-  'exited',
-  'crashed'
-];
+const LIVE_STATUSES: AgentStatus[] = ['spawning', 'running', 'waiting_input', 'idle'];
 
 interface DashboardRepoOption {
   id: string;
@@ -57,7 +50,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
   const repo = getRepo(params.id);
   if (!repo || repo.user_id !== locals.user.id) throw error(404, 'Repo not found');
   const layoutKey = repoDashboardLayoutKey(repo.id);
-  const liveAgents = listAgentCardsForRepo(locals.user.id, repo.id, ALL_STATUSES);
+  const liveAgents = listAgentCardsForRepo(locals.user.id, repo.id, LIVE_STATUSES);
   const dashboardLayout = parseLayout(getUserSetting(locals.user.id, layoutKey));
   const spawnRoles: DashboardRoleOption[] = listRoles(locals.user.id).map((r) => ({
     id: r.id,
