@@ -29,6 +29,14 @@
   function commitUrl(sha: string): string | null {
     return data.remote ? `${data.remote.webBase}/commit/${sha}` : null;
   }
+  /** Collapse git's hard-wrapped lines into flowing text, keeping paragraph breaks. */
+  function reflowBody(body: string): string {
+    return body
+      .replace(/\r\n/g, '\n')
+      .split(/\n{2,}/)
+      .map((para) => para.replace(/\n/g, ' '))
+      .join('\n\n');
+  }
 </script>
 
 <header class="head">
@@ -105,8 +113,7 @@
             </tr>
             {#if expanded[entry.agent.id] && entry.commits.length > 0}
               <tr class="commits-row">
-                <td></td>
-                <td colspan="14">
+                <td colspan="16">
                   <ul class="commits">
                     {#each entry.commits as c (c.sha)}
                       <li>
@@ -123,7 +130,7 @@
                         {/if}
                         <span class="subject">{c.subject}</span>
                         {#if c.body}
-                          <pre class="body">{c.body}</pre>
+                          <p class="body">{reflowBody(c.body)}</p>
                         {/if}
                       </li>
                     {/each}
@@ -290,6 +297,12 @@
     column-gap: 0.6rem;
     align-items: baseline;
     font-size: 0.8rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .commits li:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
   }
   .commits .sha {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -306,10 +319,10 @@
   .commits .body {
     grid-column: 2;
     margin: 0.15rem 0 0;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     color: var(--md-sys-color-on-surface-variant);
-    white-space: pre-wrap;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre-line;
+    line-height: 1.45;
   }
   .note {
     margin-top: 0.75rem;
