@@ -36,6 +36,8 @@ export interface SpawnAgentArgs {
   worktreeId: string;
   worktreePath: string;
   task: { title: string; body: string } | null;
+  /** Per-spawn optional arg overrides keyed by optionalArg id. */
+  optionalArgs?: Record<string, boolean>;
 }
 
 export class AgentSupervisor {
@@ -256,7 +258,8 @@ export class AgentSupervisor {
         OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
         GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? ''
       },
-      agent: { id: agentId, cliSessionId }
+      agent: { id: agentId, cliSessionId },
+      optionalArgs: args.optionalArgs
     });
 
     const tmuxSession = Tmux.sessionName(agentId);

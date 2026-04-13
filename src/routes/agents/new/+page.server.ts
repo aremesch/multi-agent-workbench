@@ -6,6 +6,7 @@ import {
   getProject,
   getRepo,
   getRole,
+  getSpawnDefaultsAll,
   insertTask,
   insertWorktree,
   listProjects,
@@ -35,11 +36,16 @@ function loadRepoOptions(userId: string): RepoOption[] {
 
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) throw redirect(303, '/login');
+  const cliKinds = locals.supervisor.registry.list();
   return {
     roles: listRoles(locals.user.id),
     repos: loadRepoOptions(locals.user.id),
     projects: listProjects(locals.user.id),
-    cliKinds: locals.supervisor.registry.list()
+    cliKinds,
+    spawnDefaults: getSpawnDefaultsAll(
+      locals.user.id,
+      cliKinds.map((k) => k.kind)
+    )
   };
 };
 
@@ -106,6 +112,13 @@ export const actions: Actions = {
 
     const task = task_title || task_body ? { title: task_title, body: task_body } : null;
 
+    // Parse optionalArgs[*] toggles from form data.
+    const optionalArgs: Record<string, boolean> = {};
+    for (const [key, val] of form.entries()) {
+      const m = /^optionalArgs\[(.+)\]$/.exec(key);
+      if (m?.[1]) optionalArgs[m[1]] = val === 'true';
+    }
+
     try {
       await locals.supervisor.spawn({
         agentId,
@@ -115,7 +128,8 @@ export const actions: Actions = {
         repoPath: repo.path,
         worktreeId,
         worktreePath,
-        task
+        task,
+        optionalArgs
       });
     } catch (err) {
       return fail(500, {

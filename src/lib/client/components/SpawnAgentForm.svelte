@@ -21,16 +21,26 @@
     name: string;
     default_branch: string;
   }
+  export interface OptionalArgMeta {
+    id: string;
+    flag: string;
+    label: string;
+    description?: string;
+    default: boolean;
+  }
   export interface CliKindOption {
     kind: string;
     displayName: string;
+    optionalArgs: OptionalArgMeta[];
   }
+  export type SpawnDefaults = Record<string, { optionalArgs: Record<string, boolean> }>;
 
   let {
     roles,
     repos,
     projects,
     cliKinds,
+    spawnDefaults = {},
     /**
      * Called with the new agent id after a successful spawn. The dashboard
      * uses this to close the modal + navigate to the agent detail page.
@@ -43,6 +53,7 @@
     repos: SpawnRepoOption[];
     projects: SpawnProjectOption[];
     cliKinds: CliKindOption[];
+    spawnDefaults?: SpawnDefaults;
     onSuccess?: (agentId: string) => void;
     onCancel?: () => void;
   } = $props();
@@ -78,6 +89,33 @@
   let newProjectBranch = $state('main');
   let newProjectError = $state<string | null>(null);
   let savingProject = $state(false);
+
+  // ── Advanced: optional args toggles ──────────────────────────────────────
+  let showAdvanced = $state(false);
+  /** Toggle states keyed by optionalArg id. Recomputed when the selected role changes. */
+  let optArgToggles = $state<Record<string, boolean>>({});
+
+  /** The optionalArgs metadata for the currently selected role's CLI kind. */
+  const selectedOptionalArgs = $derived.by(() => {
+    const role = roleOptions.find((r) => r.id === selectedRoleId);
+    if (!role) return [];
+    const kind = cliKinds.find((k) => k.kind === role.cli_kind);
+    return kind?.optionalArgs ?? [];
+  });
+
+  // Re-derive toggle values when the selected role (and thus CLI kind) changes.
+  $effect(() => {
+    const role = roleOptions.find((r) => r.id === selectedRoleId);
+    if (!role) return;
+    const kind = role.cli_kind;
+    const userDefs = spawnDefaults[kind]?.optionalArgs ?? {};
+    const meta = cliKinds.find((k) => k.kind === kind)?.optionalArgs ?? [];
+    const toggles: Record<string, boolean> = {};
+    for (const opt of meta) {
+      toggles[opt.id] = userDefs[opt.id] ?? opt.default;
+    }
+    optArgToggles = toggles;
+  });
 
   // ── Spawn form ──────────────────────────────────────────────────────────
   let error = $state<string | null>(null);
@@ -408,6 +446,42 @@
       <span>{t('spawn.taskBody')} <span class="muted">({t('spawn.sentAsInitialInput')})</span></span>
       <textarea name="task_body" rows="6"></textarea>
     </label>
+    {#if selectedOptionalArgs.length > 0}
+      <div class="advanced-section">
+        <button
+          type="button"
+          class="advanced-toggle"
+          onclick={() => { showAdvanced = !showAdvanced; }}
+        >
+          <span class="arrow">{showAdvanced ? '\u25BE' : '\u25B8'}</span>
+          {t('spawn.advanced')}
+        </button>
+        {#if showAdvanced}
+          <div class="advanced-body">
+            {#each selectedOptionalArgs as opt (opt.id)}
+              <label class="toggle-row">
+                <input
+                  type="checkbox"
+                  bind:checked={optArgToggles[opt.id]}
+                />
+                <span class="toggle-label">
+                  <span>{opt.label}</span>
+                  {#if opt.description}
+                    <span class="toggle-desc">{opt.description}</span>
+                  {/if}
+                </span>
+              </label>
+              <input type="hidden" name="optionalArgs[{opt.id}]" value={String(optArgToggles[opt.id] ?? false)} />
+            {/each}
+          </div>
+        {:else}
+          <!-- Submit current toggle values even when collapsed -->
+          {#each selectedOptionalArgs as opt (opt.id)}
+            <input type="hidden" name="optionalArgs[{opt.id}]" value={String(optArgToggles[opt.id] ?? false)} />
+          {/each}
+        {/if}
+      </div>
+    {/if}
     {#if error}
       <p class="err">{error}</p>
     {/if}
@@ -570,5 +644,53 @@
   }
   a {
     color: #93c5fd;
+  }
+  .advanced-section {
+    display: grid;
+    gap: 0.4rem;
+  }
+  .advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: none;
+    border: none;
+    color: #93c5fd;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0;
+  }
+  .advanced-toggle:hover {
+    color: #bfdbfe;
+  }
+  .arrow {
+    font-size: 0.75rem;
+  }
+  .advanced-body {
+    border-left: 2px solid #374151;
+    padding-left: 0.75rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .toggle-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .toggle-row input[type='checkbox'] {
+    width: auto;
+    margin-top: 0.15rem;
+  }
+  .toggle-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .toggle-desc {
+    color: #6b7280;
+    font-size: 0.8rem;
   }
 </style>

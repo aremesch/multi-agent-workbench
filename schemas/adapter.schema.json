@@ -27,6 +27,21 @@
       "properties": {
         "command": { "type": "string" },
         "args": { "type": "array", "items": { "type": "string" } },
+        "optionalArgs": {
+          "type": "array",
+          "description": "CLI flags the user can toggle on/off per-spawn. Merged at spawn time based on user settings.",
+          "items": {
+            "type": "object",
+            "required": ["id", "flag", "label"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "description": "Stable key used in user settings." },
+              "flag": { "type": "string", "minLength": 1, "description": "The actual CLI flag (e.g. --dangerously-skip-permissions)." },
+              "label": { "type": "string", "minLength": 1, "description": "Human-readable toggle label." },
+              "description": { "type": "string", "description": "Longer explanation shown below the toggle." },
+              "default": { "type": "boolean", "description": "Default value when the user has no saved preference." }
+            }
+          }
+        },
         "env": {
           "type": "object",
           "additionalProperties": { "type": "string" }

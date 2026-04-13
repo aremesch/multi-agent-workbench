@@ -740,3 +740,30 @@ export function setUserSetting(userId: string, key: string, valueJson: string): 
        updated_at = excluded.updated_at`
   ).run(userId, key, valueJson, ts, ts);
 }
+
+const SPAWN_DEFAULTS_PREFIX = 'spawn.defaults.';
+
+export function getSpawnDefaults(
+  userId: string,
+  cliKind: string
+): { optionalArgs: Record<string, boolean> } | null {
+  const raw = getUserSetting(userId, `${SPAWN_DEFAULTS_PREFIX}${cliKind}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as { optionalArgs: Record<string, boolean> };
+  } catch {
+    return null;
+  }
+}
+
+export function getSpawnDefaultsAll(
+  userId: string,
+  cliKinds: string[]
+): Record<string, { optionalArgs: Record<string, boolean> }> {
+  const result: Record<string, { optionalArgs: Record<string, boolean> }> = {};
+  for (const kind of cliKinds) {
+    const defaults = getSpawnDefaults(userId, kind);
+    if (defaults) result[kind] = defaults;
+  }
+  return result;
+}

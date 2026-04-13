@@ -21,7 +21,16 @@
     // `--session-id <uuid>` makes the JSONL file path deterministic from
     // spawn time (~/.claude/projects/<encoded-cwd>/<uuid>.jsonl), so the
     // history reader needs no filesystem watch.
-    "args": ["--session-id", "{{agent.cliSessionId}}", "--dangerously-skip-permissions"],
+    "args": ["--session-id", "{{agent.cliSessionId}}"],
+    "optionalArgs": [
+      {
+        "id": "skip-permissions",
+        "flag": "--dangerously-skip-permissions",
+        "label": "Skip permission prompts",
+        "description": "Agent runs tools without asking. Disable to get push notifications for each tool use.",
+        "default": false
+      }
+    ],
     "env": {
       "ANTHROPIC_API_KEY": "{{env.ANTHROPIC_API_KEY}}"
     },

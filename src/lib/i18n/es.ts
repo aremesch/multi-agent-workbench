@@ -51,6 +51,10 @@ const es: Partial<Record<TranslationKey, string>> = {
   'settings.themeLabel': 'Tema',
   'settings.language': 'Idioma',
   'settings.languageDesc': 'Selecciona tu idioma preferido.',
+  'settings.agentDefaults': 'Valores por defecto del agente',
+  'settings.agentDefaultsDesc':
+    'Opciones de lanzamiento por defecto para cada tipo de CLI. Se pueden cambiar al lanzar cada agente.',
+  'settings.noOptionalFlags': 'Sin flags opcionales.',
 
   'theme.desc.dark-slate': 'Neutros casi negros con acento azul fr\u00edo.',
   'theme.desc.dark-midnight': 'Superficies con tinte azul profundo, contraste m\u00e1s suave.',
@@ -99,6 +103,7 @@ const es: Partial<Record<TranslationKey, string>> = {
   'spawn.error.failedCreateProject': 'No se pudo crear el proyecto',
   'spawn.error.failedAddRepo': 'No se pudo a\u00f1adir el repositorio',
   'spawn.error.networkError': 'Error de red',
+  'spawn.advanced': 'Avanzado',
 
   // ── Agent card / terminal ────────────────────────────────────────
   'agent.openTerminal': 'Abrir terminal para {roleName}',

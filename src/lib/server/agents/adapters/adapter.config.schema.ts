@@ -71,6 +71,17 @@ export const adapterConfigSchema = z.object({
   spawn: z.object({
     command: z.string().min(1),
     args: z.array(z.string()).default([]),
+    optionalArgs: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          flag: z.string().min(1),
+          label: z.string().min(1),
+          description: z.string().optional(),
+          default: z.boolean().default(false)
+        })
+      )
+      .default([]),
     env: z.record(z.string(), z.string()).default({}),
     initialInput: z.string().optional()
   }),

@@ -53,6 +53,10 @@ const en = {
   'settings.themeLabel': 'Theme',
   'settings.language': 'Language',
   'settings.languageDesc': 'Select your preferred language.',
+  'settings.agentDefaults': 'Agent Defaults',
+  'settings.agentDefaultsDesc':
+    'Default spawn flags for each CLI kind. Override per-agent when spawning.',
+  'settings.noOptionalFlags': 'No optional flags.',
 
   // Theme descriptions (keyed by theme id)
   'theme.desc.dark-slate': 'Near-black neutrals with a cool blue accent.',
@@ -105,6 +109,7 @@ const en = {
   'spawn.error.failedCreateProject': 'Failed to create project',
   'spawn.error.failedAddRepo': 'Failed to add repo',
   'spawn.error.networkError': 'Network error',
+  'spawn.advanced': 'Advanced',
 
   // ── Agent card / terminal ────────────────────────────────────────
   'agent.openTerminal': 'Open terminal for {roleName}',

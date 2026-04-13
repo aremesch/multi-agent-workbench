@@ -1,5 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import {
+  getSpawnDefaultsAll,
   getUserSetting,
   listAgentCardsForUser,
   listReposWithProjectForUser
@@ -74,6 +75,12 @@ export const load: LayoutServerLoad = async ({ locals }) => {
         agents: []
       }
   );
+  const cliKinds = locals.supervisor.registry.list();
+  const spawnDefaults = getSpawnDefaultsAll(
+    locals.user.id,
+    cliKinds.map((k) => k.kind)
+  );
+
   return {
     user: { id: locals.user.id, username: locals.user.username },
     sidebar: {
@@ -82,6 +89,8 @@ export const load: LayoutServerLoad = async ({ locals }) => {
       collapsed: parseCollapsed(getUserSetting(locals.user.id, SIDEBAR_COLLAPSED_KEY))
     },
     theme: parseTheme(getUserSetting(locals.user.id, THEME_SETTING_KEY)),
-    locale: (locals.locale ?? DEFAULT_LOCALE) as Locale
+    locale: (locals.locale ?? DEFAULT_LOCALE) as Locale,
+    cliKinds,
+    spawnDefaults
   };
 };

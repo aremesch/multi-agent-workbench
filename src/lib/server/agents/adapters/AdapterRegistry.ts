@@ -89,10 +89,27 @@ export class AdapterRegistry {
     return this.entries.has(kind);
   }
 
-  list(): { kind: string; displayName: string }[] {
+  list(): {
+    kind: string;
+    displayName: string;
+    optionalArgs: Array<{
+      id: string;
+      flag: string;
+      label: string;
+      description?: string;
+      default: boolean;
+    }>;
+  }[] {
     return Array.from(this.entries.values()).map((e) => ({
       kind: e.config.kind,
-      displayName: e.config.displayName
+      displayName: e.config.displayName,
+      optionalArgs: e.config.spawn.optionalArgs.map((o) => ({
+        id: o.id,
+        flag: o.flag,
+        label: o.label,
+        description: o.description,
+        default: o.default
+      }))
     }));
   }
 

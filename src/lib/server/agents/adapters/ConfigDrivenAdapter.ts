@@ -158,9 +158,19 @@ export class ConfigDrivenAdapter implements CliAdapter {
       resolvedEnv[k] = subst(v);
     }
 
+    const args = this.cfg.spawn.args.map(subst);
+
+    // Merge optional args: user overrides → adapter defaults.
+    for (const opt of this.cfg.spawn.optionalArgs) {
+      const enabled = opts.optionalArgs?.[opt.id] ?? opt.default;
+      if (enabled) {
+        args.push(opt.flag);
+      }
+    }
+
     const spec: SpawnSpec = {
       command: subst(this.cfg.spawn.command),
-      args: this.cfg.spawn.args.map(subst),
+      args,
       env: resolvedEnv,
       cwd: opts.worktreeCwd
     };

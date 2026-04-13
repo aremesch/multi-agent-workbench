@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import {
+  getSpawnDefaultsAll,
   getUserSetting,
   listAgentCardsForUser,
   listProjects,
@@ -61,12 +62,17 @@ export const load: PageServerLoad = async ({ locals }) => {
   const spawnRepos = loadRepoOptions(locals.user.id);
   const spawnProjects = listProjects(locals.user.id);
   const spawnCliKinds = locals.supervisor.registry.list();
+  const spawnDefaults = getSpawnDefaultsAll(
+    locals.user.id,
+    spawnCliKinds.map((k) => k.kind)
+  );
   return {
     liveAgents,
     dashboardLayout,
     spawnRoles,
     spawnRepos,
     spawnProjects,
-    spawnCliKinds
+    spawnCliKinds,
+    spawnDefaults
   };
 };

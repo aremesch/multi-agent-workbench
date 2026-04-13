@@ -2,6 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import {
   getRepo,
+  getSpawnDefaultsAll,
   getUserSetting,
   listAgentCardsForRepo,
   listProjects,
@@ -60,6 +61,10 @@ export const load: PageServerLoad = async ({ locals, params }) => {
   const spawnRepos = loadRepoOptions(locals.user.id);
   const spawnProjects = listProjects(locals.user.id);
   const spawnCliKinds = locals.supervisor.registry.list();
+  const spawnDefaults = getSpawnDefaultsAll(
+    locals.user.id,
+    spawnCliKinds.map((k) => k.kind)
+  );
   return {
     repo: { id: repo.id, path: repo.path },
     layoutKey,
@@ -68,6 +73,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
     spawnRoles,
     spawnRepos,
     spawnProjects,
-    spawnCliKinds
+    spawnCliKinds,
+    spawnDefaults
   };
 };

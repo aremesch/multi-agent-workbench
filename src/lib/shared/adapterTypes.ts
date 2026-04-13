@@ -72,6 +72,8 @@ export interface BuildSpawnSpecOpts {
   env: Record<string, string>;
   /** Identity vars exposed to adapter `{{agent.*}}` template substitutions. */
   agent: { id: string; cliSessionId: string | null };
+  /** Per-spawn toggle overrides keyed by optionalArg id. */
+  optionalArgs?: Record<string, boolean>;
 }
 
 export interface CliAdapter {

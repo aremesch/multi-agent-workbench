@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { PageData } from './$types';
   import { ALL_THEMES, type ThemeId } from '$lib/shared/dashboard';
   import { currentTheme, setTheme } from '$lib/client/stores/theme';
   import { currentLocale, setLocale } from '$lib/client/stores/locale';
@@ -6,6 +7,36 @@
   import { useT } from '$lib/client/i18n.svelte';
 
   const t = useT();
+
+  let { data }: { data: PageData } = $props();
+
+  // Agent defaults: per-cli-kind toggle state.
+  let agentDefaults = $state<Record<string, Record<string, boolean>>>({});
+
+  // Initialize from server data.
+  $effect(() => {
+    const init: Record<string, Record<string, boolean>> = {};
+    for (const kind of data.cliKinds) {
+      const userDefs = data.spawnDefaults[kind.kind]?.optionalArgs ?? {};
+      const toggles: Record<string, boolean> = {};
+      for (const opt of kind.optionalArgs) {
+        toggles[opt.id] = userDefs[opt.id] ?? opt.default;
+      }
+      init[kind.kind] = toggles;
+    }
+    agentDefaults = init;
+  });
+
+  async function saveSpawnDefault(cliKind: string, optId: string, value: boolean): Promise<void> {
+    const current = agentDefaults[cliKind] ?? {};
+    current[optId] = value;
+    agentDefaults[cliKind] = { ...current };
+    await fetch('/api/user/spawn-defaults', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cliKind, optionalArgs: agentDefaults[cliKind] })
+    });
+  }
 
   let active = $state<ThemeId>($currentTheme);
   $effect(() => {
@@ -115,6 +146,38 @@
         </label>
       {/each}
     </fieldset>
+  </section>
+
+  <section class="group" aria-labelledby="agent-defaults-heading">
+    <header class="group-head">
+      <h2 id="agent-defaults-heading">{t('settings.agentDefaults')}</h2>
+      <p class="muted">{t('settings.agentDefaultsDesc')}</p>
+    </header>
+
+    {#each data.cliKinds as kind (kind.kind)}
+      <div class="cli-kind-block">
+        <h3 class="cli-kind-name">{kind.displayName}</h3>
+        {#if kind.optionalArgs.length === 0}
+          <p class="muted small">{t('settings.noOptionalFlags')}</p>
+        {:else}
+          {#each kind.optionalArgs as opt (opt.id)}
+            <label class="defaults-toggle">
+              <input
+                type="checkbox"
+                checked={agentDefaults[kind.kind]?.[opt.id] ?? opt.default}
+                onchange={(e) => saveSpawnDefault(kind.kind, opt.id, (e.target as HTMLInputElement).checked)}
+              />
+              <span class="defaults-label">
+                <span>{opt.label}</span>
+                {#if opt.description}
+                  <span class="defaults-desc">{opt.description}</span>
+                {/if}
+              </span>
+            </label>
+          {/each}
+        {/if}
+      </div>
+    {/each}
   </section>
 </section>
 
@@ -304,5 +367,42 @@
     justify-content: center;
     color: var(--md-sys-color-primary);
     margin-left: auto;
+  }
+  .cli-kind-block {
+    margin-bottom: 1rem;
+  }
+  .cli-kind-block:last-child {
+    margin-bottom: 0;
+  }
+  .cli-kind-name {
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin: 0 0 0.5rem;
+    color: var(--md-sys-color-on-surface);
+  }
+  .small {
+    font-size: 0.85rem;
+    margin: 0;
+  }
+  .defaults-toggle {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    cursor: pointer;
+    font-size: 0.9rem;
+    margin-bottom: 0.4rem;
+  }
+  .defaults-toggle input[type='checkbox'] {
+    margin-top: 0.15rem;
+  }
+  .defaults-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    color: var(--md-sys-color-on-surface);
+  }
+  .defaults-desc {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.8rem;
   }
 </style>
