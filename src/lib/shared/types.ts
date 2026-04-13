@@ -44,6 +44,20 @@ export interface SidebarRepoNode {
   agents: AgentCardRow[];
 }
 
+export interface AgentCommit {
+  sha: string;
+  shortSha: string;
+  author: string;
+  date: string;
+  subject: string;
+  body: string;
+}
+
+export interface AgentRemote {
+  provider: 'github' | 'gitea' | 'unknown';
+  webBase: string;
+}
+
 /** Persisted gridstack position for one agent card. */
 export interface LayoutEntry {
   agentId: string;

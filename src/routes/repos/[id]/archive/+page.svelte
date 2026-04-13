@@ -14,6 +14,7 @@
 
   let openAgentId = $state<string | null>(null);
   let openAgentTitle = $state<string>('');
+  let expanded = $state<Record<string, boolean>>({});
 
   function viewLog(entry: PageData['archivedAgents'][number]): void {
     openAgentId = entry.agent.id;
@@ -21,6 +22,12 @@
   }
   function closeLog(): void {
     openAgentId = null;
+  }
+  function toggle(agentId: string): void {
+    expanded[agentId] = !expanded[agentId];
+  }
+  function commitUrl(sha: string): string | null {
+    return data.remote ? `${data.remote.webBase}/commit/${sha}` : null;
   }
 </script>
 
@@ -37,6 +44,7 @@
       <table>
         <thead>
           <tr>
+            <th aria-label="Expand"></th>
             <th>Title</th>
             <th>Role</th>
             <th>CLI</th>
@@ -56,7 +64,20 @@
         </thead>
         <tbody>
           {#each data.archivedAgents as entry (entry.agent.id)}
-            <tr>
+            <tr class="summary-row" class:has-commits={entry.commits.length > 0}>
+              <td class="toggle-cell">
+                <button
+                  type="button"
+                  class="toggle"
+                  aria-expanded={expanded[entry.agent.id] ? 'true' : 'false'}
+                  aria-label={expanded[entry.agent.id] ? 'Collapse commits' : 'Expand commits'}
+                  disabled={entry.commits.length === 0}
+                  onclick={() => toggle(entry.agent.id)}
+                >
+                  {expanded[entry.agent.id] ? '▾' : '▸'}
+                  <span class="count">{entry.commits.length}</span>
+                </button>
+              </td>
               <td class="agent-name">{entry.agent.task_title ?? '—'}</td>
               <td>{entry.agent.role_name}</td>
               <td>{entry.agent.cli_kind}</td>
@@ -82,6 +103,34 @@
                 >
               </td>
             </tr>
+            {#if expanded[entry.agent.id] && entry.commits.length > 0}
+              <tr class="commits-row">
+                <td></td>
+                <td colspan="14">
+                  <ul class="commits">
+                    {#each entry.commits as c (c.sha)}
+                      <li>
+                        {#if commitUrl(c.sha)}
+                          <a
+                            class="sha"
+                            href={commitUrl(c.sha)}
+                            target="_blank"
+                            rel="noopener"
+                            title={`${c.author} · ${c.date}`}>{c.shortSha}</a
+                          >
+                        {:else}
+                          <span class="sha" title={`${c.author} · ${c.date}`}>{c.shortSha}</span>
+                        {/if}
+                        <span class="subject">{c.subject}</span>
+                        {#if c.body}
+                          <pre class="body">{c.body}</pre>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                </td>
+              </tr>
+            {/if}
           {/each}
         </tbody>
       </table>
@@ -197,6 +246,70 @@
   }
   .view-btn:hover {
     filter: brightness(1.1);
+  }
+  .toggle-cell {
+    width: 2.5rem;
+    padding-right: 0;
+  }
+  .toggle {
+    background: transparent;
+    border: none;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0.15rem 0.35rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .toggle:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  .toggle .count {
+    font-size: 0.7rem;
+    opacity: 0.75;
+  }
+  .commits-row > td {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 3%, transparent);
+    padding: 0.5rem 0.75rem 0.75rem;
+    white-space: normal;
+  }
+  .commits {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .commits li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 0.6rem;
+    align-items: baseline;
+    font-size: 0.8rem;
+  }
+  .commits .sha {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+    color: var(--md-sys-color-primary);
+    text-decoration: none;
+  }
+  .commits a.sha:hover {
+    text-decoration: underline;
+  }
+  .commits .subject {
+    color: var(--md-sys-color-on-surface);
+  }
+  .commits .body {
+    grid-column: 2;
+    margin: 0.15rem 0 0;
+    font-size: 0.72rem;
+    color: var(--md-sys-color-on-surface-variant);
+    white-space: pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .note {
     margin-top: 0.75rem;
