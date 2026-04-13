@@ -61,6 +61,11 @@
     void goto('/settings');
   }
 
+  function gotoAccount(): void {
+    closeMenu();
+    void goto('/account');
+  }
+
   function onDocClick(ev: MouseEvent): void {
     if (!menuOpen) return;
     const target = ev.target as HTMLElement | null;
@@ -137,6 +142,20 @@
                 />
               </svg>
               Settings
+            </button>
+            <button
+              type="button"
+              class="menu-item flex h-10 items-center gap-3 px-4 text-left text-sm text-on-surface hover:bg-surface-container-highest"
+              role="menuitem"
+              onclick={gotoAccount}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.33 0-10 1.67-10 5v3h20v-3c0-3.33-6.67-5-10-5Z"
+                />
+              </svg>
+              Account
             </button>
             <form method="POST" action="/login?/logout" class="m-0">
               <button

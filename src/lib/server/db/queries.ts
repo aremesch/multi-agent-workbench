@@ -63,6 +63,12 @@ export function countUsers(): number {
   return row?.n ?? 0;
 }
 
+export function updateUserPasswordHash(userId: string, hash: string): void {
+  prep<[string, number, string]>(
+    'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?'
+  ).run(hash, now(), userId);
+}
+
 export function insertUser(row: {
   id: string;
   username: string;
@@ -94,6 +100,13 @@ export function insertSession(row: {
 
 export function deleteSession(id: string): void {
   prep<[string]>('DELETE FROM sessions WHERE id = ?').run(id);
+}
+
+export function deleteSessionsForUserExcept(userId: string, keepSessionId: string): void {
+  prep<[string, string]>('DELETE FROM sessions WHERE user_id = ? AND id != ?').run(
+    userId,
+    keepSessionId
+  );
 }
 
 export function deleteExpiredSessions(): number {
