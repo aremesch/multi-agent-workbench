@@ -22,12 +22,17 @@ Two driving goals:
 - v0.1 foundation + CRUD UI landed, `pnpm check` clean (0/0).
 - New persistent left sidebar (`RepoTreeSidebar`) shows a Repo→Agents
   treeview with an `Archive` top-level node grouping archived agents by
-  repo. Click a repo to open its per-repo dashboard at `/repos/[id]`
-  (own gridstack layout key, `dashboard.layout.repo.<id>.v1`); click an
-  agent to land on `/repos/[id]?agent=<id>` with the terminal modal
-  pre-opened. Sidebar collapsed state is per-user
-  (`ui.sidebar.collapsed`). Right-side archive drawer is gone; the
-  hamburger menu now contains only **Settings** and **Logout**.
+  repo. Sidebar bg matches the page (`#0a0a0a`), no left-rail connector
+  on agents, collapsed width trimmed to `1.75rem`. Every repo the user
+  owns is listed under **Repositories** even with zero agents (data
+  merged in `+layout.server.ts` via `listReposWithProjectForUser`); empty
+  repos render with an inert disclosure spacer. Click a repo to open
+  its per-repo dashboard at `/repos/[id]` (own gridstack layout key,
+  `dashboard.layout.repo.<id>.v1`); click an agent to land on
+  `/repos/[id]?agent=<id>` with the terminal modal pre-opened. Sidebar
+  collapsed state is per-user (`ui.sidebar.collapsed`). Right-side
+  archive drawer is gone; the hamburger menu now contains only
+  **Settings** and **Logout**.
 - Full create flow in SvelteKit form actions: project → repo → role →
   spawn agent, reachable from the dashboard. Pre-generated `agentId`
   keeps worktree dir, branch (`maw/<agentId>`) and DB row in lock-step.
@@ -119,3 +124,4 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-terminal-scrollback-v2.md`](docs/plans/v0.1-terminal-scrollback-v2.md) — reverts the terminal registry, switches reconnect snapshot to `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`; tmux becomes the source of truth for backing scrollback, every modal open gets a fresh deduped snapshot (executed).
 - [`docs/plans/v0.1-inline-spawn.md`](docs/plans/v0.1-inline-spawn.md) — inline project/role/repo creation within the spawn form modal; three JSON API routes, no page navigation required (executed).
 - [`docs/plans/v0.1-left-sidebar-treeview.md`](docs/plans/v0.1-left-sidebar-treeview.md) — persistent collapsible left sidebar with Repo→Agents tree (plus Archive→Repo→Agents), per-repo dashboard at `/repos/[id]` with its own gridstack layout key, hamburger reduced to Settings + Logout, right-side archive drawer removed (executed).
+- [`docs/plans/v0.1-sidebar-polish.md`](docs/plans/v0.1-sidebar-polish.md) — sidebar bg matches page, lighter treeview hierarchy, smaller collapsed width, all user repos listed even with zero agents (executed).

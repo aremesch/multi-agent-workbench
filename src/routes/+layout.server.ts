@@ -1,5 +1,9 @@
 import type { LayoutServerLoad } from './$types';
-import { getUserSetting, listAgentCardsForUser } from '$lib/server/db/queries';
+import {
+  getUserSetting,
+  listAgentCardsForUser,
+  listReposWithProjectForUser
+} from '$lib/server/db/queries';
 import type { AgentStatus } from '$lib/server/db/types';
 import { SIDEBAR_COLLAPSED_KEY } from '$lib/shared/dashboard';
 import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
@@ -52,10 +56,22 @@ export const load: LayoutServerLoad = async ({ locals }) => {
     if (c.status === 'exited' || c.status === 'crashed') archived.push(c);
     else live.push(c);
   }
+  const liveByRepo = groupByRepo(live);
+  const liveIndex = new Map(liveByRepo.map((n) => [n.repoId, n]));
+  const allRepos = listReposWithProjectForUser(locals.user.id);
+  const activeRepos: SidebarRepoNode[] = allRepos.map(
+    (r) =>
+      liveIndex.get(r.id) ?? {
+        repoId: r.id,
+        repoPath: r.path,
+        projectName: r.project_name,
+        agents: []
+      }
+  );
   return {
     user: { id: locals.user.id, username: locals.user.username },
     sidebar: {
-      activeRepos: groupByRepo(live),
+      activeRepos,
       archivedRepos: groupByRepo(archived),
       collapsed: parseCollapsed(getUserSetting(locals.user.id, SIDEBAR_COLLAPSED_KEY))
     }

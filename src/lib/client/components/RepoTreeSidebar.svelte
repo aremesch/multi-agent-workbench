@@ -98,14 +98,18 @@
           {#each activeRepos as repo (repo.repoId)}
             <li>
               <div class="repo-row" class:active={isRepoActive(repo.repoId)}>
-                <button
-                  type="button"
-                  class="disclosure"
-                  aria-label={openRepos[repo.repoId] ? 'Collapse' : 'Expand'}
-                  onclick={() => toggleRepo(repo.repoId)}
-                >
-                  {openRepos[repo.repoId] ? '▾' : '▸'}
-                </button>
+                {#if repo.agents.length > 0}
+                  <button
+                    type="button"
+                    class="disclosure"
+                    aria-label={openRepos[repo.repoId] ? 'Collapse' : 'Expand'}
+                    onclick={() => toggleRepo(repo.repoId)}
+                  >
+                    {openRepos[repo.repoId] ? '▾' : '▸'}
+                  </button>
+                {:else}
+                  <span class="disclosure spacer" aria-hidden="true"></span>
+                {/if}
                 <a
                   class="repo-link"
                   href={repoHref(repo.repoId)}
@@ -115,7 +119,7 @@
                   <span class="count">{repo.agents.length}</span>
                 </a>
               </div>
-              {#if openRepos[repo.repoId]}
+              {#if openRepos[repo.repoId] && repo.agents.length > 0}
                 <ul class="agents">
                   {#each repo.agents as agent (agent.id)}
                     <li>
@@ -189,15 +193,15 @@
   .sidebar {
     width: 16rem;
     flex: 0 0 16rem;
-    background: #0b0f17;
+    background: #0a0a0a;
     border-right: 1px solid #1f2937;
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
   .sidebar.collapsed {
-    width: 2.5rem;
-    flex: 0 0 2.5rem;
+    width: 1.75rem;
+    flex: 0 0 1.75rem;
   }
   .head {
     display: flex;
@@ -205,8 +209,12 @@
     justify-content: space-between;
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid #1f2937;
-    background: #111827;
+    background: transparent;
     min-height: 2.25rem;
+  }
+  .sidebar.collapsed .head {
+    padding: 0.25rem;
+    justify-content: center;
   }
   .title {
     font-size: 0.8rem;
@@ -269,28 +277,31 @@
     padding: 0;
   }
   ul.agents {
-    padding-left: 1.5rem;
-    border-left: 1px solid #1f2937;
-    margin-left: 0.9rem;
+    padding-left: 1.25rem;
+    margin-left: 0.6rem;
   }
   .repo-row {
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.15rem 0.25rem 0.15rem 0.25rem;
+    padding: 0.2rem 0.25rem;
   }
   .repo-row.active {
-    background: #1e293b;
+    background: #1f2937;
   }
   .disclosure {
     background: transparent;
     border: none;
-    color: #6b7280;
+    color: #9ca3af;
     cursor: pointer;
     width: 1.1rem;
     padding: 0;
     line-height: 1;
     font-size: 0.8rem;
+  }
+  .disclosure.spacer {
+    cursor: default;
+    display: inline-block;
   }
   .repo-link {
     display: flex;
@@ -314,8 +325,8 @@
   }
   .count {
     font-size: 0.7rem;
-    color: #6b7280;
-    background: #111827;
+    color: #9ca3af;
+    background: #1f2937;
     padding: 0.05rem 0.4rem;
     border-radius: 0.5rem;
     margin-left: 0.4rem;
@@ -326,7 +337,7 @@
     gap: 0.4rem;
     color: #d1d5db;
     text-decoration: none;
-    padding: 0.15rem 0.4rem;
+    padding: 0.2rem 0.4rem;
     border-radius: 0.25rem;
     font-size: 0.8rem;
     min-width: 0;

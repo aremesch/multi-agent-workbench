@@ -133,6 +133,22 @@ export function listReposForProject(projectId: string): RepoRow[] {
   ).all(projectId);
 }
 
+export interface RepoWithProjectRow {
+  id: string;
+  path: string;
+  project_name: string;
+}
+
+export function listReposWithProjectForUser(userId: string): RepoWithProjectRow[] {
+  return prep<[string], RepoWithProjectRow>(
+    `SELECT r.id AS id, r.path AS path, p.name AS project_name
+       FROM repos r
+       JOIN projects p ON p.id = r.project_id
+      WHERE r.user_id = ?
+      ORDER BY r.path`
+  ).all(userId);
+}
+
 export function getRepo(id: string): RepoRow | undefined {
   return prep<[string], RepoRow>('SELECT * FROM repos WHERE id = ?').get(id);
 }
