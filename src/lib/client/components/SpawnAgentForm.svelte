@@ -398,6 +398,10 @@
     </div>
 
     <label>
+      <span>Agent name <span class="muted">(optional)</span></span>
+      <input name="agent_name" placeholder="e.g. auth-refactor" />
+    </label>
+    <label>
       <span>Task title <span class="muted">(optional)</span></span>
       <input name="task_title" />
     </label>
