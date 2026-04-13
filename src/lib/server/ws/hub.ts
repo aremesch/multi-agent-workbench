@@ -17,6 +17,9 @@ import type { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '$shared/protocol';
 import { PROTOCOL_VERSION } from '$shared/protocol';
 import { resolveSession, SESSION_COOKIE } from '../auth/session.js';
+import { logAuth } from '../auth/authLog.js';
+import { clientIpFromRaw } from '../net/clientIp.js';
+import { getConfig } from '../config.js';
 import { getSupervisor } from '../bootstrap.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import type { AgentRuntime } from '../agents/AgentRuntime.js';
@@ -351,6 +354,22 @@ export class WsHub {
   private clients = new Set<HubClient>();
 
   attach(ws: WebSocket, req: IncomingMessage): void {
+    // Origin check — browsers send Origin on the upgrade handshake; if it
+    // doesn't match MAW_PUBLIC_ORIGIN we refuse. Skipped when publicOrigin
+    // is unset (dev) or the request carries no Origin (non-browser client,
+    // e.g. server-side test harness).
+    const allowedOrigin = getConfig().publicOrigin;
+    const origin = req.headers.origin;
+    const ua = Array.isArray(req.headers['user-agent'])
+      ? req.headers['user-agent'][0]
+      : req.headers['user-agent'];
+    if (allowedOrigin && origin && origin !== allowedOrigin) {
+      const ip = clientIpFromRaw(req);
+      logAuth('ws_origin_reject', { ip, userAgent: ua ?? null, detail: origin });
+      ws.close(4403, 'origin');
+      return;
+    }
+
     // Cheap cookie-based auth: parse the Cookie header and resolve via the
     // same helper routes use. Upgrade requests always carry the request
     // cookie header so this works identically in dev and prod.
