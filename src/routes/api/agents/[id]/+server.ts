@@ -21,8 +21,10 @@ import {
 } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
 import { getConfig } from '$lib/server/config';
+import { verifyCsrf } from '$lib/server/auth/csrf';
 
-export const DELETE: RequestHandler = async ({ locals, params, url }) => {
+export const DELETE: RequestHandler = async ({ locals, params, url, cookies, request }) => {
+  verifyCsrf({ cookies, request });
   if (!locals.user) throw error(401, 'Unauthorized');
   const agent = getAgent(params.id);
   if (!agent) throw error(404, 'Agent not found');

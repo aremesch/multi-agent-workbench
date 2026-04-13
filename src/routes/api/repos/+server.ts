@@ -1,4 +1,5 @@
 import { json } from '@sveltejs/kit';
+import { verifyCsrf } from '$lib/server/auth/csrf';
 import { isAbsolute } from 'node:path';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { execa } from 'execa';
@@ -8,7 +9,8 @@ import { getProject, insertRepo } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
 import { t } from '$lib/i18n';
 
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, cookies }) => {
+  verifyCsrf({ cookies, request });
   if (!locals.user) return json({ error: t(locals.locale, 'common.error.unauthorized') }, { status: 401 });
 
   let body: unknown;
