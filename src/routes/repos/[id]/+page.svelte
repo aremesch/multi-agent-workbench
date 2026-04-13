@@ -8,6 +8,9 @@
   import AgentTerminalPanel from '$lib/client/components/AgentTerminalPanel.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
   import SpawnAgentForm from '$lib/client/components/SpawnAgentForm.svelte';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   let { data }: { data: PageData } = $props();
 
@@ -103,7 +106,7 @@
   />
 </main>
 
-<button type="button" class="fab" aria-label="Spawn agent" onclick={spawnAgent}>
+<button type="button" class="fab" aria-label={t('agent.spawnAgent')} onclick={spawnAgent}>
   <span aria-hidden="true">+</span>
 </button>
 
@@ -134,7 +137,7 @@
   {/if}
 </Modal>
 
-<Modal open={spawnOpen} onClose={() => (spawnOpen = false)} title="Spawn agent">
+<Modal open={spawnOpen} onClose={() => (spawnOpen = false)} title={t('spawn.title')}>
   {#if spawnOpen}
     <SpawnAgentForm
       roles={data.spawnRoles}

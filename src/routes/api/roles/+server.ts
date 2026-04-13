@@ -2,15 +2,16 @@ import { json } from '@sveltejs/kit';
 import { ulid } from 'ulid';
 import type { RequestHandler } from './$types';
 import { insertRole } from '$lib/server/db/queries';
+import { t } from '$lib/i18n';
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-  if (!locals.user) return json({ error: 'Unauthorized' }, { status: 401 });
+  if (!locals.user) return json({ error: t(locals.locale, 'common.error.unauthorized') }, { status: 401 });
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return json({ error: 'Invalid JSON' }, { status: 400 });
+    return json({ error: t(locals.locale, 'common.error.invalidJson') }, { status: 400 });
   }
 
   const b = body as Record<string, unknown>;
@@ -18,10 +19,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const cli_kind = String(b.cli_kind ?? '').trim();
   const system_prompt = String(b.system_prompt ?? '');
 
-  if (!name) return json({ error: 'Name is required' }, { status: 400 });
+  if (!name) return json({ error: t(locals.locale, 'common.error.nameRequired') }, { status: 400 });
 
   const validKinds = new Set(locals.supervisor.registry.list().map((k) => k.kind));
-  if (!validKinds.has(cli_kind)) return json({ error: 'Unknown CLI kind' }, { status: 400 });
+  if (!validKinds.has(cli_kind)) return json({ error: t(locals.locale, 'spawn.error.unknownCliKind') }, { status: 400 });
 
   const id = ulid();
   insertRole({

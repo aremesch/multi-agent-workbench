@@ -2,6 +2,7 @@
 
 import type { AgentSupervisor } from '$lib/server/agents/AgentSupervisor';
 import type { UserRow, SessionRow } from '$lib/server/db/types';
+import type { Locale } from '$lib/i18n';
 
 declare global {
   namespace App {
@@ -10,6 +11,7 @@ declare global {
       supervisor: AgentSupervisor;
       user: UserRow | null;
       session: SessionRow | null;
+      locale: Locale;
     }
     // interface PageData {}
     // interface PageState {}

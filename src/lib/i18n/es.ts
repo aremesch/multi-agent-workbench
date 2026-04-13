@@ -1,0 +1,187 @@
+import type { TranslationKey } from './en';
+
+const es: Partial<Record<TranslationKey, string>> = {
+  // ── Navigation / layout ──────────────────────────────────────────
+  'nav.appTitle': 'Multi-Agent Workbench',
+  'nav.settings': 'Ajustes',
+  'nav.account': 'Cuenta',
+  'nav.logout': 'Cerrar sesi\u00f3n',
+  'nav.userMenu': 'Men\u00fa de usuario',
+  'nav.showSidebar': 'Mostrar barra lateral',
+  'nav.hideSidebar': 'Ocultar barra lateral',
+
+  // ── Sidebar ──────────────────────────────────────────────────────
+  'sidebar.repositories': 'Repositorios',
+  'sidebar.archive': 'Archivo',
+  'sidebar.noRepos': 'A\u00fan no hay repositorios.',
+  'sidebar.noArchived': 'No hay agentes archivados.',
+  'sidebar.collapse': 'Contraer',
+  'sidebar.expand': 'Expandir',
+
+  // ── Login ────────────────────────────────────────────────────────
+  'login.title': 'Iniciar sesi\u00f3n',
+  'login.username': 'Nombre de usuario',
+  'login.password': 'Contrase\u00f1a',
+  'login.submit': 'Iniciar sesi\u00f3n',
+  'login.error.required': 'Nombre de usuario y contrase\u00f1a requeridos',
+  'login.error.invalid': 'Credenciales inv\u00e1lidas',
+
+  // ── Account ──────────────────────────────────────────────────────
+  'account.title': 'Cuenta',
+  'account.signedInAs': 'Conectado como {username}',
+  'account.changePassword': 'Cambiar contrase\u00f1a',
+  'account.currentPw': 'Contrase\u00f1a actual',
+  'account.newPw': 'Nueva contrase\u00f1a',
+  'account.confirmPw': 'Confirmar nueva contrase\u00f1a',
+  'account.updatePw': 'Actualizar contrase\u00f1a',
+  'account.pwUpdated': 'Contrase\u00f1a actualizada. Las dem\u00e1s sesiones han sido cerradas.',
+  'account.error.notSignedIn': 'No conectado',
+  'account.error.allRequired': 'Todos los campos son obligatorios',
+  'account.error.minLength': 'La nueva contrase\u00f1a debe tener al menos 8 caracteres',
+  'account.error.mismatch': 'Las nuevas contrase\u00f1as no coinciden',
+  'account.error.samePw': 'La nueva contrase\u00f1a debe ser diferente de la actual',
+  'account.error.wrongCurrent': 'Contrase\u00f1a actual incorrecta',
+
+  // ── Settings ─────────────────────────────────────────────────────
+  'settings.title': 'Ajustes',
+  'settings.subtitle': 'Personaliza el workbench seg\u00fan tus preferencias.',
+  'settings.appearance': 'Apariencia',
+  'settings.appearanceDesc':
+    'Elige un tema. Los cambios se aplican de inmediato y se sincronizan al recargar.',
+  'settings.themeLabel': 'Tema',
+  'settings.language': 'Idioma',
+  'settings.languageDesc': 'Selecciona tu idioma preferido.',
+
+  'theme.desc.dark-slate': 'Neutros casi negros con acento azul fr\u00edo.',
+  'theme.desc.dark-midnight': 'Superficies con tinte azul profundo, contraste m\u00e1s suave.',
+  'theme.desc.amoled': 'Negro puro para pantallas OLED, acento violeta.',
+  'theme.desc.light-default': 'M3 claro base con tono primario violeta.',
+  'theme.desc.expressive-plum': 'M3 expresivo: superficies ciruela c\u00e1lidas, acento verde azulado.',
+
+  // ── Spawn agent form ─────────────────────────────────────────────
+  'spawn.title': 'Lanzar agente',
+  'spawn.role': 'Rol',
+  'spawn.repo': 'Repositorio',
+  'spawn.project': 'Proyecto',
+  'spawn.cliKind': 'Tipo de CLI',
+  'spawn.name': 'Nombre',
+  'spawn.taskTitle': 'T\u00edtulo de la tarea',
+  'spawn.taskBody': 'Contenido de la tarea',
+  'spawn.optional': 'opcional',
+  'spawn.sentAsInitialInput': 'opcional, enviado como entrada inicial',
+  'spawn.absPath': 'ruta absoluta del sistema de archivos',
+  'spawn.originUrl': 'URL de origen',
+  'spawn.defaultBranch': 'Rama por defecto',
+  'spawn.projectName': 'Nombre del proyecto',
+  'spawn.systemPrompt': 'Prompt del sistema',
+  'spawn.cancel': 'Cancelar',
+  'spawn.spawn': 'Lanzar',
+  'spawn.spawning': 'Lanzando\u2026',
+  'spawn.creating': 'Creando\u2026',
+  'spawn.adding': 'A\u00f1adiendo\u2026',
+  'spawn.createRole': 'Crear rol',
+  'spawn.addRepo': 'A\u00f1adir repositorio',
+  'spawn.createProject': 'Crear proyecto',
+  'spawn.newRole': '+ Rol',
+  'spawn.newRepo': '+ Repo',
+  'spawn.newProject': '+ Proyecto',
+  'spawn.titleCreateRole': 'Crear nuevo rol',
+  'spawn.titleAddRepo': 'A\u00f1adir nuevo repositorio',
+  'spawn.titleCreateProject': 'Crear nuevo proyecto',
+  'spawn.error.roleRepoRequired': 'Rol y repositorio son obligatorios',
+  'spawn.error.unknownRole': 'Rol desconocido',
+  'spawn.error.unknownRepo': 'Repositorio desconocido',
+  'spawn.error.unknownCliKind': 'Tipo de CLI desconocido',
+  'spawn.error.orphanedRepo': 'Repositorio hu\u00e9rfano (sin proyecto)',
+  'spawn.error.spawnFailed': 'Error al lanzar',
+  'spawn.error.worktreeFailed': 'Error al crear el worktree: {message}',
+  'spawn.error.failedCreateRole': 'No se pudo crear el rol',
+  'spawn.error.failedCreateProject': 'No se pudo crear el proyecto',
+  'spawn.error.failedAddRepo': 'No se pudo a\u00f1adir el repositorio',
+  'spawn.error.networkError': 'Error de red',
+
+  // ── Agent card / terminal ────────────────────────────────────────
+  'agent.openTerminal': 'Abrir terminal para {roleName}',
+  'agent.tmuxGone': '(sesi\u00f3n tmux finalizada)',
+  'agent.loading': 'cargando\u2026',
+  'agent.empty': '(vac\u00edo)',
+  'agent.promptDetected': 'Prompt detectado',
+  'agent.sendPlaceholder': 'Escribe un mensaje, pulsa Enter para enviar',
+  'agent.send': 'Enviar',
+  'agent.spawnAgent': 'Lanzar agente',
+  'agent.noLiveAgents': 'No hay agentes activos. Haz clic en + para lanzar uno.',
+  'agent.failedLoadLog': 'Error al cargar el log: {error}',
+  'agent.loadingLog': 'Cargando log\u2026',
+
+  // ── Roles ────────────────────────────────────────────────────────
+  'roles.title': 'Roles',
+  'roles.newRole': 'Nuevo rol',
+  'roles.noRoles': 'A\u00fan no hay roles. Un rol agrupa un adaptador CLI + un prompt del sistema.',
+  'roles.backToDashboard': '\u2190 Volver al panel',
+
+  'newRole.title': 'Nuevo rol',
+
+  // ── Projects ─────────────────────────────────────────────────────
+  'projects.newProject': 'Nuevo proyecto',
+  'projects.defaultBranch': 'rama por defecto {branch}',
+  'projects.repositories': 'Repositorios ({count})',
+  'projects.newRepo': 'Nuevo repositorio',
+  'projects.noRepos': 'A\u00fan no hay repositorios adjuntos.',
+  'projects.backToDashboard': '\u2190 Volver al panel',
+
+  'newProject.title': 'Nuevo proyecto',
+
+  // ── Repos / new repo ─────────────────────────────────────────────
+  'newRepo.title': 'Nuevo repositorio',
+  'newRepo.attachDesc': 'Adjuntar un directorio de trabajo Git existente a {projectName}.',
+  'newRepo.absolutePath': 'Ruta absoluta',
+  'newRepo.attachRepo': 'Adjuntar repositorio',
+
+  // ── Archive ──────────────────────────────────────────────────────
+  'archive.title': 'Archivo',
+  'archive.noArchived': 'No hay agentes archivados para este repositorio.',
+  'archive.viewLogs': 'Ver logs',
+  'archive.collapseCommits': 'Contraer commits',
+  'archive.expandCommits': 'Expandir commits',
+  'archive.th.title': 'T\u00edtulo',
+  'archive.th.role': 'Rol',
+  'archive.th.cli': 'CLI',
+  'archive.th.status': 'Estado',
+  'archive.th.exit': 'Salida',
+  'archive.th.started': 'Inicio',
+  'archive.th.ended': 'Fin',
+  'archive.th.total': 'Total',
+  'archive.th.active': 'Activo',
+  'archive.th.idle': 'Inactivo',
+  'archive.th.in': 'Ent.',
+  'archive.th.out': 'Sal.',
+  'archive.th.cacheW': 'Cach\u00e9 E',
+  'archive.th.cacheR': 'Cach\u00e9 L',
+  'archive.note':
+    'Activo/inactivo se basa en una heur\u00edstica de 30s sobre el log del terminal. Los conteos de tokens provienen del transcript JSONL de Claude Code (disponible solo para agentes claude-code).',
+
+  // ── Common / API errors ──────────────────────────────────────────
+  'common.close': 'Cerrar',
+  'common.cancel': 'Cancelar',
+  'common.error.unauthorized': 'No autorizado',
+  'common.error.invalidJson': 'JSON inv\u00e1lido',
+  'common.error.invalidTheme': 'Tema inv\u00e1lido',
+  'common.error.invalidLocale': 'Idioma inv\u00e1lido',
+  'common.error.projectNotFound': 'Proyecto no encontrado',
+  'common.error.forbidden': 'Acceso prohibido',
+  'common.error.nameRequired': 'El nombre es obligatorio',
+  'common.error.invalidBranch': 'La rama por defecto contiene caracteres inv\u00e1lidos',
+  'common.error.pathRequired': 'La ruta es obligatoria',
+  'common.error.pathNotAbsolute': 'La ruta debe ser absoluta',
+  'common.error.pathNotExist': 'La ruta no existe en el disco',
+  'common.error.pathNotDir': 'La ruta no es un directorio',
+  'common.error.agentNotFound': 'Agente no encontrado',
+  'common.error.gitInitFailed':
+    'Error al inicializar el directorio vac\u00edo como repositorio Git: {message}',
+  'common.error.notGitNotEmpty':
+    'La ruta no es un repositorio Git y no est\u00e1 vac\u00eda. Vac\u00ede el directorio o ejecute `git init` manualmente.',
+  'common.error.noBranch':
+    "El repositorio no tiene la rama '{branch}' ni una rama 'master' para renombrar. Cree '{branch}' manualmente e int\u00e9ntelo de nuevo."
+};
+
+export default es;

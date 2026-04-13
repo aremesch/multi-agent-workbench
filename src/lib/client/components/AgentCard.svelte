@@ -3,6 +3,9 @@
   import { invalidateAll } from '$app/navigation';
   import type { AgentCardRow } from '$lib/shared/types';
   import { ansiToHtml, stripAnsi } from '$lib/client/ansi';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   // TODO (plan §15b): per-agent opt-in "live xterm thumbnail" mode.
   // Default stays poll-based: we fetch /api/agents/:id/snapshot every 5s,
@@ -171,12 +174,12 @@
     tabindex="0"
     onclick={handleOpen}
     onkeydown={onKey}
-    aria-label="Open terminal for {agent.role_name}"
+    aria-label={t('agent.openTerminal', { roleName: agent.role_name })}
   >
     {#if !alive}
-      <div class="placeholder">(tmux session gone)</div>
+      <div class="placeholder">{t('agent.tmuxGone')}</div>
     {:else if !hasContent}
-      <div class="placeholder">{loading ? 'loading…' : '(empty)'}</div>
+      <div class="placeholder">{loading ? t('agent.loading') : t('agent.empty')}</div>
     {:else}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -->
       <pre

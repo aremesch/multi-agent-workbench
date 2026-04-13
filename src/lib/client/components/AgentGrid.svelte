@@ -4,6 +4,9 @@
   import { loadGridStack } from '$lib/client/gridstack-loader';
   import AgentCard from '$lib/client/components/AgentCard.svelte';
   import type { AgentCardRow, LayoutEntry } from '$lib/shared/types';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   let {
     agents,
@@ -173,7 +176,7 @@
 <div bind:this={container} class="grid-stack"></div>
 
 {#if agents.length === 0}
-  <p class="empty">No live agents. Click the <strong>+</strong> button to spawn one.</p>
+  <p class="empty">{t('agent.noLiveAgents')}</p>
 {/if}
 
 <style>

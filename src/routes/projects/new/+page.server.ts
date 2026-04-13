@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { ulid } from 'ulid';
 import type { Actions, PageServerLoad } from './$types';
 import { insertProject } from '$lib/server/db/queries';
+import { t } from '$lib/i18n';
 
 const BRANCH_RE = /^[\w./-]+$/;
 
@@ -18,13 +19,13 @@ export const actions: Actions = {
     const default_branch = String(form.get('default_branch') ?? '').trim() || 'main';
 
     if (!name) {
-      return fail(400, { name, default_branch, error: 'Name is required' });
+      return fail(400, { name, default_branch, error: t(locals.locale, 'common.error.nameRequired') });
     }
     if (!BRANCH_RE.test(default_branch)) {
       return fail(400, {
         name,
         default_branch,
-        error: 'Default branch contains invalid characters'
+        error: t(locals.locale, 'common.error.invalidBranch')
       });
     }
 

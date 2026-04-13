@@ -2,6 +2,9 @@
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
   import { untrack } from 'svelte';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   export interface SpawnRoleOption {
     id: string;
@@ -116,12 +119,12 @@
         return;
       }
       if (result.type === 'failure') {
-        const msg = (result.data?.error as string | undefined) ?? 'Spawn failed';
+        const msg = (result.data?.error as string | undefined) ?? t('spawn.error.spawnFailed');
         error = msg;
         return;
       }
       if (result.type === 'error') {
-        error = result.error?.message ?? 'Spawn failed';
+        error = result.error?.message ?? t('spawn.error.spawnFailed');
         return;
       }
       await update();
@@ -146,7 +149,7 @@
       });
       const data = (await res.json()) as { id?: string; name?: string; cli_kind?: string; error?: string };
       if (!res.ok || !data.id) {
-        newRoleError = data.error ?? 'Failed to create role';
+        newRoleError = data.error ?? t('spawn.error.failedCreateRole');
         return;
       }
       const created: SpawnRoleOption = { id: data.id, name: data.name ?? newRoleName, cli_kind: data.cli_kind ?? newRoleCliKind };
@@ -156,7 +159,7 @@
       newRoleName = '';
       newRoleCliKind = cliKinds[0]?.kind ?? '';
     } catch {
-      newRoleError = 'Network error';
+      newRoleError = t('spawn.error.networkError');
     } finally {
       savingRole = false;
     }
@@ -173,7 +176,7 @@
       });
       const data = (await res.json()) as { id?: string; name?: string; default_branch?: string; error?: string };
       if (!res.ok || !data.id) {
-        newProjectError = data.error ?? 'Failed to create project';
+        newProjectError = data.error ?? t('spawn.error.failedCreateProject');
         return;
       }
       const created: SpawnProjectOption = {
@@ -187,7 +190,7 @@
       newProjectName = '';
       newProjectBranch = 'main';
     } catch {
-      newProjectError = 'Network error';
+      newProjectError = t('spawn.error.networkError');
     } finally {
       savingProject = false;
     }
@@ -208,7 +211,7 @@
       });
       const data = (await res.json()) as { id?: string; path?: string; projectName?: string; error?: string };
       if (!res.ok || !data.id) {
-        newRepoError = data.error ?? 'Failed to add repo';
+        newRepoError = data.error ?? t('spawn.error.failedAddRepo');
         return;
       }
       const created: SpawnRepoOption = {
@@ -224,7 +227,7 @@
       newRepoOriginUrl = '';
       newRepoProjectId = projectOptions[0]?.id ?? '';
     } catch {
-      newRepoError = 'Network error';
+      newRepoError = t('spawn.error.networkError');
     } finally {
       savingRepo = false;
     }
@@ -244,7 +247,7 @@
     <div class="field">
       <div class="field-row">
         <label class="grow">
-          <span>Role</span>
+          <span>{t('spawn.role')}</span>
           <select name="role_id" bind:value={selectedRoleId} required>
             {#each roleOptions as r (r.id)}
               <option value={r.id}>{r.name} ({r.cli_kind})</option>
@@ -255,20 +258,20 @@
           type="button"
           class="inline-add"
           onclick={() => { showNewRole = !showNewRole; newRoleError = null; }}
-          title="Create new role"
+          title={t('spawn.titleCreateRole')}
         >
-          {showNewRole ? '−' : '+ Role'}
+          {showNewRole ? t('spawn.collapseRole') : t('spawn.newRole')}
         </button>
       </div>
 
       {#if showNewRole}
         <div class="inline-form">
           <label>
-            <span>Name</span>
+            <span>{t('spawn.name')}</span>
             <input bind:value={newRoleName} placeholder="e.g. Coder" />
           </label>
           <label>
-            <span>CLI kind</span>
+            <span>{t('spawn.cliKind')}</span>
             <select bind:value={newRoleCliKind}>
               {#each cliKinds as k (k.kind)}
                 <option value={k.kind}>{k.displayName} ({k.kind})</option>
@@ -284,12 +287,12 @@
               class="cancel"
               onclick={() => { showNewRole = false; newRoleError = null; newRoleName = ''; }}
               disabled={savingRole}
-            >Cancel</button>
+            >{t('spawn.cancel')}</button>
             <button
               type="button"
               onclick={createRole}
               disabled={savingRole || !newRoleName || !newRoleCliKind}
-            >{savingRole ? 'Creating…' : 'Create role'}</button>
+            >{savingRole ? t('spawn.creating') : t('spawn.createRole')}</button>
           </div>
         </div>
       {/if}
@@ -299,7 +302,7 @@
     <div class="field">
       <div class="field-row">
         <label class="grow">
-          <span>Repo</span>
+          <span>{t('spawn.repo')}</span>
           <select name="repo_id" bind:value={selectedRepoId} required>
             {#each repoOptions as r (r.id)}
               <option value={r.id}>{r.projectName} — {r.path}</option>
@@ -310,9 +313,9 @@
           type="button"
           class="inline-add"
           onclick={() => { showNewRepo = !showNewRepo; newRepoError = null; }}
-          title="Add new repo"
+          title={t('spawn.titleAddRepo')}
         >
-          {showNewRepo ? '−' : '+ Repo'}
+          {showNewRepo ? t('spawn.collapseRepo') : t('spawn.newRepo')}
         </button>
       </div>
 
@@ -322,7 +325,7 @@
           <div class="field">
             <div class="field-row">
               <label class="grow">
-                <span>Project</span>
+                <span>{t('spawn.project')}</span>
                 <select bind:value={newRepoProjectId}>
                   {#each projectOptions as p (p.id)}
                     <option value={p.id}>{p.name}</option>
@@ -333,20 +336,20 @@
                 type="button"
                 class="inline-add"
                 onclick={() => { showNewProject = !showNewProject; newProjectError = null; }}
-                title="Create new project"
+                title={t('spawn.titleCreateProject')}
               >
-                {showNewProject ? '−' : '+ Project'}
+                {showNewProject ? t('spawn.collapseProject') : t('spawn.newProject')}
               </button>
             </div>
 
             {#if showNewProject}
               <div class="inline-form nested">
                 <label>
-                  <span>Project name</span>
+                  <span>{t('spawn.projectName')}</span>
                   <input bind:value={newProjectName} placeholder="My project" />
                 </label>
                 <label>
-                  <span>Default branch</span>
+                  <span>{t('spawn.defaultBranch')}</span>
                   <input bind:value={newProjectBranch} placeholder="main" />
                 </label>
                 {#if newProjectError}
@@ -358,23 +361,23 @@
                     class="cancel"
                     onclick={() => { showNewProject = false; newProjectError = null; newProjectName = ''; newProjectBranch = 'main'; }}
                     disabled={savingProject}
-                  >Cancel</button>
+                  >{t('spawn.cancel')}</button>
                   <button
                     type="button"
                     onclick={createProject}
                     disabled={savingProject || !newProjectName}
-                  >{savingProject ? 'Creating…' : 'Create project'}</button>
+                  >{savingProject ? t('spawn.creating') : t('spawn.createProject')}</button>
                 </div>
               </div>
             {/if}
           </div>
 
           <label>
-            <span>Path <span class="muted">(absolute filesystem path)</span></span>
+            <span>Path <span class="muted">({t('spawn.absPath')})</span></span>
             <input bind:value={newRepoPath} placeholder="/home/user/myrepo" />
           </label>
           <label>
-            <span>Origin URL <span class="muted">(optional)</span></span>
+            <span>{t('spawn.originUrl')} <span class="muted">({t('spawn.optional')})</span></span>
             <input bind:value={newRepoOriginUrl} placeholder="https://github.com/…" />
           </label>
           {#if newRepoError}
@@ -386,23 +389,23 @@
               class="cancel"
               onclick={() => { showNewRepo = false; showNewProject = false; newRepoError = null; newRepoPath = ''; newRepoOriginUrl = ''; }}
               disabled={savingRepo}
-            >Cancel</button>
+            >{t('spawn.cancel')}</button>
             <button
               type="button"
               onclick={createRepo}
               disabled={savingRepo || showNewProject || !newRepoProjectId || !newRepoPath}
-            >{savingRepo ? 'Adding…' : 'Add repo'}</button>
+            >{savingRepo ? t('spawn.adding') : t('spawn.addRepo')}</button>
           </div>
         </div>
       {/if}
     </div>
 
     <label>
-      <span>Task title <span class="muted">(optional)</span></span>
+      <span>{t('spawn.taskTitle')} <span class="muted">({t('spawn.optional')})</span></span>
       <input name="task_title" />
     </label>
     <label>
-      <span>Task body <span class="muted">(optional, sent as initial input)</span></span>
+      <span>{t('spawn.taskBody')} <span class="muted">({t('spawn.sentAsInitialInput')})</span></span>
       <textarea name="task_body" rows="6"></textarea>
     </label>
     {#if error}
@@ -411,13 +414,13 @@
     <div class="actions">
       {#if onCancel}
         <button type="button" class="cancel" onclick={onCancel} disabled={submitting}>
-          Cancel
+          {t('spawn.cancel')}
         </button>
       {:else}
-        <a href="/" class="cancel">Cancel</a>
+        <a href="/" class="cancel">{t('spawn.cancel')}</a>
       {/if}
       <button type="submit" disabled={submitting || anyInlineOpen || !selectedRoleId || !selectedRepoId}>
-        {submitting ? 'Spawning…' : 'Spawn'}
+        {submitting ? t('spawn.spawning') : t('spawn.spawn')}
       </button>
     </div>
   </form>

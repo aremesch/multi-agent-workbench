@@ -1,20 +1,22 @@
 <script lang="ts">
   import type { PageData } from './$types';
+  import { useT } from '$lib/client/i18n.svelte';
   let { data }: { data: PageData } = $props();
+  const t = useT();
 </script>
 
 <header class="head">
   <h1>{data.project.name}</h1>
-  <span class="muted">default branch <code>{data.project.default_branch}</code></span>
+  <span class="muted">{t('projects.defaultBranch', { branch: data.project.default_branch })}</span>
 </header>
 
 <section>
   <div class="section-head">
-    <h2>Repositories ({data.repos.length})</h2>
-    <a href={`/projects/${data.project.id}/repos/new`} class="btn">New repo</a>
+    <h2>{t('projects.repositories', { count: String(data.repos.length) })}</h2>
+    <a href={`/projects/${data.project.id}/repos/new`} class="btn">{t('projects.newRepo')}</a>
   </div>
   {#if data.repos.length === 0}
-    <p class="muted">No repos attached yet.</p>
+    <p class="muted">{t('projects.noRepos')}</p>
   {:else}
     <ul>
       {#each data.repos as r (r.id)}
@@ -29,7 +31,7 @@
   {/if}
 </section>
 
-<p><a href="/" class="muted">← Back to dashboard</a></p>
+<p><a href="/" class="muted">{t('projects.backToDashboard')}</a></p>
 
 <style>
   .head {

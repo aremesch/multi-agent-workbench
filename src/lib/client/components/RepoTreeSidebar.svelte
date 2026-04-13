@@ -1,6 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
   import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   let {
     activeRepos,
@@ -58,9 +61,9 @@
 <aside class="sidebar" class:collapsed={collapsed}>
   {#if !collapsed}
     <nav class="tree">
-      <div class="section-label">Repositories</div>
+      <div class="section-label">{t('sidebar.repositories')}</div>
       {#if activeRepos.length === 0}
-        <div class="empty">No repositories yet.</div>
+        <div class="empty">{t('sidebar.noRepos')}</div>
       {:else}
         <ul class="list">
           {#each activeRepos as repo (repo.repoId)}
@@ -71,7 +74,7 @@
                     type="button"
                     class="disclosure"
                     class:open={openRepos[repo.repoId]}
-                    aria-label={openRepos[repo.repoId] ? 'Collapse' : 'Expand'}
+                    aria-label={openRepos[repo.repoId] ? t('sidebar.collapse') : t('sidebar.expand')}
                     onclick={() => toggleRepo(repo.repoId)}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
@@ -115,13 +118,13 @@
       {/if}
 
       <div class="section-label archive-label">
-        Archive
+        {t('sidebar.archive')}
         <span class="count" style="margin-left: auto;"
           >{archivedRepos.reduce((n, r) => n + r.agents.length, 0)}</span
         >
       </div>
         {#if archivedRepos.length === 0}
-          <div class="empty">No archived agents.</div>
+          <div class="empty">{t('sidebar.noArchived')}</div>
         {:else}
           <ul class="list">
             {#each archivedRepos as repo (repo.repoId)}

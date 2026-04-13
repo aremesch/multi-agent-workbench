@@ -2,6 +2,9 @@
   import { onDestroy, onMount } from 'svelte';
   import { getMawWsClient, type AgentHandlers } from '$lib/client/ws';
   import Terminal from '$lib/client/components/Terminal.svelte';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   /**
    * Self-contained agent terminal panel. Used by both the dedicated
@@ -168,7 +171,7 @@
 
   {#if pendingPrompt}
     <section class="prompt">
-      <h2>Prompt detected</h2>
+      <h2>{t('agent.promptDetected')}</h2>
       {#if pendingPrompt.detail}
         <pre>{JSON.stringify(pendingPrompt.detail, null, 2)}</pre>
       {/if}
@@ -183,10 +186,10 @@
   <form onsubmit={submitInput} class="input">
     <input
       bind:value={inputText}
-      placeholder="Type a message, press Enter to send"
+      placeholder={t('agent.sendPlaceholder')}
       autocomplete="off"
     />
-    <button type="submit">Send</button>
+    <button type="submit">{t('agent.send')}</button>
   </form>
 </div>
 

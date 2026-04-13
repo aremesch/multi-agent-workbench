@@ -1,26 +1,28 @@
 <script lang="ts">
   import type { ActionData, PageData } from './$types';
+  import { useT } from '$lib/client/i18n.svelte';
   let { data, form }: { data: PageData; form: ActionData } = $props();
+  const t = useT();
 </script>
 
 <div class="wrap">
-  <h1>New repo</h1>
-  <p class="muted">Attach an existing git working tree to <strong>{data.project.name}</strong>.</p>
+  <h1>{t('newRepo.title')}</h1>
+  <p class="muted">{t('newRepo.attachDesc', { projectName: data.project.name })}</p>
   <form method="post">
     <label>
-      <span>Absolute path</span>
+      <span>{t('newRepo.absolutePath')}</span>
       <input name="path" value={form?.path ?? ''} placeholder="/home/you/code/my-repo" required />
     </label>
     <label>
-      <span>Origin URL <span class="muted">(optional)</span></span>
+      <span>{t('spawn.originUrl')} <span class="muted">({t('spawn.optional')})</span></span>
       <input name="origin_url" value={form?.origin_url ?? ''} placeholder="git@github.com:org/repo.git" />
     </label>
     {#if form?.error}
       <p class="err">{form.error}</p>
     {/if}
     <div class="actions">
-      <a href={`/projects/${data.project.id}`} class="cancel">Cancel</a>
-      <button type="submit">Attach repo</button>
+      <a href={`/projects/${data.project.id}`} class="cancel">{t('spawn.cancel')}</a>
+      <button type="submit">{t('newRepo.attachRepo')}</button>
     </div>
   </form>
 </div>

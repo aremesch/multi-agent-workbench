@@ -1,33 +1,35 @@
 <script lang="ts">
   import type { ActionData, PageData } from './$types';
+  import { useT } from '$lib/client/i18n.svelte';
   let { form, data }: { form: ActionData; data: PageData } = $props();
+  const t = useT();
 </script>
 
 <div class="wrap">
-  <h1>Account</h1>
-  <p class="meta">Signed in as <strong>{data.username}</strong></p>
+  <h1>{t('account.title')}</h1>
+  <p class="meta">{t('account.signedInAs', { username: data.username })}</p>
 
-  <h2>Change password</h2>
+  <h2>{t('account.changePassword')}</h2>
   <form method="post" action="?/changePassword">
     <label>
-      <span>Current password</span>
+      <span>{t('account.currentPw')}</span>
       <input name="current" type="password" autocomplete="current-password" required />
     </label>
     <label>
-      <span>New password</span>
+      <span>{t('account.newPw')}</span>
       <input name="next" type="password" autocomplete="new-password" minlength="8" required />
     </label>
     <label>
-      <span>Confirm new password</span>
+      <span>{t('account.confirmPw')}</span>
       <input name="confirm" type="password" autocomplete="new-password" minlength="8" required />
     </label>
     {#if form?.error}
       <p class="err">{form.error}</p>
     {/if}
     {#if form?.success}
-      <p class="ok">Password updated. Other sessions have been signed out.</p>
+      <p class="ok">{t('account.pwUpdated')}</p>
     {/if}
-    <button type="submit">Update password</button>
+    <button type="submit">{t('account.updatePw')}</button>
   </form>
 </div>
 

@@ -1,5 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   /**
    * A content-sized <dialog> wrapper.
@@ -68,7 +71,7 @@
       {#if headerRight}
         <div class="head-right">{@render headerRight()}</div>
       {/if}
-      <button type="button" class="close" aria-label="Close" onclick={onClose}>×</button>
+      <button type="button" class="close" aria-label={t('common.close')} onclick={onClose}>×</button>
     </header>
     <div class="maw-modal-body">
       {@render children()}

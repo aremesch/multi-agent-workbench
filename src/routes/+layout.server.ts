@@ -11,6 +11,7 @@ import {
   THEME_SETTING_KEY,
   parseTheme
 } from '$lib/shared/dashboard';
+import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
 import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
 
 const ALL_STATUSES: AgentStatus[] = [
@@ -52,7 +53,7 @@ function parseCollapsed(raw: string | null): boolean {
 
 export const load: LayoutServerLoad = async ({ locals }) => {
   if (!locals.user) {
-    return { user: null, sidebar: null, theme: DEFAULT_THEME };
+    return { user: null, sidebar: null, theme: DEFAULT_THEME, locale: (locals.locale ?? DEFAULT_LOCALE) as Locale };
   }
   const cards = listAgentCardsForUser(locals.user.id, ALL_STATUSES);
   const live: AgentCardRow[] = [];
@@ -80,6 +81,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
       archivedRepos: groupByRepo(archived),
       collapsed: parseCollapsed(getUserSetting(locals.user.id, SIDEBAR_COLLAPSED_KEY))
     },
-    theme: parseTheme(getUserSetting(locals.user.id, THEME_SETTING_KEY))
+    theme: parseTheme(getUserSetting(locals.user.id, THEME_SETTING_KEY)),
+    locale: (locals.locale ?? DEFAULT_LOCALE) as Locale
   };
 };

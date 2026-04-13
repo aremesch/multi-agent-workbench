@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { ulid } from 'ulid';
 import type { Actions, PageServerLoad } from './$types';
 import { insertRole } from '$lib/server/db/queries';
+import { t } from '$lib/i18n';
 
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) throw redirect(303, '/login');
@@ -22,10 +23,10 @@ export const actions: Actions = {
     const kinds = new Set(locals.supervisor.registry.list().map((k) => k.kind));
 
     if (!name) {
-      return fail(400, { ...fields, error: 'Name is required' });
+      return fail(400, { ...fields, error: t(locals.locale, 'common.error.nameRequired') });
     }
     if (!kinds.has(cli_kind)) {
-      return fail(400, { ...fields, error: 'Unknown CLI kind' });
+      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.unknownCliKind') });
     }
 
     const id = ulid();

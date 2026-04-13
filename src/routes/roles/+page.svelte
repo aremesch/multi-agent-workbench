@@ -1,15 +1,17 @@
 <script lang="ts">
   import type { PageData } from './$types';
+  import { useT } from '$lib/client/i18n.svelte';
   let { data }: { data: PageData } = $props();
+  const t = useT();
 </script>
 
 <header class="head">
-  <h1>Roles</h1>
-  <a href="/roles/new" class="btn">New role</a>
+  <h1>{t('roles.title')}</h1>
+  <a href="/roles/new" class="btn">{t('roles.newRole')}</a>
 </header>
 
 {#if data.roles.length === 0}
-  <p class="muted">No roles yet. A role bundles a CLI adapter + system prompt.</p>
+  <p class="muted">{t('roles.noRoles')}</p>
 {:else}
   <ul>
     {#each data.roles as r (r.id)}
@@ -21,7 +23,7 @@
   </ul>
 {/if}
 
-<p><a href="/" class="muted">← Back to dashboard</a></p>
+<p><a href="/" class="muted">{t('roles.backToDashboard')}</a></p>
 
 <style>
   .head {

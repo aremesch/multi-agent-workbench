@@ -1,6 +1,9 @@
 <script lang="ts">
   import Modal from './Modal.svelte';
   import Terminal from './Terminal.svelte';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   let {
     agentId,
@@ -45,9 +48,9 @@
 <Modal {open} {onClose} {title}>
   <div class="panel">
     {#if errorMsg}
-      <div class="error">Failed to load log: {errorMsg}</div>
+      <div class="error">{t('agent.failedLoadLog', { error: errorMsg })}</div>
     {:else if loading}
-      <div class="status">Loading log…</div>
+      <div class="status">{t('agent.loadingLog')}</div>
     {/if}
     <div class="term-wrap">
       <Terminal bind:this={term} />

@@ -1,17 +1,19 @@
 <script lang="ts">
   import type { ActionData, PageData } from './$types';
+  import { useT } from '$lib/client/i18n.svelte';
   let { data, form }: { data: PageData; form: ActionData } = $props();
+  const t = useT();
 </script>
 
 <div class="wrap">
-  <h1>New role</h1>
+  <h1>{t('newRole.title')}</h1>
   <form method="post">
     <label>
-      <span>Name</span>
+      <span>{t('spawn.name')}</span>
       <input name="name" value={form?.name ?? ''} required />
     </label>
     <label>
-      <span>CLI kind</span>
+      <span>{t('spawn.cliKind')}</span>
       <select name="cli_kind" required>
         {#each data.cliKinds as k (k.kind)}
           <option value={k.kind} selected={form?.cli_kind === k.kind}>{k.displayName} ({k.kind})</option>
@@ -19,15 +21,15 @@
       </select>
     </label>
     <label>
-      <span>System prompt <span class="muted">(optional)</span></span>
+      <span>{t('spawn.systemPrompt')} <span class="muted">({t('spawn.optional')})</span></span>
       <textarea name="system_prompt" rows="6">{form?.system_prompt ?? ''}</textarea>
     </label>
     {#if form?.error}
       <p class="err">{form.error}</p>
     {/if}
     <div class="actions">
-      <a href="/roles" class="cancel">Cancel</a>
-      <button type="submit">Create role</button>
+      <a href="/roles" class="cancel">{t('spawn.cancel')}</a>
+      <button type="submit">{t('spawn.createRole')}</button>
     </div>
   </form>
 </div>

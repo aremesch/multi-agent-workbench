@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { ulid } from 'ulid';
 import type { Actions, PageServerLoad } from './$types';
+import { t } from '$lib/i18n';
 import {
   getProject,
   getRepo,
@@ -54,21 +55,21 @@ export const actions: Actions = {
     const fields = { role_id, repo_id, task_title, task_body };
 
     if (!role_id || !repo_id) {
-      return fail(400, { ...fields, error: 'Role and repo are required' });
+      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.roleRepoRequired') });
     }
 
     const role = getRole(role_id);
     if (!role || role.user_id !== locals.user.id) {
-      return fail(400, { ...fields, error: 'Unknown role' });
+      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.unknownRole') });
     }
     const repo: RepoRow | undefined = getRepo(repo_id);
     if (!repo || repo.user_id !== locals.user.id) {
-      return fail(400, { ...fields, error: 'Unknown repo' });
+      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.unknownRepo') });
     }
 
     const project = getProject(repo.project_id);
     if (!project) {
-      return fail(400, { ...fields, error: 'Repo is orphaned (no project)' });
+      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.orphanedRepo') });
     }
 
     // Pre-generate agent id so worktree dir, branch and agent row stay in lock-step.
@@ -89,7 +90,7 @@ export const actions: Actions = {
     } catch (err) {
       return fail(400, {
         ...fields,
-        error: `Worktree creation failed: ${(err as Error).message}`
+        error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
       });
     }
 
@@ -119,7 +120,7 @@ export const actions: Actions = {
     } catch (err) {
       return fail(500, {
         ...fields,
-        error: `Spawn failed: ${(err as Error).message}`
+        error: `${t(locals.locale, 'spawn.error.spawnFailed')}: ${(err as Error).message}`
       });
     }
 

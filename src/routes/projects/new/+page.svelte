@@ -1,25 +1,27 @@
 <script lang="ts">
   import type { ActionData } from './$types';
+  import { useT } from '$lib/client/i18n.svelte';
   let { form }: { form: ActionData } = $props();
+  const t = useT();
 </script>
 
 <div class="wrap">
-  <h1>New project</h1>
+  <h1>{t('newProject.title')}</h1>
   <form method="post">
     <label>
-      <span>Name</span>
+      <span>{t('spawn.name')}</span>
       <input name="name" value={form?.name ?? ''} required />
     </label>
     <label>
-      <span>Default branch</span>
+      <span>{t('spawn.defaultBranch')}</span>
       <input name="default_branch" value={form?.default_branch ?? 'main'} required />
     </label>
     {#if form?.error}
       <p class="err">{form.error}</p>
     {/if}
     <div class="actions">
-      <a href="/" class="cancel">Cancel</a>
-      <button type="submit">Create project</button>
+      <a href="/" class="cancel">{t('spawn.cancel')}</a>
+      <button type="submit">{t('spawn.createProject')}</button>
     </div>
   </form>
 </div>

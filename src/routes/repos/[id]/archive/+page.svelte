@@ -2,6 +2,9 @@
   import type { PageData } from './$types';
   import ArchivedAgentLogModal from '$lib/client/components/ArchivedAgentLogModal.svelte';
   import { formatDurationHMS, formatTimestamp } from '$lib/shared/format';
+  import { useT } from '$lib/client/i18n.svelte';
+
+  const t = useT();
 
   let { data }: { data: PageData } = $props();
 
@@ -41,32 +44,32 @@
 
 <header class="head">
   <a class="back" href={`/repos/${data.repo.id}`}>← {data.repo.path}</a>
-  <h1>Archive</h1>
+  <h1>{t('archive.title')}</h1>
 </header>
 
 <main>
   {#if data.archivedAgents.length === 0}
-    <p class="empty">No archived agents for this repo.</p>
+    <p class="empty">{t('archive.noArchived')}</p>
   {:else}
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th aria-label="Expand"></th>
-            <th>Title</th>
-            <th>Role</th>
-            <th>CLI</th>
-            <th>Status</th>
-            <th>Exit</th>
-            <th>Started</th>
-            <th>Ended</th>
-            <th class="num">Total</th>
-            <th class="num">Active</th>
-            <th class="num">Idle</th>
-            <th class="num">In</th>
-            <th class="num">Out</th>
-            <th class="num">Cache W</th>
-            <th class="num">Cache R</th>
+            <th aria-label={t('sidebar.expand')}></th>
+            <th>{t('archive.th.title')}</th>
+            <th>{t('archive.th.role')}</th>
+            <th>{t('archive.th.cli')}</th>
+            <th>{t('archive.th.status')}</th>
+            <th>{t('archive.th.exit')}</th>
+            <th>{t('archive.th.started')}</th>
+            <th>{t('archive.th.ended')}</th>
+            <th class="num">{t('archive.th.total')}</th>
+            <th class="num">{t('archive.th.active')}</th>
+            <th class="num">{t('archive.th.idle')}</th>
+            <th class="num">{t('archive.th.in')}</th>
+            <th class="num">{t('archive.th.out')}</th>
+            <th class="num">{t('archive.th.cacheW')}</th>
+            <th class="num">{t('archive.th.cacheR')}</th>
             <th></th>
           </tr>
         </thead>
@@ -78,7 +81,7 @@
                   type="button"
                   class="toggle"
                   aria-expanded={expanded[entry.agent.id] ? 'true' : 'false'}
-                  aria-label={expanded[entry.agent.id] ? 'Collapse commits' : 'Expand commits'}
+                  aria-label={expanded[entry.agent.id] ? t('archive.collapseCommits') : t('archive.expandCommits')}
                   disabled={entry.commits.length === 0}
                   onclick={() => toggle(entry.agent.id)}
                 >
@@ -107,7 +110,7 @@
               <td class="num">{fmtTokens(entry.tokens?.cacheReadTokens)}</td>
               <td>
                 <button type="button" class="view-btn" onclick={() => viewLog(entry)}
-                  >View logs</button
+                  >{t('archive.viewLogs')}</button
                 >
               </td>
             </tr>
@@ -143,8 +146,7 @@
       </table>
     </div>
     <p class="note">
-      Active/idle is a 30s-gap heuristic over the persisted terminal log. Token counts are
-      sourced from Claude Code's JSONL transcript (available for claude-code agents only).
+      {t('archive.note')}
     </p>
   {/if}
 </main>

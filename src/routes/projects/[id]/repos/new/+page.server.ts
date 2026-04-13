@@ -6,12 +6,13 @@ import { ulid } from 'ulid';
 import type { Actions, PageServerLoad } from './$types';
 import { getProject, insertRepo } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
+import { t } from '$lib/i18n';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
   if (!locals.user) throw redirect(303, '/login');
   const project = getProject(params.id);
-  if (!project) throw error(404, 'Project not found');
-  if (project.user_id !== locals.user.id) throw error(403, 'Forbidden');
+  if (!project) throw error(404, t(locals.locale, 'common.error.projectNotFound'));
+  if (project.user_id !== locals.user.id) throw error(403, t(locals.locale, 'common.error.forbidden'));
   return { project };
 };
 
@@ -19,8 +20,8 @@ export const actions: Actions = {
   default: async ({ request, locals, params }) => {
     if (!locals.user) throw redirect(303, '/login');
     const project = getProject(params.id);
-    if (!project) throw error(404, 'Project not found');
-    if (project.user_id !== locals.user.id) throw error(403, 'Forbidden');
+    if (!project) throw error(404, t(locals.locale, 'common.error.projectNotFound'));
+    if (project.user_id !== locals.user.id) throw error(403, t(locals.locale, 'common.error.forbidden'));
 
     const form = await request.formData();
     const path = String(form.get('path') ?? '').trim();
@@ -28,27 +29,27 @@ export const actions: Actions = {
     const origin_url = origin_url_raw || null;
 
     if (!path) {
-      return fail(400, { path, origin_url: origin_url_raw, error: 'Path is required' });
+      return fail(400, { path, origin_url: origin_url_raw, error: t(locals.locale, 'common.error.pathRequired') });
     }
     if (!isAbsolute(path)) {
       return fail(400, {
         path,
         origin_url: origin_url_raw,
-        error: 'Path must be absolute'
+        error: t(locals.locale, 'common.error.pathNotAbsolute')
       });
     }
     if (!existsSync(path)) {
       return fail(400, {
         path,
         origin_url: origin_url_raw,
-        error: 'Path does not exist on disk'
+        error: t(locals.locale, 'common.error.pathNotExist')
       });
     }
     if (!statSync(path).isDirectory()) {
       return fail(400, {
         path,
         origin_url: origin_url_raw,
-        error: 'Path is not a directory'
+        error: t(locals.locale, 'common.error.pathNotDir')
       });
     }
 
@@ -74,7 +75,7 @@ export const actions: Actions = {
         return fail(400, {
           path,
           origin_url: origin_url_raw,
-          error: `Failed to initialize empty directory as git repo: ${(err as Error).message}`
+          error: t(locals.locale, 'common.error.gitInitFailed', { message: (err as Error).message })
         });
       }
     } else {
@@ -84,8 +85,7 @@ export const actions: Actions = {
         return fail(400, {
           path,
           origin_url: origin_url_raw,
-          error:
-            'Path is not a git repository and is not empty. Either clear the directory or run `git init` yourself.'
+          error: t(locals.locale, 'common.error.notGitNotEmpty')
         });
       }
 
@@ -106,7 +106,7 @@ export const actions: Actions = {
         return fail(400, {
           path,
           origin_url: origin_url_raw,
-          error: `Repo has no branch '${project.default_branch}' and no 'master' branch to rename${where}. Create '${project.default_branch}' manually and try again.`
+          error: t(locals.locale, 'common.error.noBranch', { branch: project.default_branch }) + where
         });
       }
     }

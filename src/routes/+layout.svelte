@@ -1,12 +1,14 @@
 <script lang="ts">
   import '../app.css';
-  import { onMount, type Snippet } from 'svelte';
+  import { onMount, setContext, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import RepoTreeSidebar from '$lib/client/components/RepoTreeSidebar.svelte';
   import type { SidebarRepoNode } from '$lib/shared/types';
   import type { ThemeId } from '$lib/shared/dashboard';
   import { getMawWsClient } from '$lib/client/ws';
   import { initTheme } from '$lib/client/stores/theme';
+  import { initLocale, currentLocale } from '$lib/client/stores/locale';
+  import { t as translate, type Locale } from '$lib/i18n';
 
   let {
     children,
@@ -21,11 +23,23 @@
         collapsed: boolean;
       } | null;
       theme: ThemeId;
+      locale: Locale;
     };
   } = $props();
 
+  // Provide locale via context so descendant components can use useT().
+  // svelte-ignore state_referenced_locally
+  let locale = $state<Locale>(data.locale);
+  setContext('maw-locale', () => locale);
+  currentLocale.subscribe((v) => { locale = v; });
+
+  function tt(key: string, params?: Record<string, string | number>): string {
+    return translate(locale, key, params);
+  }
+
   onMount(() => {
     initTheme(data.theme);
+    initLocale(data.locale);
     // Kick off the shared ws connection as soon as the app hydrates so the
     // first modal open finds it already `OPEN` and the first subscribe
     // doesn't have to wait on the handshake.
@@ -87,7 +101,7 @@
       <button
         type="button"
         class="sidebar-toggle inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-        aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+        aria-label={sidebarCollapsed ? tt('nav.showSidebar') : tt('nav.hideSidebar')}
         onclick={toggleSidebar}
         style="transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);"
       >
@@ -105,14 +119,14 @@
       class="font-semibold text-on-surface no-underline hover:text-primary"
       style="transition: color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);"
     >
-      Multi-Agent Workbench
+      {tt('nav.appTitle')}
     </a>
     {#if data.user}
       <div class="menu-wrap relative ml-auto">
         <button
           type="button"
           class="user-btn flex items-center gap-1.5 rounded-full border-none bg-transparent px-2.5 py-1 text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-          aria-label="User menu"
+          aria-label={tt('nav.userMenu')}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onclick={toggleMenu}
@@ -141,7 +155,7 @@
                   d="M19.14 12.94a7.49 7.49 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.14.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.67 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.49 7.49 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.43.33.67.23l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.04.25.25.43.49.43h3.84c.25 0 .45-.18.49-.42l.36-2.54c.59-.24 1.14-.56 1.63-.94l2.39.96c.24.1.53.01.67-.23l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Z"
                 />
               </svg>
-              Settings
+              {tt('nav.settings')}
             </button>
             <button
               type="button"
@@ -155,7 +169,7 @@
                   d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.33 0-10 1.67-10 5v3h20v-3c0-3.33-6.67-5-10-5Z"
                 />
               </svg>
-              Account
+              {tt('nav.account')}
             </button>
             <form method="POST" action="/login?/logout" class="m-0">
               <button
@@ -169,7 +183,7 @@
                     d="M17 7l-1.41 1.41L18.17 11H9v2h9.17l-2.58 2.59L17 17l5-5-5-5ZM5 5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7v-2H5V5Z"
                   />
                 </svg>
-                Logout
+                {tt('nav.logout')}
               </button>
             </form>
           </div>
