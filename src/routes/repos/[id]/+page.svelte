@@ -158,16 +158,16 @@
     width: 3.5rem;
     height: 3.5rem;
     border-radius: 50%;
-    background: #2563eb;
-    color: #fff;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
     border: none;
     font-size: 1.75rem;
     cursor: pointer;
-    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
     z-index: 30;
   }
   .fab:hover {
-    background: #1d4ed8;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 85%, black);
   }
   .status {
     font-size: 0.7rem;
