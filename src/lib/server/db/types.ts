@@ -25,8 +25,21 @@ export interface UserRow {
   id: string;
   username: string;
   password_hash: string;
+  must_change_password: number;
+  password_updated_at: number | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface AuthEventRow {
+  id: number;
+  ts: number;
+  event: string;
+  user_id: string | null;
+  username: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  detail: string | null;
 }
 
 export interface SessionRow {
