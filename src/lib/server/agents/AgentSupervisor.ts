@@ -35,7 +35,6 @@ export interface SpawnAgentArgs {
   repoPath: string;
   worktreeId: string;
   worktreePath: string;
-  agentName: string | null;
   task: { title: string; body: string } | null;
 }
 
@@ -271,7 +270,6 @@ export class AgentSupervisor {
       cli_kind: role.cli_kind,
       tmux_session: tmuxSession,
       status: 'spawning',
-      name: args.agentName ?? null,
       cli_session_id: cliSessionId
     });
 

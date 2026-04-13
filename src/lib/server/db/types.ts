@@ -90,7 +90,6 @@ export interface AgentRow {
   cli_kind: CliKind;
   tmux_session: string;
   status: AgentStatus;
-  name: string | null;
   last_attention_at: number | null;
   current_task_id: string | null;
   cli_session_id: string | null;

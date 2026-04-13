@@ -332,7 +332,6 @@ export function insertAgent(row: {
   cli_kind: string;
   tmux_session: string;
   status: AgentStatus;
-  name: string | null;
   cli_session_id: string | null;
 }): void {
   const ts = now();
@@ -347,14 +346,13 @@ export function insertAgent(row: {
       string,
       AgentStatus,
       string | null,
-      string | null,
       number,
       number
     ]
   >(
     `INSERT INTO agents
-       (id, user_id, role_id, repo_id, worktree_id, cli_kind, tmux_session, status, name, cli_session_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, user_id, role_id, repo_id, worktree_id, cli_kind, tmux_session, status, cli_session_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     row.id,
     row.user_id,
@@ -364,7 +362,6 @@ export function insertAgent(row: {
     row.cli_kind,
     row.tmux_session,
     row.status,
-    row.name,
     row.cli_session_id,
     ts,
     ts

@@ -48,11 +48,10 @@ export const actions: Actions = {
     const form = await request.formData();
     const role_id = String(form.get('role_id') ?? '').trim();
     const repo_id = String(form.get('repo_id') ?? '').trim();
-    const agent_name = String(form.get('agent_name') ?? '').trim() || null;
     const task_title = String(form.get('task_title') ?? '').trim();
     const task_body = String(form.get('task_body') ?? '');
 
-    const fields = { role_id, repo_id, agent_name, task_title, task_body };
+    const fields = { role_id, repo_id, task_title, task_body };
 
     if (!role_id || !repo_id) {
       return fail(400, { ...fields, error: 'Role and repo are required' });
@@ -115,7 +114,6 @@ export const actions: Actions = {
         repoPath: repo.path,
         worktreeId,
         worktreePath,
-        agentName: agent_name,
         task
       });
     } catch (err) {

@@ -37,7 +37,6 @@
       <table>
         <thead>
           <tr>
-            <th>Name</th>
             <th>Role</th>
             <th>CLI</th>
             <th>Status</th>
@@ -57,7 +56,6 @@
         <tbody>
           {#each data.archivedAgents as entry (entry.agent.id)}
             <tr>
-              <td class="agent-name">{entry.agent.name ?? '—'}</td>
               <td>{entry.agent.role_name}</td>
               <td>{entry.agent.cli_kind}</td>
               <td><span class="status status-{entry.agent.status}">{entry.agent.status}</span></td>
@@ -160,11 +158,6 @@
   }
   tbody tr:hover {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 4%, transparent);
-  }
-  .agent-name {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.8rem;
-    color: var(--md-sys-color-on-surface);
   }
   .reason {
     color: var(--md-sys-color-on-surface-variant);
