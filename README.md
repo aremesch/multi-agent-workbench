@@ -40,7 +40,7 @@ terminal.
 
 ## Stack
 
-- **SvelteKit** fullstack (TypeScript strict) on Node 22 via
+- **SvelteKit** fullstack (TypeScript strict) on Node 24 via
   `@sveltejs/adapter-node`, with a custom `server.js` that mounts a raw
   `ws` WebSocket server on the same HTTP listener.
 - **SQLite** via `better-sqlite3`, hand-written migrations under
@@ -83,7 +83,7 @@ server.js            adapter-node handler + ws server + boot sequence
 
 ## Prerequisites
 
-- Node.js 22 LTS and `pnpm`
+- Node.js 24 LTS and `pnpm`
 - `git` and `tmux` on `PATH`
 - Local (non-NFS) disk for SQLite WAL and FIFOs
 
@@ -92,26 +92,26 @@ agent runtime depends on `tmux` and POSIX named pipes (FIFOs), neither
 of which exist natively on Windows. Use WSL2 if you must, and treat it
 as Linux.
 
-### Ubuntu 24.04
+### Ubuntu/Debian
 
-Ubuntu 24.04's default `apt` repo ships Node 18, so Node 22 comes from
-NodeSource (or `nvm` / `fnm` if you prefer a version manager).
+Ubuntu 24.04's and Debian 12's default `apt` repo ship Node 18, Debian 13 ships
+Node 20, so Node 24 comes from NodeSource (or `nvm` / `fnm` if you prefer a version manager).
 
 ```bash
 # system packages
 sudo apt update
 sudo apt install -y git tmux curl ca-certificates
 
-# Node.js 22 LTS via NodeSource
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+# Node.js 24 LTS via NodeSource
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
 
-# pnpm via Corepack (bundled with Node 22)
+# pnpm via Corepack (bundled with Node 24)
 sudo corepack enable
 corepack prepare pnpm@latest --activate
 
 # verify
-node --version   # v22.x
+node --version   # v24.x
 pnpm --version
 tmux -V
 git --version
@@ -133,13 +133,13 @@ Install via [Homebrew](https://brew.sh):
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # runtime + tools
-brew install node@22 pnpm tmux git
+brew install node@24 pnpm tmux git
 
-# node@22 is keg-only; link it so `node` resolves to v22
-brew link --overwrite --force node@22
+# node@24 is keg-only; link it so `node` resolves to v24
+brew link --overwrite --force node@24
 
 # verify
-node --version   # v22.x
+node --version   # v24.x
 pnpm --version
 tmux -V
 git --version
