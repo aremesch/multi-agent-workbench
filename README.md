@@ -5,7 +5,7 @@ Self-hosted web workbench that orchestrates multiple LLM coding-agent CLIs
 repos. Each agent runs inside its own `tmux` session in an isolated git
 worktree. The backend reattaches to surviving sessions across restarts,
 streams live terminal output over WebSocket to a SvelteKit frontend, and
-(v0.2) will push permission-prompt alerts to a PWA on your phone.
+pushes permission-prompt alerts to an installable PWA on your phone.
 
 Two driving goals:
 
@@ -14,27 +14,29 @@ Two driving goals:
 2. **Daily browser workbench** — log in once, resume seamlessly, see
    every agent's live terminal side by side.
 
-## Status
+## PWA & push notifications
 
-v0.1 foundation + CRUD UI. `pnpm check` clean.
+MAW's headline feature: install it on your phone, get push notifications
+when an agent needs attention, tap to jump straight to that agent's
+terminal.
 
-- Create flow in SvelteKit form actions: project → repo → role → spawn
-  agent, all reachable from the dashboard.
-- Repo attach is self-healing: empty dirs get `git init`, unborn repos
-  are seeded, legacy `master` is renamed to the project default, and
-  non-empty non-git dirs are rejected.
-- Terminal view uses `xterm.js` (dynamic-imported for SSR safety) with
-  raw PTY bytes over WebSocket so UTF-8 multibyte sequences decode
-  correctly. Client keystrokes forward through a `send_keys` WS message
-  to `tmux send-keys -l`, preserving VT220 escape sequences.
-- FIFO streamer uses blocking reads in the libuv threadpool (no
-  `O_NONBLOCK`) so it can't crash on `EAGAIN`.
-- Smoke adapter `cli-adapters/shell.jsonc` exercises the pipeline end
-  to end without needing `claude` / `codex` / `gemini` installed.
-
-Not yet: edit/delete flows, PWA + service worker + Web Push, alert
-pipeline, MCP server, `maw` CLI binary, LLM overseer, tuned
-claude-code/codex/gemini adapter patterns.
+1. **Install.** Open the deployed URL in Android Chrome or desktop
+   Chrome/Edge and pick *Install app*. The manifest
+   (`static/manifest.webmanifest`) and service worker
+   (`src/service-worker.ts`) drive installability; an offline fallback
+   page is cached at install time.
+2. **Enable push.** Go to *Settings → Notifications*, grant permission,
+   and subscribe. Requires VAPID keys on the server — see the
+   [Environment](#environment) section.
+3. **What you get notified about.** Permission prompts, idle waiting,
+   crashes, errors — detected per adapter. Tapping a notification opens
+   the PWA on the agent that needs attention.
+4. **HTTPS is required.** Service workers and Web Push only work over
+   HTTPS (localhost is exempt for dev). Put MAW behind a TLS-terminating
+   reverse proxy (Caddy, nginx, Cloudflare Tunnel) for phone installs.
+5. **Per-spawn control.** The spawn form lets you toggle adapter flags
+   like Claude Code's `--dangerously-skip-permissions`. Turn it off if
+   you want the agent to actually prompt — that's what drives the push.
 
 ## Stack
 
@@ -51,20 +53,32 @@ claude-code/codex/gemini adapter patterns.
 - **Argon2id** password auth + signed httpOnly session cookie.
 - **Config-driven CLI adapters** (`cli-adapters/*.jsonc`, validated
   against `schemas/adapter.schema.json`) hot-reloaded via `chokidar`.
+- **Service worker** (`src/service-worker.ts`) + web app manifest for
+  PWA install, offline fallback, and push/notificationclick handling.
+- **`web-push`** for VAPID-signed Web Push fan-out from the backend.
+- **Production bundle** via `esbuild`: `pnpm build` emits a single
+  `build/server.js` that wraps the SvelteKit handler with the `/ws`
+  listener. Native addons (`better-sqlite3`, `@node-rs/argon2`) stay
+  external; prod hosts don't need `tsx` or the `src/` tree.
+- **i18n** with `en` / `de` / `fr` / `es` locales under `src/lib/i18n/`.
 
 ## Repository layout
 
 ```
-cli-adapters/     JSONC adapter definitions (claude-code, codex, gemini, shell)
-docs/plans/       Persisted roadmaps (v0.1-foundation, v0.1-crud-ui, …)
-migrations/       Hand-written NNN_*.sql migrations
-schemas/          JSON Schema for adapter configs
-scripts/          migrate.ts, test-adapter.ts
-src/lib/server/   AgentSupervisor, WorktreeManager, FifoStreamer, DB, auth
-src/lib/client/   xterm wrapper, WS client
-src/lib/shared/   Types shared between client and server
-src/routes/       SvelteKit routes (login, dashboard, projects, roles, agents)
-server.js         adapter-node handler + ws server + boot sequence
+cli-adapters/        JSONC adapter definitions (claude-code, codex, gemini, shell)
+docs/plans/          Persisted plans (see the Plans section below)
+migrations/          Hand-written NNN_*.sql migrations
+schemas/             JSON Schema for adapter configs
+scripts/             migrate.ts, test-adapter.ts
+static/              PWA manifest, icons, offline fallback
+src/service-worker.ts  Install / fetch / push / notificationclick
+src/lib/server/      AgentSupervisor, WorktreeManager, FifoStreamer, DB, auth
+src/lib/server/push/ PushService + alert fan-out (VAPID / web-push)
+src/lib/client/      xterm wrapper, shared WS client
+src/lib/i18n/        Locale bundles (en / de / fr / es)
+src/lib/shared/      Types shared between client and server
+src/routes/          SvelteKit routes (login, dashboard, repos, settings, api)
+server.js            adapter-node handler + ws server + boot sequence
 ```
 
 ## Prerequisites
@@ -144,7 +158,8 @@ xcode-select --install
 pnpm install
 cp .env.example .env
 # edit .env — at minimum set MAW_SESSION_SECRET and pick a
-# MAW_BOOTSTRAP_PASSWORD; leave VAPID keys blank until v0.2
+# MAW_BOOTSTRAP_PASSWORD. Generate VAPID keys if you want push:
+#   pnpm dlx web-push generate-vapid-keys
 pnpm migrate
 pnpm dev
 ```
@@ -187,10 +202,11 @@ All configuration lives in `.env`. See `.env.example` for the full list
 - `MAW_BOOTSTRAP_USERNAME` / `MAW_BOOTSTRAP_PASSWORD` — seeded only on
   first boot against an empty DB; change via the UI afterwards.
 - `MAW_SESSION_SECRET` — 32 random bytes (base64) for signing cookies.
-- `MAW_VAPID_*` — Web Push keys, used in v0.2.
-
-**Never commit `.env` or any credential.** See `CLAUDE.md` for the full
-rules.
+- `MAW_VAPID_PUBLIC_KEY` / `MAW_VAPID_PRIVATE_KEY` / `MAW_VAPID_SUBJECT`
+  — Web Push credentials. Generate a keypair with
+  `pnpm dlx web-push generate-vapid-keys`. `MAW_VAPID_SUBJECT` must be
+  a `mailto:` address or an `https://` URL. Leaving all three blank
+  disables push cleanly; the rest of the app still runs.
 
 ## Adapters
 
@@ -204,27 +220,7 @@ installing `claude`, `codex`, or `gemini`.
 Validate changes against `schemas/adapter.schema.json`; try them with
 `pnpm test:adapter`.
 
-## Roadmap
+## Plans
 
-Persisted plans live in [`docs/plans/`](docs/plans/):
-
-- [`v0.1-foundation.md`](docs/plans/v0.1-foundation.md) — original v0.1
-  design & scope (executed).
-- [`v0.1-crud-ui.md`](docs/plans/v0.1-crud-ui.md) — housekeeping + full
-  CRUD UI for projects/repos/roles/spawn agent (executed).
-- [`v0.1-dashboard-v2.md`](docs/plans/v0.1-dashboard-v2.md) — gridstack
-  dashboard, per-agent thumbnails, modal terminal, archive drawer,
-  spawn-form modal, supervisor reaper, tmux resize sync (executed).
-
-v0.2 and beyond: PWA + service worker + Web Push, alert pipeline, MCP
-server, `maw` CLI binary, LLM overseer, tuned adapter patterns for
-claude-code / codex / gemini.
-
-## Contributing notes
-
-- **Never hand-edit files under `src/lib/components/ui/`** — they are
-  vendored shadcn-svelte and must be refreshed from upstream via
-  `pnpm dlx shadcn-svelte@latest add -y -o <component>`.
-- Update `CLAUDE.md`'s "Current status" section *in place* as work
-  lands; git history is the activity log.
-- Roadmaps >50 lines belong in `docs/plans/`.
+Persisted plans live in [`docs/plans/`](docs/plans/). Git history is the
+activity log; plan files are the design record.
