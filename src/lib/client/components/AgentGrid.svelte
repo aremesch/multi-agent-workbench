@@ -135,7 +135,12 @@
         cellHeight: 'auto',
         float: true,
         margin: 8,
-        draggable: { handle: '.agent-card-header' }
+        draggable: { handle: '.agent-card-header' },
+        // Phones: collapse to a single column so cards aren't 1/12-th
+        // of a 400 px viewport (≈33 px wide). Resize handle visible on
+        // touch so users can adjust without a hover state.
+        columnOpts: { breakpoints: [{ w: 600, c: 1 }] },
+        alwaysShowResizeHandle: 'mobile'
       },
       container
     );
