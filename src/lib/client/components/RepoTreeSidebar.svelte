@@ -87,7 +87,7 @@
                 <a
                   class="row-link"
                   href={repoHref(repo.repoId)}
-                  title={`${repo.projectName} — ${repo.repoPath}`}
+                  title={repo.projectName ? `${repo.projectName} — ${repo.repoPath}` : repo.repoPath}
                 >
                   <span class="label">{repoLabel(repo)}</span>
                   {#if repo.agents.length > 0}
@@ -134,7 +134,7 @@
                   <a
                     class="row-link"
                     href={archiveHref(repo.repoId)}
-                    title={`${repo.projectName} — ${repo.repoPath}`}
+                    title={repo.projectName ? `${repo.projectName} — ${repo.repoPath}` : repo.repoPath}
                   >
                     <span class="label">{repoLabel(repo)}</span>
                     <span class="count">{repo.agents.length}</span>

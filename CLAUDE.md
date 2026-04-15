@@ -20,6 +20,17 @@ Two driving goals:
 ## Current status
 
 - v0.1 foundation + CRUD UI landed, `pnpm check` clean (0/0).
+- Spawn dialog now requires a task title and names the worktree
+  directory after a slug of that title
+  (`~/.local/share/maw/worktrees/<slug>/` instead of the ULID). Slug is
+  lowercase kebab `[a-z0-9-]`, max 60 chars; duplicate slugs are
+  rejected via a DB + filesystem check. Branch name stays
+  `maw/<agentId>`. Migration `004_repo_project_optional.sql` makes
+  `repos.project_id` nullable and lifts `default_branch` onto the repo
+  (copied from the project on migrate). The spawn form no longer shows
+  any Project UI — inline repo creation posts to `/api/repos` without
+  a project and the resulting row has `project_id = NULL`. Existing
+  ULID-named worktrees keep working (resolved via `worktrees.path`).
 - New persistent left sidebar (`RepoTreeSidebar`) shows a Repo→Agents
   treeview with an `Archive` top-level node listing only repos that
   have archived agents (no per-agent expansion). Sidebar bg matches
@@ -146,4 +157,5 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-jsonl-history.md`](docs/plans/v0.1-jsonl-history.md) — out-of-band reconnect history sourced from Claude Code's `~/.claude/projects/.../<sessionId>.jsonl` transcript instead of tmux scrollback; `historySource` adapter field, deterministic `--session-id <uuid>` spawn, `history_snapshot` WS message (protocol v3) prepended to the live capture (executed).
 - [`docs/plans/v0.1-archive-dashboard.md`](docs/plans/v0.1-archive-dashboard.md) — sidebar Archive lists repos only (no per-agent expansion); new `/repos/[id]/archive` dashboard table for exited/crashed agents with total/active/idle time and an xterm log-replay modal backed by `/api/agents/[id]/log` (executed).
 - [`docs/plans/v0.2-tmux-survive-restart.md`](docs/plans/v0.2-tmux-survive-restart.md) — dedicated `tmux -L maw` socket + drops the stale-channel guard so `session-closed` hook reliably closes the terminal modal on CLI exit (executed). The `systemd-run --user --scope` half is **superseded by v2** below.
+- [`docs/plans/v0.2-title-worktree-naming.md`](docs/plans/v0.2-title-worktree-naming.md) — mandatory agent titles in the spawn dialog; worktree dirs named after a lowercase-kebab slug of the title (`~/.local/share/maw/worktrees/<slug>/`) with duplicate titles rejected; project picker/creator removed from the spawn form; `repos.project_id` made nullable and `default_branch` lifted onto the repo via migration `004_repo_project_optional.sql` (executed).
 - [`docs/plans/v0.2-tmux-survive-restart-v2.md`](docs/plans/v0.2-tmux-survive-restart-v2.md) — replaces the broken transient-scope dance with a shipped `deploy/systemd/maw-tmux.service` user unit that owns the `-L maw` server outside `maw.service`'s cgroup. `Tmux.ensureServer()` is gone; bootstrap just probes the socket and warns if missing. Operator must install the new unit + add `Wants=/After=maw-tmux.service` and `KillMode=process` to `maw.service` (executed).

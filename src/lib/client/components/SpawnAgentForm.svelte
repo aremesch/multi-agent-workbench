@@ -14,12 +14,7 @@
   export interface SpawnRepoOption {
     id: string;
     path: string;
-    projectName: string;
-  }
-  export interface SpawnProjectOption {
-    id: string;
-    name: string;
-    default_branch: string;
+    projectName: string | null;
   }
   export interface OptionalArgMeta {
     id: string;
@@ -38,7 +33,6 @@
   let {
     roles,
     repos,
-    projects,
     cliKinds,
     spawnDefaults = {},
     /**
@@ -51,7 +45,6 @@
   }: {
     roles: SpawnRoleOption[];
     repos: SpawnRepoOption[];
-    projects: SpawnProjectOption[];
     cliKinds: CliKindOption[];
     spawnDefaults?: SpawnDefaults;
     onSuccess?: (agentId: string) => void;
@@ -63,7 +56,6 @@
   // these to re-derive when props change; mutations come from inline creation.
   let roleOptions = $state<SpawnRoleOption[]>(untrack(() => [...roles]));
   let repoOptions = $state<SpawnRepoOption[]>(untrack(() => [...repos]));
-  let projectOptions = $state<SpawnProjectOption[]>(untrack(() => [...projects]));
 
   let selectedRoleId = $state(untrack(() => roles[0]?.id ?? ''));
   let selectedRepoId = $state(untrack(() => repos[0]?.id ?? ''));
@@ -77,18 +69,23 @@
 
   // ── Inline repo creation ────────────────────────────────────────────────
   let showNewRepo = $state(false);
-  let newRepoProjectId = $state(untrack(() => projects[0]?.id ?? ''));
   let newRepoPath = $state('');
   let newRepoOriginUrl = $state('');
   let newRepoError = $state<string | null>(null);
   let savingRepo = $state(false);
 
-  // ── Nested inline project creation (inside repo form) ───────────────────
-  let showNewProject = $state(false);
-  let newProjectName = $state('');
-  let newProjectBranch = $state('main');
-  let newProjectError = $state<string | null>(null);
-  let savingProject = $state(false);
+  // ── Task title + slug preview ──────────────────────────────────────────
+  let taskTitle = $state('');
+  const taskSlug = $derived(
+    taskTitle
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60)
+      .replace(/-+$/g, '')
+  );
 
   // ── Advanced: optional args toggles ──────────────────────────────────────
   let showAdvanced = $state(false);
@@ -203,37 +200,6 @@
     }
   }
 
-  async function createProject(): Promise<void> {
-    newProjectError = null;
-    savingProject = true;
-    try {
-      const res = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: newProjectName, default_branch: newProjectBranch })
-      });
-      const data = (await res.json()) as { id?: string; name?: string; default_branch?: string; error?: string };
-      if (!res.ok || !data.id) {
-        newProjectError = data.error ?? t('spawn.error.failedCreateProject');
-        return;
-      }
-      const created: SpawnProjectOption = {
-        id: data.id,
-        name: data.name ?? newProjectName,
-        default_branch: data.default_branch ?? newProjectBranch
-      };
-      projectOptions = [...projectOptions, created];
-      newRepoProjectId = created.id;
-      showNewProject = false;
-      newProjectName = '';
-      newProjectBranch = 'main';
-    } catch {
-      newProjectError = t('spawn.error.networkError');
-    } finally {
-      savingProject = false;
-    }
-  }
-
   async function createRepo(): Promise<void> {
     newRepoError = null;
     savingRepo = true;
@@ -242,7 +208,6 @@
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          project_id: newRepoProjectId,
           path: newRepoPath,
           origin_url: newRepoOriginUrl || undefined
         })
@@ -255,15 +220,13 @@
       const created: SpawnRepoOption = {
         id: data.id,
         path: data.path ?? newRepoPath,
-        projectName: data.projectName ?? ''
+        projectName: data.projectName ?? null
       };
       repoOptions = [...repoOptions, created];
       selectedRepoId = created.id;
       showNewRepo = false;
-      showNewProject = false;
       newRepoPath = '';
       newRepoOriginUrl = '';
-      newRepoProjectId = projectOptions[0]?.id ?? '';
     } catch {
       newRepoError = t('spawn.error.networkError');
     } finally {
@@ -343,7 +306,7 @@
           <span>{t('spawn.repo')}</span>
           <select name="repo_id" bind:value={selectedRepoId} required>
             {#each repoOptions as r (r.id)}
-              <option value={r.id}>{r.projectName} — {r.path}</option>
+              <option value={r.id}>{r.projectName ? `${r.projectName} — ${r.path}` : r.path}</option>
             {/each}
           </select>
         </label>
@@ -359,57 +322,6 @@
 
       {#if showNewRepo}
         <div class="inline-form">
-          <!-- Project selector + inline project creation -->
-          <div class="field">
-            <div class="field-row">
-              <label class="grow">
-                <span>{t('spawn.project')}</span>
-                <select bind:value={newRepoProjectId}>
-                  {#each projectOptions as p (p.id)}
-                    <option value={p.id}>{p.name}</option>
-                  {/each}
-                </select>
-              </label>
-              <button
-                type="button"
-                class="inline-add"
-                onclick={() => { showNewProject = !showNewProject; newProjectError = null; }}
-                title={t('spawn.titleCreateProject')}
-              >
-                {showNewProject ? t('spawn.collapseProject') : t('spawn.newProject')}
-              </button>
-            </div>
-
-            {#if showNewProject}
-              <div class="inline-form nested">
-                <label>
-                  <span>{t('spawn.projectName')}</span>
-                  <input bind:value={newProjectName} placeholder="My project" />
-                </label>
-                <label>
-                  <span>{t('spawn.defaultBranch')}</span>
-                  <input bind:value={newProjectBranch} placeholder="main" />
-                </label>
-                {#if newProjectError}
-                  <p class="err">{newProjectError}</p>
-                {/if}
-                <div class="inline-actions">
-                  <button
-                    type="button"
-                    class="cancel"
-                    onclick={() => { showNewProject = false; newProjectError = null; newProjectName = ''; newProjectBranch = 'main'; }}
-                    disabled={savingProject}
-                  >{t('spawn.cancel')}</button>
-                  <button
-                    type="button"
-                    onclick={createProject}
-                    disabled={savingProject || !newProjectName}
-                  >{savingProject ? t('spawn.creating') : t('spawn.createProject')}</button>
-                </div>
-              </div>
-            {/if}
-          </div>
-
           <label>
             <span>Path <span class="muted">({t('spawn.absPath')})</span></span>
             <input bind:value={newRepoPath} placeholder="/home/user/myrepo" />
@@ -425,13 +337,13 @@
             <button
               type="button"
               class="cancel"
-              onclick={() => { showNewRepo = false; showNewProject = false; newRepoError = null; newRepoPath = ''; newRepoOriginUrl = ''; }}
+              onclick={() => { showNewRepo = false; newRepoError = null; newRepoPath = ''; newRepoOriginUrl = ''; }}
               disabled={savingRepo}
             >{t('spawn.cancel')}</button>
             <button
               type="button"
               onclick={createRepo}
-              disabled={savingRepo || showNewProject || !newRepoProjectId || !newRepoPath}
+              disabled={savingRepo || !newRepoPath}
             >{savingRepo ? t('spawn.adding') : t('spawn.addRepo')}</button>
           </div>
         </div>
@@ -439,8 +351,11 @@
     </div>
 
     <label>
-      <span>{t('spawn.taskTitle')} <span class="muted">({t('spawn.optional')})</span></span>
-      <input name="task_title" />
+      <span>{t('spawn.taskTitle')}</span>
+      <input name="task_title" bind:value={taskTitle} required />
+      {#if taskSlug}
+        <span class="slug-preview">worktree: {taskSlug}/</span>
+      {/if}
     </label>
     <label>
       <span>{t('spawn.taskBody')} <span class="muted">({t('spawn.sentAsInitialInput')})</span></span>
@@ -493,7 +408,7 @@
       {:else}
         <a href="/" class="cancel">{t('spawn.cancel')}</a>
       {/if}
-      <button type="submit" disabled={submitting || anyInlineOpen || !selectedRoleId || !selectedRepoId}>
+      <button type="submit" disabled={submitting || anyInlineOpen || !selectedRoleId || !selectedRepoId || !taskSlug}>
         {submitting ? t('spawn.spawning') : t('spawn.spawn')}
       </button>
     </div>
@@ -582,10 +497,6 @@
     padding: 0.4rem 0.5rem;
     font-size: 0.85rem;
   }
-  .inline-form.nested {
-    border-left-color: #6b7280;
-    margin-left: 0.5rem;
-  }
   .inline-actions {
     display: flex;
     gap: 0.4rem;
@@ -611,6 +522,11 @@
   }
   .muted {
     color: #6b7280;
+  }
+  .slug-preview {
+    color: #6b7280;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.75rem;
   }
   .actions {
     display: flex;

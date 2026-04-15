@@ -142,7 +142,6 @@
     <SpawnAgentForm
       roles={data.spawnRoles}
       repos={data.spawnRepos}
-      projects={data.spawnProjects}
       cliKinds={data.spawnCliKinds}
       spawnDefaults={data.spawnDefaults}
       onSuccess={onSpawnSuccess}

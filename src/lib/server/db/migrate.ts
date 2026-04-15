@@ -55,11 +55,22 @@ export function runMigrations(): { applied: number; total: number } {
     const hash = createHash('sha256').update(sql).digest('hex');
     if (appliedHashes.has(hash)) continue;
 
-    const tx = db.transaction(() => {
-      db.exec(sql);
-      insertMigration.run(hash, now);
-    });
-    tx();
+    // SQLite refuses `DROP TABLE` on any table referenced by an FK when
+    // `foreign_keys=ON`, and the pragma can't be toggled inside a tx — so
+    // we disable FKs around the transaction per the SQLite 12-step rebuild
+    // recipe. Migrations still run atomically; if one fails, the tx rolls
+    // back and FKs are restored in the finally.
+    const fkWasOn = (db.pragma('foreign_keys', { simple: true }) as number) === 1;
+    if (fkWasOn) db.pragma('foreign_keys = OFF');
+    try {
+      const tx = db.transaction(() => {
+        db.exec(sql);
+        insertMigration.run(hash, now);
+      });
+      tx();
+    } finally {
+      if (fkWasOn) db.pragma('foreign_keys = ON');
+    }
     newlyApplied++;
   }
 

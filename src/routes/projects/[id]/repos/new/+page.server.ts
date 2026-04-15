@@ -117,7 +117,8 @@ export const actions: Actions = {
       user_id: locals.user.id,
       project_id: project.id,
       path,
-      origin_url
+      origin_url,
+      default_branch: project.default_branch
     });
     throw redirect(303, `/projects/${project.id}`);
   }

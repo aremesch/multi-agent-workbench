@@ -36,8 +36,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
   const repo = getRepo(params.id);
   if (!repo || repo.user_id !== locals.user.id) throw error(404, 'Repo not found');
 
-  const project = getProject(repo.project_id);
-  const defaultBranch = project?.default_branch ?? 'main';
+  const project = repo.project_id ? getProject(repo.project_id) : null;
+  const defaultBranch = project?.default_branch ?? repo.default_branch ?? 'main';
   const remote: AgentRemote | null = parseRemoteUrl(repo.origin_url);
 
   const agents = listAgentCardsForRepo(locals.user.id, repo.id, ARCHIVED_STATUSES);

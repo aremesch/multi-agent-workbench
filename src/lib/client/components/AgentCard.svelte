@@ -188,7 +188,7 @@
   <header class="agent-card-header">
     <div class="titles">
       <span class="name"
-        >{agent.project_name}{agent.task_title ? `/${agent.task_title}` : ''}</span
+        >{agent.task_title ?? agent.project_name ?? ''}</span
       >
       <span class="role">{agent.role_name}</span>
       <span class="cli">{agent.cli_kind}</span>

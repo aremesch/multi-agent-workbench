@@ -50,9 +50,10 @@ export interface ProjectRow {
 export interface RepoRow {
   id: string;
   user_id: string;
-  project_id: string;
+  project_id: string | null;
   path: string;
   origin_url: string | null;
+  default_branch: string | null;
   created_at: number;
   updated_at: number;
 }

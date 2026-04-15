@@ -149,16 +149,22 @@ export function listReposForProject(projectId: string): RepoRow[] {
 export interface RepoWithProjectRow {
   id: string;
   path: string;
-  project_name: string;
+  project_name: string | null;
 }
 
 export function listReposWithProjectForUser(userId: string): RepoWithProjectRow[] {
   return prep<[string], RepoWithProjectRow>(
     `SELECT r.id AS id, r.path AS path, p.name AS project_name
        FROM repos r
-       JOIN projects p ON p.id = r.project_id
+       LEFT JOIN projects p ON p.id = r.project_id
       WHERE r.user_id = ?
       ORDER BY r.path`
+  ).all(userId);
+}
+
+export function listReposForUser(userId: string): RepoRow[] {
+  return prep<[string], RepoRow>(
+    'SELECT * FROM repos WHERE user_id = ? ORDER BY path'
   ).all(userId);
 }
 
@@ -169,20 +175,34 @@ export function getRepo(id: string): RepoRow | undefined {
 export function insertRepo(row: {
   id: string;
   user_id: string;
-  project_id: string;
+  project_id: string | null;
   path: string;
   origin_url: string | null;
+  default_branch: string | null;
 }): void {
   const ts = now();
-  prep<[string, string, string, string, string | null, number, number]>(
-    'INSERT INTO repos (id, user_id, project_id, path, origin_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(row.id, row.user_id, row.project_id, row.path, row.origin_url, ts, ts);
+  prep<[string, string, string | null, string, string | null, string | null, number, number]>(
+    'INSERT INTO repos (id, user_id, project_id, path, origin_url, default_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(
+    row.id,
+    row.user_id,
+    row.project_id,
+    row.path,
+    row.origin_url,
+    row.default_branch,
+    ts,
+    ts
+  );
 }
 
 // --------------- worktrees ---------------
 
 export function getWorktree(id: string): WorktreeRow | undefined {
   return prep<[string], WorktreeRow>('SELECT * FROM worktrees WHERE id = ?').get(id);
+}
+
+export function findWorktreeByPath(path: string): WorktreeRow | undefined {
+  return prep<[string], WorktreeRow>('SELECT * FROM worktrees WHERE path = ?').get(path);
 }
 
 export function listWorktreesForRepo(repoId: string): WorktreeRow[] {
@@ -272,7 +292,7 @@ export function listAgentsForUser(userId: string): AgentRow[] {
 export interface AgentCardRow extends AgentRow {
   role_name: string;
   repo_path: string;
-  project_name: string;
+  project_name: string | null;
   task_title: string | null;
 }
 
@@ -291,7 +311,7 @@ export function listAgentCardsForUser(
     FROM agents a
     JOIN roles r ON r.id = a.role_id
     JOIN repos rp ON rp.id = a.repo_id
-    JOIN projects p ON p.id = rp.project_id
+    LEFT JOIN projects p ON p.id = rp.project_id
     LEFT JOIN tasks t ON t.id = a.current_task_id
     WHERE a.user_id = ? AND a.status IN (${placeholders})
     ORDER BY a.created_at DESC
@@ -316,7 +336,7 @@ export function listAgentCardsForRepo(
     FROM agents a
     JOIN roles r ON r.id = a.role_id
     JOIN repos rp ON rp.id = a.repo_id
-    JOIN projects p ON p.id = rp.project_id
+    LEFT JOIN projects p ON p.id = rp.project_id
     LEFT JOIN tasks t ON t.id = a.current_task_id
     WHERE a.user_id = ? AND a.repo_id = ? AND a.status IN (${placeholders})
     ORDER BY a.created_at DESC
