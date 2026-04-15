@@ -45,6 +45,10 @@ export class ConfigDrivenAdapter implements CliAdapter {
   private _state: AdapterRuntimeState = 'BOOTING';
   private lastOutputAt = 0;
 
+  /** Tracks last matched text per alert-producing pattern to prevent re-firing
+   *  on stale content that is still sitting in the tail buffer. */
+  private firedMatches = new Map<string, string>();
+
   constructor(cfg: AdapterConfig) {
     this.cfg = cfg;
     this.kind = cfg.kind;
@@ -104,11 +108,25 @@ export class ConfigDrivenAdapter implements CliAdapter {
     const stripped = stripAnsi(chunk.toString('utf8'));
     this.tail = (this.tail + stripped).slice(-TAIL_MAX_BYTES);
 
+    // Evict stale fired-match entries whose text scrolled out of the tail.
+    for (const [id, text] of this.firedMatches) {
+      if (!this.tail.includes(text)) this.firedMatches.delete(id);
+    }
+
     const events: AdapterEvent[] = [];
     for (const p of this.patterns) {
       const scope = p.cfg.scope === 'tail_line' ? this.lastNonEmptyLine(this.tail) : this.tail;
       const m = p.re.exec(scope);
       if (!m) continue;
+
+      // Deduplicate alert-producing patterns: skip if the exact same text
+      // is still in the tail from a previous match. State-tracking kinds
+      // (ready, working) must re-fire for the state machine.
+      const isAlertKind = p.cfg.kind === 'prompt_detected'
+        || p.cfg.kind === 'error'
+        || p.cfg.kind === 'task_done';
+      if (isAlertKind && this.firedMatches.get(p.cfg.id) === m[0]) continue;
+      if (isAlertKind) this.firedMatches.set(p.cfg.id, m[0]);
 
       const detail: Record<string, unknown> = { ...(m.groups ?? {}) };
       const ev: AdapterEvent = {

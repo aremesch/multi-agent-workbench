@@ -51,6 +51,15 @@
 
   "patterns": [
     {
+      "id": "plan_approval_prompt",
+      "kind": "prompt_detected",
+      "regex": "Would you like to proceed\\?",
+      "scope": "tail",
+      "choices": ["1", "2", "abort"],
+      "severity": "warning",
+      "description": "Claude Code plan approval prompt"
+    },
+    {
       "id": "tool_permission_prompt",
       "kind": "prompt_detected",
       "regex": "Do you want to (?:run|proceed with) (?<tool>[a-zA-Z_]+)(?:\\((?<args>[^)]*)\\))?\\?",
@@ -84,7 +93,7 @@
     {
       "id": "rate_limit",
       "kind": "error",
-      "regex": "rate.limit|quota exceeded",
+      "regex": "(?<message>rate.limit|quota exceeded)",
       "flags": "i",
       "scope": "tail",
       "severity": "error"
