@@ -1,0 +1,18 @@
+# ~/.config/systemd/user/maw.service
+[Unit]
+Description=Multi-Agent Workbench
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/maw
+EnvironmentFile=/home/maw/.env
+Environment=UV_THREADPOOL_SIZE=64
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node build/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target
