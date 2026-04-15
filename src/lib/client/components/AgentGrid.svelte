@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { mount, onDestroy, onMount, unmount } from 'svelte';
+  import { getAllContexts, mount, onDestroy, onMount, unmount } from 'svelte';
   import type { GridStack } from 'gridstack';
   import { loadGridStack } from '$lib/client/gridstack-loader';
   import AgentCard from '$lib/client/components/AgentCard.svelte';
@@ -7,6 +7,13 @@
   import { useT } from '$lib/client/i18n.svelte';
 
   const t = useT();
+
+  // Svelte 5's `mount()` creates a fresh component tree with no parent
+  // context — so an imperatively-mounted AgentCard can't see the
+  // `maw-locale` context (useT → getContext) and throws during setup.
+  // Capture our own parent context here at AgentGrid setup time and
+  // forward it to every mount() below.
+  const parentContext = getAllContexts();
 
   let {
     agents,
@@ -99,7 +106,8 @@
 
     const dispose = mount(AgentCard, {
       target: content,
-      props: { agent, onOpen }
+      props: { agent, onOpen },
+      context: parentContext
     });
 
     // Svelte 5 delegates onclick to document, but gridstack's drag/resize
