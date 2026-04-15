@@ -1,0 +1,15 @@
+[Unit]
+Description=MAW dedicated tmux server
+After=default.target
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/tmux -L maw start-server
+ExecStop=/usr/bin/tmux -L maw kill-server
+RemainAfterExit=yes
+KillMode=mixed
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

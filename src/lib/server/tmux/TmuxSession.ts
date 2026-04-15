@@ -13,42 +13,14 @@ export const SESSION_PREFIX = 'maw-agent-';
 /**
  * Dedicated tmux socket name. All tmux invocations use `-L maw` so the
  * tmux server is separate from any other tmux server the user runs and
- * — critically — can be started inside its own transient systemd scope
- * so `systemctl --user restart maw` does not take the server down with
- * it.
+ * — critically — lives in its own user systemd unit (`maw-tmux.service`,
+ * shipped under `deploy/systemd/`) outside maw.service's cgroup, so
+ * `systemctl --user restart maw` does not take the server down with it.
  */
 const SOCKET = 'maw';
 
 function t(args: string[]): string[] {
   return ['-L', SOCKET, ...args];
-}
-
-let serverEnsured = false;
-let systemdRunAvailable: boolean | null = null;
-
-async function hasSystemdRun(): Promise<boolean> {
-  if (systemdRunAvailable !== null) return systemdRunAvailable;
-  try {
-    await execa('systemd-run', ['--version']);
-    systemdRunAvailable = true;
-  } catch {
-    systemdRunAvailable = false;
-  }
-  return systemdRunAvailable;
-}
-
-async function serverRunning(): Promise<boolean> {
-  try {
-    // `list-clients` succeeds (possibly with empty output) when the server
-    // is up and errors with "no server running" otherwise. It doesn't
-    // require any sessions to exist.
-    await execa('tmux', t(['list-clients']));
-    return true;
-  } catch (err) {
-    const e = err as ExecaError;
-    const stderr = typeof e.stderr === 'string' ? e.stderr : '';
-    return !/no server running/i.test(stderr);
-  }
 }
 
 export interface SpawnOptions {
@@ -67,47 +39,32 @@ export class Tmux {
   }
 
   /**
-   * Start the dedicated `-L maw` tmux server inside its own transient
-   * systemd user scope so it is not part of the maw.service cgroup. If
-   * systemd-run is unavailable (e.g. dev on macOS) we fall back to a
-   * detached `tmux start-server` — maw still gets killed-as-parent in
-   * that case but without systemd there is no cgroup to inherit.
+   * Probe whether the `-L maw` tmux server is already up. In production it
+   * should be owned by the `maw-tmux.service` user unit (see
+   * `deploy/systemd/maw-tmux.service`) so it survives `systemctl --user
+   * restart maw`. In dev (no systemd, e.g. macOS) it's fine for tmux to
+   * auto-spawn on the first `new-session` — we just log a hint.
    *
-   * Idempotent: checks whether the server is already up first, and if
-   * the systemd scope unit already exists it swallows the error.
+   * Never throws: a missing server isn't fatal at boot, the first
+   * `new-session` will spawn one. We only want to surface the
+   * misconfiguration loudly so a prod operator notices.
    */
-  static async ensureServer(): Promise<void> {
-    if (serverEnsured) return;
-    if (await serverRunning()) {
-      serverEnsured = true;
-      return;
-    }
-    if (await hasSystemdRun()) {
-      try {
-        await execa('systemd-run', [
-          '--user',
-          '--scope',
-          '--quiet',
-          '--unit=maw-tmux',
-          '--',
-          'tmux',
-          '-L',
-          SOCKET,
-          'start-server'
-        ]);
-      } catch (err) {
-        const e = err as ExecaError;
-        const stderr = typeof e.stderr === 'string' ? e.stderr : '';
-        // Scope already exists — server is up under the existing scope.
-        if (!/already exists|Unit .* loaded/i.test(stderr)) {
-          // Fall through to the plain fallback below.
-          await execa('tmux', t(['start-server']), { detached: true });
-        }
+  static async assertServerRunning(): Promise<void> {
+    try {
+      await execa('tmux', t(['list-clients']));
+    } catch (err) {
+      const e = err as ExecaError;
+      const stderr = typeof e.stderr === 'string' ? e.stderr : '';
+      if (/no server running/i.test(stderr)) {
+        console.warn(
+          '[tmux] no server on socket -L maw. In production install maw-tmux.service ' +
+          '(see deploy/systemd/maw-tmux.service) so tmux survives `systemctl --user restart maw`. ' +
+          'In dev this is fine — tmux will auto-spawn on first session.'
+        );
+      } else {
+        console.warn('[tmux] assertServerRunning probe failed:', err);
       }
-    } else {
-      await execa('tmux', t(['start-server']), { detached: true });
     }
-    serverEnsured = true;
   }
 
   static async hasSession(session: string): Promise<boolean> {

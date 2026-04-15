@@ -222,15 +222,61 @@ Validate changes against `schemas/adapter.schema.json`; try them with
 
 ## Running under systemd
 
-MAW uses a dedicated tmux socket (`tmux -L maw`) and, when available,
-starts the tmux server inside a transient `systemd-run --user --scope
---unit=maw-tmux` scope so it is not part of `maw.service`'s cgroup.
-That lets agent sessions survive `systemctl --user restart maw`.
+MAW uses a dedicated tmux socket (`tmux -L maw`). For agent sessions to
+survive `systemctl --user restart maw`, the tmux server must live in its
+own user systemd unit, **outside** `maw.service`'s cgroup. Without that,
+`KillMode=control-group` on `maw.service` SIGKILLs the tmux server (and
+every agent inside it) on every restart.
 
-If `systemd-run` is unavailable (e.g. macOS dev), add
-`KillMode=process` to your `maw.service` `[Service]` block as a
-fallback so the tmux server MAW spawned is not killed along with the
-Node process.
+Install the shipped `maw-tmux.service` user unit once per host:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/systemd/maw-tmux.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now maw-tmux.service
+```
+
+Then update your `~/.config/systemd/user/maw.service` so it depends on
+the tmux unit and (belt + braces) only kills the Node main process:
+
+```ini
+[Unit]
+Description=Multi-Agent Workbench
+After=default.target maw-tmux.service
+Wants=maw-tmux.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/maw
+EnvironmentFile=/home/maw/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node build/server.js
+KillMode=process
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
+```
+
+Reload and restart:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart maw
+```
+
+Verify:
+
+```bash
+cat /proc/$(pgrep -f 'tmux.*-L maw')/cgroup
+# should show .../maw-tmux.service — NOT .../maw.service
+```
+
+On macOS dev there is no systemd; tmux auto-spawns on first session and
+survives a Node crash naturally because it is not in any cgroup.
 
 ## Plans
 

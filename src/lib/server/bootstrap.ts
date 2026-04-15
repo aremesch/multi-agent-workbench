@@ -66,12 +66,10 @@ export function bootstrap(): Promise<void> {
     for (const err of loadResult.errors) console.warn(`[maw] cli-adapter: ${err}`);
     G.__maw_registry.startWatching((kind) => console.log(`[maw] cli-adapter reloaded: ${kind}`));
 
-    // 5. tmux server in its own systemd scope so it survives maw restart.
-    try {
-      await Tmux.ensureServer();
-    } catch (err) {
-      console.warn('[maw] tmux ensureServer failed:', err);
-    }
+    // 5. tmux server probe. In prod the dedicated maw-tmux.service user unit
+    //    owns the `-L maw` server so it survives `systemctl --user restart maw`.
+    //    See deploy/systemd/maw-tmux.service and README.
+    await Tmux.assertServerRunning();
 
     // 6. Supervisor + reattach.
     G.__maw_supervisor = new AgentSupervisor(G.__maw_registry);
