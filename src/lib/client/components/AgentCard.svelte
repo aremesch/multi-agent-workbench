@@ -26,6 +26,11 @@
   let lastFetchTs = $state<number>(0);
   let loading = $state<boolean>(false);
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  let bodyEl: HTMLDivElement | undefined = $state();
+  let snapshotEl: HTMLPreElement | undefined = $state();
+  let bodyW = $state<number>(0);
+  let bodyH = $state<number>(0);
+  let resizeObserver: ResizeObserver | null = null;
 
   /**
    * Poll cadence. A freshly-spawned agent sits in `(empty)` while its CLI
@@ -135,11 +140,37 @@
 
   onMount(() => {
     void tick();
+    if (bodyEl) {
+      resizeObserver = new ResizeObserver((entries) => {
+        const e = entries[0];
+        if (!e) return;
+        bodyW = e.contentRect.width;
+        bodyH = e.contentRect.height;
+      });
+      resizeObserver.observe(bodyEl);
+      bodyW = bodyEl.clientWidth;
+      bodyH = bodyEl.clientHeight;
+    }
   });
 
   onDestroy(() => {
     if (pollTimer) clearTimeout(pollTimer);
+    resizeObserver?.disconnect();
+    resizeObserver = null;
   });
+
+  // Pixel font size that fits `contentCols × contentRows` glyphs (monospace
+  // glyph ≈ 0.6em wide, line-height 1.0) inside the measured body box.
+  // Replaces the previous CSS container-query formula, which collapsed to
+  // 0 on Android Chrome when the gridstack item's box was still resolving.
+  const thumbFontPx = $derived(
+    bodyW > 0 && bodyH > 0
+      ? Math.max(
+          2,
+          Math.min(bodyW / (contentCols * 0.6), bodyH / contentRows)
+        )
+      : 0
+  );
 
   function handleOpen(): void {
     onOpen(agent);
@@ -170,6 +201,7 @@
        clicking the header starts a drag, not an open. -->
   <div
     class="body"
+    bind:this={bodyEl}
     role="button"
     tabindex="0"
     onclick={handleOpen}
@@ -184,7 +216,8 @@
       <!-- eslint-disable-next-line svelte/no-at-html-tags -->
       <pre
         class="snapshot"
-        style="--cols: {contentCols}; --rows: {contentRows};"
+        bind:this={snapshotEl}
+        style="font-size: {thumbFontPx}px;"
       >{@html snapshotHtml}</pre>
     {/if}
   </div>
@@ -273,9 +306,6 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #c7d2fe;
     background: #05070d;
-    /* container-type: size lets the snapshot sized in cqh/cqw shrink with
-       the gridstack cell, so the entire tmux pane always fits the card. */
-    container-type: size;
     position: relative;
   }
   .body:focus-visible {
@@ -288,17 +318,6 @@
     overflow: hidden;
     width: 100%;
     height: 100%;
-    /* --cols / --rows come from measure() (trailing blank rows stripped,
-       longest non-blank line capped at THUMB_MAX_COLS). A monospace
-       glyph is ~0.6em wide, so the font that fits the fixed-size card is:
-         horizontal: font * 0.6 * cols ≤ cqw  → font ≤ cqw / (cols*0.6)
-         vertical:   font * 1.0 * rows ≤ cqh  → font ≤ cqh / rows
-       min() picks the binding constraint so content fills whichever
-       dimension is tighter with no overflow. */
-    font-size: min(
-      calc(100cqw / (var(--cols) * 0.6)),
-      calc(100cqh / var(--rows))
-    );
     line-height: 1;
   }
   .placeholder {
