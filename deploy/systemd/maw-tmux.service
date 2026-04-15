@@ -4,9 +4,11 @@ After=default.target
 
 [Service]
 Type=forking
-ExecStart=/usr/bin/tmux -L maw start-server
+# tmux exits when its last session closes unless exit-empty is off. Without
+# this the server vanishes the moment start-server returns (no sessions
+# yet), which is exactly what "active (exited)" with no PID means.
+ExecStart=/usr/bin/tmux -L maw start-server \; set-option -s exit-empty off
 ExecStop=/usr/bin/tmux -L maw kill-server
-RemainAfterExit=yes
 KillMode=mixed
 Restart=on-failure
 RestartSec=2
