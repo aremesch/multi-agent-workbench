@@ -80,20 +80,12 @@ export class AgentSupervisor {
     const proc = Tmux.spawnWaitForChannel(channel);
     this.exitWaiters.set(agentId, proc);
     proc.then(
-      async () => {
+      () => {
         this.exitWaiters.delete(agentId);
         const rt = this.runtimes.get(agentId);
         if (!rt) return;
-        // Guard against stale pre-signaled tmux channels from a previous
-        // backend run: if the session is still alive, the channel fired
-        // spuriously (e.g. a previous `wait-for` was killed before consuming
-        // the signal). Log and let the periodic reaper handle real exits.
-        if (await Tmux.hasSession(rt.tmuxSession)) {
-          console.warn(
-            `[AgentSupervisor] exit-watcher fired for live session ${agentId} — ignoring (stale channel?)`
-          );
-          return;
-        }
+        // tmux only fires `session-closed` once the session is really
+        // gone, so the hook firing is authoritative. Reap immediately.
         this.finishAsExited(agentId, rt).catch((err) => {
           console.error(`[AgentSupervisor] exit-watcher finish failed for ${agentId}:`, err);
         });
@@ -211,16 +203,18 @@ export class AgentSupervisor {
   }
 
   private async finishAsExited(agentId: string, runtime: AgentRuntime): Promise<void> {
+    // Delete-first so concurrent reap paths (periodic reaper, explicit
+    // kill, snapshot-410) see the agent is already being finalized and
+    // bail out — avoids double stop()/status-flip races.
+    if (!this.runtimes.has(agentId)) return;
+    this.runtimes.delete(agentId);
     this.stopExitWatcher(agentId);
-    // Snapshot agent metadata before stopping — runtime.agent may not be
-    // accessible after stop().
     const agent = runtime.agent;
     try {
       await runtime.stop();
     } catch (err) {
       console.error(`[AgentSupervisor] reap: stop failed for ${agentId}:`, err);
     }
-    this.runtimes.delete(agentId);
     updateAgentStatus(agentId, 'exited');
     // Notify anyone still subscribed to this runtime (e.g. an open terminal
     // modal on the dashboard) so their UI can react immediately — without

@@ -10,6 +10,47 @@ import { execa, type ExecaError, type ResultPromise } from 'execa';
 
 export const SESSION_PREFIX = 'maw-agent-';
 
+/**
+ * Dedicated tmux socket name. All tmux invocations use `-L maw` so the
+ * tmux server is separate from any other tmux server the user runs and
+ * — critically — can be started inside its own transient systemd scope
+ * so `systemctl --user restart maw` does not take the server down with
+ * it.
+ */
+const SOCKET = 'maw';
+
+function t(args: string[]): string[] {
+  return ['-L', SOCKET, ...args];
+}
+
+let serverEnsured = false;
+let systemdRunAvailable: boolean | null = null;
+
+async function hasSystemdRun(): Promise<boolean> {
+  if (systemdRunAvailable !== null) return systemdRunAvailable;
+  try {
+    await execa('systemd-run', ['--version']);
+    systemdRunAvailable = true;
+  } catch {
+    systemdRunAvailable = false;
+  }
+  return systemdRunAvailable;
+}
+
+async function serverRunning(): Promise<boolean> {
+  try {
+    // `list-clients` succeeds (possibly with empty output) when the server
+    // is up and errors with "no server running" otherwise. It doesn't
+    // require any sessions to exist.
+    await execa('tmux', t(['list-clients']));
+    return true;
+  } catch (err) {
+    const e = err as ExecaError;
+    const stderr = typeof e.stderr === 'string' ? e.stderr : '';
+    return !/no server running/i.test(stderr);
+  }
+}
+
 export interface SpawnOptions {
   session: string;            // e.g. 'maw-agent-<ulid>'
   command: string;            // the CLI binary name
@@ -25,9 +66,53 @@ export class Tmux {
     return `${SESSION_PREFIX}${agentId}`;
   }
 
+  /**
+   * Start the dedicated `-L maw` tmux server inside its own transient
+   * systemd user scope so it is not part of the maw.service cgroup. If
+   * systemd-run is unavailable (e.g. dev on macOS) we fall back to a
+   * detached `tmux start-server` — maw still gets killed-as-parent in
+   * that case but without systemd there is no cgroup to inherit.
+   *
+   * Idempotent: checks whether the server is already up first, and if
+   * the systemd scope unit already exists it swallows the error.
+   */
+  static async ensureServer(): Promise<void> {
+    if (serverEnsured) return;
+    if (await serverRunning()) {
+      serverEnsured = true;
+      return;
+    }
+    if (await hasSystemdRun()) {
+      try {
+        await execa('systemd-run', [
+          '--user',
+          '--scope',
+          '--quiet',
+          '--unit=maw-tmux',
+          '--',
+          'tmux',
+          '-L',
+          SOCKET,
+          'start-server'
+        ]);
+      } catch (err) {
+        const e = err as ExecaError;
+        const stderr = typeof e.stderr === 'string' ? e.stderr : '';
+        // Scope already exists — server is up under the existing scope.
+        if (!/already exists|Unit .* loaded/i.test(stderr)) {
+          // Fall through to the plain fallback below.
+          await execa('tmux', t(['start-server']), { detached: true });
+        }
+      }
+    } else {
+      await execa('tmux', t(['start-server']), { detached: true });
+    }
+    serverEnsured = true;
+  }
+
   static async hasSession(session: string): Promise<boolean> {
     try {
-      await execa('tmux', ['has-session', '-t', session]);
+      await execa('tmux', t(['has-session', '-t', session]));
       return true;
     } catch {
       return false;
@@ -54,7 +139,7 @@ export class Tmux {
     const cmdParts = [opts.command, ...opts.args].map((s) => JSON.stringify(s));
     const shellLine = `cd ${JSON.stringify(opts.cwd)} && exec env ${envParts.join(' ')} ${cmdParts.join(' ')}`;
 
-    await execa('tmux', [
+    await execa('tmux', t([
       'new-session',
       '-d',
       '-s',
@@ -66,24 +151,24 @@ export class Tmux {
       'sh',
       '-lc',
       shellLine
-    ]);
+    ]));
   }
 
   /** `tmux pipe-pane -o 'cat >> <fifo>'` — open-ended (-o) so restarts replace cleanly. */
   static async pipePane(session: string, fifoPath: string): Promise<void> {
-    await execa('tmux', [
+    await execa('tmux', t([
       'pipe-pane',
       '-o',
       '-t',
       session,
       `cat >> ${JSON.stringify(fifoPath)}`
-    ]);
+    ]));
   }
 
   /** Stop pipe-pane for the session. */
   static async stopPipePane(session: string): Promise<void> {
     try {
-      await execa('tmux', ['pipe-pane', '-t', session]);
+      await execa('tmux', t(['pipe-pane', '-t', session]));
     } catch {
       // ignore — session may already be gone
     }
@@ -96,12 +181,12 @@ export class Tmux {
    */
   static async sendLiteral(session: string, text: string): Promise<void> {
     if (text.length === 0) return;
-    await execa('tmux', ['send-keys', '-t', session, '-l', '--', text]);
+    await execa('tmux', t(['send-keys', '-t', session, '-l', '--', text]));
   }
 
   /** Send a named tmux key like 'Enter' or 'C-c'. */
   static async sendKey(session: string, key: string): Promise<void> {
-    await execa('tmux', ['send-keys', '-t', session, key]);
+    await execa('tmux', t(['send-keys', '-t', session, key]));
   }
 
   /**
@@ -112,7 +197,7 @@ export class Tmux {
   static async resizeWindow(session: string, cols: number, rows: number): Promise<void> {
     if (cols < 1 || rows < 1) return;
     try {
-      await execa('tmux', [
+      await execa('tmux', t([
         'resize-window',
         '-t',
         session,
@@ -120,7 +205,7 @@ export class Tmux {
         String(Math.floor(cols)),
         '-y',
         String(Math.floor(rows))
-      ]);
+      ]));
     } catch (err) {
       const e = err as ExecaError;
       const stderr = typeof e.stderr === 'string' ? e.stderr : '';
@@ -145,7 +230,7 @@ export class Tmux {
    */
   static async capturePane(session: string, startLine = -10000): Promise<string> {
     try {
-      const { stdout } = await execa('tmux', [
+      const { stdout } = await execa('tmux', t([
         'capture-pane',
         '-t',
         session,
@@ -153,7 +238,7 @@ export class Tmux {
         '-e',
         '-S',
         String(startLine)
-      ]);
+      ]));
       return stdout;
     } catch {
       return '';
@@ -162,7 +247,7 @@ export class Tmux {
 
   static async killSession(session: string): Promise<void> {
     try {
-      await execa('tmux', ['kill-session', '-t', session]);
+      await execa('tmux', t(['kill-session', '-t', session]));
     } catch (err) {
       const e = err as ExecaError;
       // "can't find session" is fine — idempotent kill.
@@ -183,13 +268,13 @@ export class Tmux {
    * `maw-exit-<agentId>` in AgentSupervisor, which is safe.
    */
   static async setSessionClosedSignal(session: string, channel: string): Promise<void> {
-    await execa('tmux', [
+    await execa('tmux', t([
       'set-hook',
       '-t',
       session,
       'session-closed',
       `wait-for -S ${channel}`
-    ]);
+    ]));
   }
 
   /**
@@ -203,13 +288,13 @@ export class Tmux {
    * leak a subprocess per reaped-another-way agent.
    */
   static spawnWaitForChannel(channel: string): ResultPromise {
-    return execa('tmux', ['wait-for', channel]);
+    return execa('tmux', t(['wait-for', channel]));
   }
 
   /** List every `maw-agent-*` session currently present on the host. */
   static async listMawSessions(): Promise<string[]> {
     try {
-      const { stdout } = await execa('tmux', ['list-sessions', '-F', '#{session_name}']);
+      const { stdout } = await execa('tmux', t(['list-sessions', '-F', '#{session_name}']));
       return stdout
         .split('\n')
         .map((s) => s.trim())

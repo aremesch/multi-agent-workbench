@@ -21,6 +21,7 @@ import { AdapterRegistry } from './agents/adapters/AdapterRegistry.js';
 import { AgentSupervisor } from './agents/AgentSupervisor.js';
 import { PushService } from './push/PushService.js';
 import { hashPassword } from './auth/password.js';
+import { Tmux } from './tmux/TmuxSession.js';
 
 // ---------- globalThis-backed singletons ----------
 // In production the esbuild-bundled server.js and SvelteKit's chunk copy of
@@ -65,7 +66,14 @@ export function bootstrap(): Promise<void> {
     for (const err of loadResult.errors) console.warn(`[maw] cli-adapter: ${err}`);
     G.__maw_registry.startWatching((kind) => console.log(`[maw] cli-adapter reloaded: ${kind}`));
 
-    // 5. Supervisor + reattach.
+    // 5. tmux server in its own systemd scope so it survives maw restart.
+    try {
+      await Tmux.ensureServer();
+    } catch (err) {
+      console.warn('[maw] tmux ensureServer failed:', err);
+    }
+
+    // 6. Supervisor + reattach.
     G.__maw_supervisor = new AgentSupervisor(G.__maw_registry);
     const { reattached, crashed } = await G.__maw_supervisor.init();
     console.log(`[maw] supervisor: ${reattached} agents reattached, ${crashed} crashed`);

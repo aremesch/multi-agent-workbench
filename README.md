@@ -220,6 +220,18 @@ installing `claude`, `codex`, or `gemini`.
 Validate changes against `schemas/adapter.schema.json`; try them with
 `pnpm test:adapter`.
 
+## Running under systemd
+
+MAW uses a dedicated tmux socket (`tmux -L maw`) and, when available,
+starts the tmux server inside a transient `systemd-run --user --scope
+--unit=maw-tmux` scope so it is not part of `maw.service`'s cgroup.
+That lets agent sessions survive `systemctl --user restart maw`.
+
+If `systemd-run` is unavailable (e.g. macOS dev), add
+`KillMode=process` to your `maw.service` `[Service]` block as a
+fallback so the tmux server MAW spawned is not killed along with the
+Node process.
+
 ## Plans
 
 Persisted plans live in [`docs/plans/`](docs/plans/). Git history is the
