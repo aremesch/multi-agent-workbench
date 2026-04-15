@@ -48,6 +48,21 @@ export interface SpawnAgentArgs {
 export class AgentSupervisor {
   private runtimes = new Map<string, AgentRuntime>();
   /**
+   * Latched to true when the process begins shutting down. All paths that
+   * would flip a DB row to `exited` (periodic reaper, exit-watcher success)
+   * MUST short-circuit once this is set. Reason: systemd's default
+   * `KillMode=control-group` sends SIGTERM to every PID in maw.service's
+   * cgroup, including any tmux CLI child of node mid-`list-sessions`.
+   * `Tmux.listMawSessions()` catches the error and returns []; without
+   * this guard the reaper concludes all sessions died and writes
+   * `exited` to every live agent — orphaning them across restart.
+   */
+  private shuttingDown = false;
+
+  markShuttingDown(): void {
+    this.shuttingDown = true;
+  }
+  /**
    * One `tmux wait-for` subprocess per live agent. Resolves the instant the
    * session-closed hook fires, giving us event-driven exit detection with
    * no polling. Tracked here so we can kill the waiter cleanly when an
@@ -82,6 +97,7 @@ export class AgentSupervisor {
     proc.then(
       () => {
         this.exitWaiters.delete(agentId);
+        if (this.shuttingDown) return;
         const rt = this.runtimes.get(agentId);
         if (!rt) return;
         // tmux only fires `session-closed` once the session is really
@@ -176,8 +192,10 @@ export class AgentSupervisor {
    * the in-memory registry so we don't leak FDs.
    */
   async reap(): Promise<number> {
+    if (this.shuttingDown) return 0;
     if (this.runtimes.size === 0) return 0;
     const liveSessions = new Set(await Tmux.listMawSessions());
+    if (this.shuttingDown) return 0;
     let reaped = 0;
     for (const [agentId, runtime] of Array.from(this.runtimes.entries())) {
       if (!liveSessions.has(runtime.tmuxSession)) {
