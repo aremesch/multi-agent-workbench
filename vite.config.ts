@@ -73,13 +73,15 @@ export default defineConfig({
       thresholds: {
         // Ratcheted by each phase of v0.2-vitest-unit-tests.md. Numbers
         // sit just below current actuals so the gate bites on regressions
-        // without false alarms on CI jitter. Phase 8 added MawWsClient
-        // coverage (src/lib/client at ~88.0% line / ~86.9% branch /
-        // ~94.1% function).
-        lines: 32,
+        // without false alarms on CI jitter. Phase 9 added a first Svelte
+        // 5 component test (Modal) plus a jsdom `<dialog>` polyfill and
+        // the `resolve.conditions: ['browser']` client-project tweak
+        // that makes @testing-library/svelte mount() resolve to Svelte's
+        // client build.
+        lines: 33,
         branches: 86,
-        functions: 69,
-        statements: 32
+        functions: 70,
+        statements: 33
       }
     },
     projects: [
@@ -96,6 +98,15 @@ export default defineConfig({
       },
       {
         extends: true,
+        resolve: {
+          // Svelte 5 ships separate `svelte/index.js` (client) and
+          // `svelte/index-server.js` (server) entries, dispatched via
+          // export conditions. Vitest defaults to Node conditions, which
+          // picks the SSR entry — causing @testing-library/svelte mount()
+          // to explode with "lifecycle_function_unavailable". Force the
+          // browser build for client component tests.
+          conditions: ['browser']
+        },
         test: {
           name: 'client',
           environment: 'jsdom',

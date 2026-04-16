@@ -22,6 +22,25 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   });
 }
 
+// jsdom 26 lacks HTMLDialogElement.showModal/close. The Modal component (and
+// anything else using native <dialog>) relies on both. Polyfill them to the
+// minimum shape tests need — toggle `.open`, fire a `close` event.
+if (
+  typeof window !== 'undefined' &&
+  // Only polyfill once — repeated client-test bootstraps during dev loops
+  // would otherwise stack the same patch multiple times.
+  typeof HTMLDialogElement !== 'undefined' &&
+  typeof HTMLDialogElement.prototype.showModal !== 'function'
+) {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
+}
+
 // MawWsClient constructs a WebSocket at import time when connect() fires.
 // Individual tests replace this with a richer stub; this default keeps
 // accidental instantiation from throwing ReferenceError in jsdom.
