@@ -59,6 +59,49 @@ export default defineConfig({
     port: 5173
   },
   test: {
-    include: ['src/**/*.{test,spec}.{js,ts}']
+    passWithNoTests: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      include: ['src/**/*.{ts,svelte}'],
+      exclude: [
+        'src/lib/components/ui/**',
+        'src/**/*.d.ts',
+        'src/app.html',
+        'src/service-worker.ts'
+      ],
+      thresholds: {
+        lines: 0,
+        branches: 0,
+        functions: 0,
+        statements: 0
+      }
+    },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'server',
+          environment: 'node',
+          include: [
+            'src/lib/server/**/*.{test,spec}.ts',
+            'src/lib/shared/**/*.{test,spec}.ts'
+          ]
+        }
+      },
+      {
+        extends: true,
+        test: {
+          name: 'client',
+          environment: 'jsdom',
+          include: [
+            'src/lib/client/**/*.{test,spec}.ts',
+            'src/lib/components/**/*.{test,spec}.ts',
+            'src/routes/**/*.{test,spec}.ts'
+          ],
+          setupFiles: ['tests/unit/setup.client.ts']
+        }
+      }
+    ]
   }
 });

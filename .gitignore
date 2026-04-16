@@ -16,3 +16,6 @@ data/
 tests/e2e/auth.storage.json
 playwright-report/
 test-results/
+
+# Vitest
+coverage/
