@@ -73,13 +73,14 @@ export default defineConfig({
       thresholds: {
         // Ratcheted by each phase of v0.2-vitest-unit-tests.md. Numbers
         // sit just below current actuals so the gate bites on regressions
-        // without false alarms on CI jitter. Phase 5 added auth coverage
-        // (src/lib/server/auth at ~99.3% line / ~92.5% branch /
-        // 100% function).
-        lines: 22,
-        branches: 85,
-        functions: 50,
-        statements: 22
+        // without false alarms on CI jitter. Phase 6 added impure
+        // server-seam coverage (src/lib/server/git at ~89.5% line /
+        // ~98.1% branch, src/lib/server/tmux at ~97.4% line / ~87.9%
+        // branch, src/lib/server/push at 100% line / 100% branch).
+        lines: 27,
+        branches: 87,
+        functions: 61,
+        statements: 27
       }
     },
     projects: [
