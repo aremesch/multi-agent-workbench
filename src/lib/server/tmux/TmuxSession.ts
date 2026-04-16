@@ -55,8 +55,13 @@ export class Tmux {
     } catch (err) {
       const e = err as ExecaError;
       const stderr = typeof e.stderr === 'string' ? e.stderr : '';
-      if (/no server running/i.test(stderr)) {
-        console.warn(
+      // Two stderr variants both mean "no tmux server on this socket yet":
+      //   - "no server running on /tmp/tmux-.../maw"      (server was up, now gone)
+      //   - "error connecting to /tmp/.../maw (No such file or directory)"
+      //                                                   (socket file never existed)
+      // Both are normal at boot — tmux will auto-spawn on first new-session.
+      if (/no server running/i.test(stderr) || /no such file or directory/i.test(stderr)) {
+        console.info(
           '[tmux] no server on socket -L maw. In production install maw-tmux.service ' +
           '(see deploy/systemd/maw-tmux.service) so tmux survives `systemctl --user restart maw`. ' +
           'In dev this is fine — tmux will auto-spawn on first session.'
