@@ -73,14 +73,13 @@ export default defineConfig({
       thresholds: {
         // Ratcheted by each phase of v0.2-vitest-unit-tests.md. Numbers
         // sit just below current actuals so the gate bites on regressions
-        // without false alarms on CI jitter. Phase 7 added WS hub
-        // coverage (src/lib/server/ws at ~88.3% line / ~84.4% branch);
-        // branch % edged down slightly because the hub has a dense
-        // switch/if dispatch graph, so threshold moves to the new floor.
-        lines: 30,
+        // without false alarms on CI jitter. Phase 8 added MawWsClient
+        // coverage (src/lib/client at ~88.0% line / ~86.9% branch /
+        // ~94.1% function).
+        lines: 32,
         branches: 86,
-        functions: 68,
-        statements: 30
+        functions: 69,
+        statements: 32
       }
     },
     projects: [
