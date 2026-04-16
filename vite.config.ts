@@ -73,12 +73,13 @@ export default defineConfig({
       thresholds: {
         // Ratcheted by each phase of v0.2-vitest-unit-tests.md. Numbers
         // sit just below current actuals so the gate bites on regressions
-        // without false alarms on CI jitter. Phase 2 landed DB + migration
-        // coverage (src/lib/server/db at ~96% line/branch).
-        lines: 15,
-        branches: 78,
-        functions: 38,
-        statements: 15
+        // without false alarms on CI jitter. Phase 3 added adapter-engine
+        // coverage (src/lib/server/agents/adapters at ~91% line /
+        // ~94% branch).
+        lines: 18,
+        branches: 82,
+        functions: 44,
+        statements: 18
       }
     },
     projects: [
