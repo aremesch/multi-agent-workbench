@@ -1,10 +1,12 @@
 import { json } from '@sveltejs/kit';
+import { verifyCsrf } from '$lib/server/auth/csrf';
 import { ulid } from 'ulid';
 import type { RequestHandler } from './$types';
 import { insertRole } from '$lib/server/db/queries';
 import { t } from '$lib/i18n';
 
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, cookies }) => {
+  verifyCsrf({ cookies, request });
   if (!locals.user) return json({ error: t(locals.locale, 'common.error.unauthorized') }, { status: 401 });
 
   let body: unknown;

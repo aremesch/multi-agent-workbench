@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
+import { apiFetch } from '$lib/client/api';
 
 /**
  * Client-side store holding the active locale. Kept in sync with
@@ -22,7 +23,7 @@ export async function setLocale(locale: Locale): Promise<void> {
   currentLocale.set(locale);
   applyToDocument(locale);
   try {
-    await fetch('/api/user/locale', {
+    await apiFetch('/api/user/locale', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ locale })

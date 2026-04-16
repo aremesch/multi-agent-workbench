@@ -207,6 +207,32 @@ All configuration lives in `.env`. See `.env.example` for the full list
   `pnpm dlx web-push generate-vapid-keys`. `MAW_VAPID_SUBJECT` must be
   a `mailto:` address or an `https://` URL. Leaving all three blank
   disables push cleanly; the rest of the app still runs.
+- `MAW_PUBLIC_ORIGIN` — browser-visible origin (e.g.
+  `https://maw.example.com`); required in prod so the WebSocket upgrade
+  can reject mismatched `Origin` headers.
+- `MAW_TRUST_PROXY` — set to `1` when behind a reverse proxy so the
+  auth log / rate limiter honor `X-Forwarded-For`.
+- `MAW_AUTH_LOG_PATH` — override for the auth event log. Defaults to
+  `${MAW_DATA_DIR}/auth.log`. Symlink it to `/var/log/maw/auth.log` for
+  the included fail2ban jail.
+- `MAW_LOGIN_RATE_LIMIT` — `count/windowSeconds` (default `10/60`).
+
+**Never commit `.env` or any credential.** See `CLAUDE.md` for the full
+rules.
+
+### fail2ban (prod)
+
+`deploy/fail2ban/` ships a filter (`filter.d/maw-auth.conf`) and jail
+(`jail.d/maw.conf`) that watch the auth log for repeat `login_fail`,
+`pwchange_fail`, `rate_limited`, and `ws_origin_reject` entries. Install:
+
+```sh
+sudo cp deploy/fail2ban/filter.d/maw-auth.conf /etc/fail2ban/filter.d/
+sudo cp deploy/fail2ban/jail.d/maw.conf        /etc/fail2ban/jail.d/
+sudo mkdir -p /var/log/maw
+sudo ln -sf "$MAW_DATA_DIR/auth.log" /var/log/maw/auth.log
+sudo fail2ban-client reload
+```
 
 ## Adapters
 

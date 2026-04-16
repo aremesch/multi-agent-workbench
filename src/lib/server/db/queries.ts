@@ -18,6 +18,7 @@ import type {
   AgentRunRow,
   AgentStatus,
   AlertRow,
+  AuthEventRow,
   AlertSeverity,
   EventRow,
   MessageRow,
@@ -64,20 +65,76 @@ export function countUsers(): number {
 }
 
 export function updateUserPasswordHash(userId: string, hash: string): void {
-  prep<[string, number, string]>(
-    'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?'
-  ).run(hash, now(), userId);
+  const ts = now();
+  prep<[string, number, number, string]>(
+    'UPDATE users SET password_hash = ?, password_updated_at = ?, updated_at = ? WHERE id = ?'
+  ).run(hash, ts, ts, userId);
+}
+
+export function setMustChangePassword(userId: string, value: boolean): void {
+  prep<[number, number, string]>(
+    'UPDATE users SET must_change_password = ?, updated_at = ? WHERE id = ?'
+  ).run(value ? 1 : 0, now(), userId);
 }
 
 export function insertUser(row: {
   id: string;
   username: string;
   password_hash: string;
+  must_change_password?: boolean;
 }): void {
   const ts = now();
-  prep<[string, string, string, number, number]>(
-    'INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
-  ).run(row.id, row.username, row.password_hash, ts, ts);
+  prep<[string, string, string, number, number, number]>(
+    'INSERT INTO users (id, username, password_hash, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(
+    row.id,
+    row.username,
+    row.password_hash,
+    row.must_change_password ? 1 : 0,
+    ts,
+    ts
+  );
+}
+
+// --------------- auth events ---------------
+
+export function insertAuthEvent(row: {
+  ts: number;
+  event: string;
+  user_id?: string | null;
+  username?: string | null;
+  ip?: string | null;
+  user_agent?: string | null;
+  detail?: string | null;
+}): void {
+  prep<
+    [
+      number,
+      string,
+      string | null,
+      string | null,
+      string | null,
+      string | null,
+      string | null
+    ]
+  >(
+    `INSERT INTO auth_events (ts, event, user_id, username, ip, user_agent, detail)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    row.ts,
+    row.event,
+    row.user_id ?? null,
+    row.username ?? null,
+    row.ip ?? null,
+    row.user_agent ?? null,
+    row.detail ?? null
+  );
+}
+
+export function listRecentAuthEvents(limit = 100): AuthEventRow[] {
+  return prep<[number], AuthEventRow>(
+    'SELECT * FROM auth_events ORDER BY ts DESC LIMIT ?'
+  ).all(limit);
 }
 
 // --------------- sessions ---------------

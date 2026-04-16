@@ -54,7 +54,22 @@ export interface MawConfig {
   vapidSubject: string;
   anthropicApiKey: string;
   terminalLogBudgetBytes: number;
+  trustProxy: boolean;
+  authLogPath: string;
+  loginRateLimit: { count: number; windowSeconds: number };
+  publicOrigin: string | null;
   isDev: boolean;
+}
+
+function parseRateLimit(raw: string | undefined): { count: number; windowSeconds: number } {
+  const fallback = { count: 10, windowSeconds: 60 };
+  if (!raw) return fallback;
+  const m = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!m) return fallback;
+  const count = Number(m[1]);
+  const windowSeconds = Number(m[2]);
+  if (!count || !windowSeconds) return fallback;
+  return { count, windowSeconds };
 }
 
 let _cfg: MawConfig | null = null;
@@ -85,6 +100,12 @@ export function getConfig(): MawConfig {
     vapidSubject: env.MAW_VAPID_SUBJECT ?? 'mailto:dev@example.com',
     anthropicApiKey: env.ANTHROPIC_API_KEY ?? '',
     terminalLogBudgetBytes: Number(env.MAW_TERMINAL_LOG_BYTES ?? 4 * 1024 * 1024),
+    trustProxy: env.MAW_TRUST_PROXY === '1',
+    authLogPath:
+      env.MAW_AUTH_LOG_PATH ??
+      resolve(env.MAW_DATA_DIR ?? `${env.HOME ?? ''}/.local/share/maw-dev`, 'auth.log'),
+    loginRateLimit: parseRateLimit(env.MAW_LOGIN_RATE_LIMIT),
+    publicOrigin: env.MAW_PUBLIC_ORIGIN ?? null,
     isDev: env.NODE_ENV !== 'production'
   };
   return _cfg;

@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { verifyCsrf } from '$lib/server/auth/csrf';
 import { z } from 'zod';
 import type { RequestHandler } from './$types';
 import { setUserSetting } from '$lib/server/db/queries';
@@ -6,7 +7,8 @@ import { SIDEBAR_COLLAPSED_KEY } from '$lib/shared/dashboard';
 
 const schema = z.object({ collapsed: z.boolean() });
 
-export const PUT: RequestHandler = async ({ locals, request }) => {
+export const PUT: RequestHandler = async ({ locals, request, cookies }) => {
+  verifyCsrf({ cookies, request });
   if (!locals.user) throw error(401, 'Unauthorized');
   let body: unknown;
   try {

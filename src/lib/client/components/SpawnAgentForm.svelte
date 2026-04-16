@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { apiFetch } from '$lib/client/api';
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
   import { untrack } from 'svelte';
@@ -177,7 +178,7 @@
     newRoleError = null;
     savingRole = true;
     try {
-      const res = await fetch('/api/roles', {
+      const res = await apiFetch('/api/roles', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name: newRoleName, cli_kind: newRoleCliKind })
@@ -204,7 +205,7 @@
     newRepoError = null;
     savingRepo = true;
     try {
-      const res = await fetch('/api/repos', {
+      const res = await apiFetch('/api/repos', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

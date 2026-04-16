@@ -49,7 +49,12 @@ export function bootstrap(): Promise<void> {
     // 2. Bootstrap user (single-user MVP).
     if (countUsers() === 0) {
       const hash = await hashPassword(cfg.bootstrapPassword);
-      insertUser({ id: ulid(), username: cfg.bootstrapUsername, password_hash: hash });
+      insertUser({
+        id: ulid(),
+        username: cfg.bootstrapUsername,
+        password_hash: hash,
+        must_change_password: true
+      });
       console.log(
         `[maw] bootstrap user '${cfg.bootstrapUsername}' created — change password after first login`
       );

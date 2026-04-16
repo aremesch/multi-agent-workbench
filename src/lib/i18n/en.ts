@@ -27,6 +27,7 @@ const en = {
   'login.submit': 'Sign in',
   'login.error.required': 'Username and password required',
   'login.error.invalid': 'Invalid credentials',
+  'login.error.rateLimited': 'Too many attempts — wait a minute and try again',
 
   // ── Account ──────────────────────────────────────────────────────
   'account.title': 'Account',

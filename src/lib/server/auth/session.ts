@@ -50,7 +50,7 @@ export function setSessionCookie(cookies: Cookies, sessionId: string): void {
   cookies.set(SESSION_COOKIE, sessionId, {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'strict',
     secure: !cfg.isDev,
     maxAge: cfg.sessionTtlSeconds
   });
