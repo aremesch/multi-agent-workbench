@@ -71,13 +71,14 @@ export default defineConfig({
         'src/service-worker.ts'
       ],
       thresholds: {
-        // Ratcheted by each phase of v0.2-vitest-unit-tests.md. Phase 1
-        // landed pure-logic coverage; numbers sit just below actuals so
-        // the gate bites on regressions without false alarms on CI jitter.
-        lines: 8,
-        branches: 65,
-        functions: 12,
-        statements: 8
+        // Ratcheted by each phase of v0.2-vitest-unit-tests.md. Numbers
+        // sit just below current actuals so the gate bites on regressions
+        // without false alarms on CI jitter. Phase 2 landed DB + migration
+        // coverage (src/lib/server/db at ~96% line/branch).
+        lines: 15,
+        branches: 78,
+        functions: 38,
+        statements: 15
       }
     },
     projects: [

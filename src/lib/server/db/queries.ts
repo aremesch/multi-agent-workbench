@@ -641,14 +641,18 @@ export function pruneTerminalLogByBytes(agentId: string, maxBytes: number): numb
   let total = totalRow?.total ?? 0;
   if (total <= maxBytes) return 0;
 
+  // Materialize the oldest→newest list before any DELETE. better-sqlite3
+  // throws "this database connection is busy executing a query" if we
+  // call .run() on one statement while another is mid-iterate on the
+  // same connection. Loading ids + sizes is cheap (id + int per row).
   const oldest = prep<[string], { id: string; size: number }>(
     'SELECT id, LENGTH(chunk) AS size FROM terminal_log WHERE agent_id = ? ORDER BY seq'
-  );
+  ).all(agentId);
   const del = prep<[string]>('DELETE FROM terminal_log WHERE id = ?');
 
   let deleted = 0;
   const tx = getDb().transaction(() => {
-    for (const row of oldest.iterate(agentId)) {
+    for (const row of oldest) {
       if (total <= maxBytes) break;
       del.run(row.id);
       total -= row.size;
