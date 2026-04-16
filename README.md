@@ -223,16 +223,86 @@ rules.
 ### fail2ban (prod)
 
 `deploy/fail2ban/` ships a filter (`filter.d/maw-auth.conf`) and jail
-(`jail.d/maw.conf`) that watch the auth log for repeat `login_fail`,
-`pwchange_fail`, `rate_limited`, and `ws_origin_reject` entries. Install:
+(`jail.d/maw.conf`) that watch `${MAW_DATA_DIR}/auth.log` for repeat
+`login_fail`, `pwchange_fail`, `rate_limited`, and `ws_origin_reject`
+entries. Defaults: 5 hits in 10 min → 1 h ban.
+
+### Install
 
 ```sh
+sudo apt install -y fail2ban
 sudo cp deploy/fail2ban/filter.d/maw-auth.conf /etc/fail2ban/filter.d/
 sudo cp deploy/fail2ban/jail.d/maw.conf        /etc/fail2ban/jail.d/
-sudo mkdir -p /var/log/maw
-sudo ln -sf "$MAW_DATA_DIR/auth.log" /var/log/maw/auth.log
-sudo fail2ban-client reload
 ```
+
+Edit `/etc/fail2ban/jail.d/maw.conf` so `logpath` is the **real file
+path** of your auth log. It must equal `${MAW_DATA_DIR}/auth.log`
+exactly — symlinks are unreliable with the pyinotify backend, so don't
+use one. For the shipped systemd unit with `MAW_DATA_DIR=/var/lib/maw`
+the default `logpath = /var/lib/maw/auth.log` already matches.
+
+Then:
+
+```sh
+sudo systemctl enable --now fail2ban
+sudo systemctl restart fail2ban        # use restart, not reload:
+                                       # reload doesn't re-tail logs
+                                       # if the old path went away
+```
+
+> **Restart, not reload.** `fail2ban-client reload` re-reads the jail
+> config but keeps the previously-opened file descriptor. If you ever
+> change `logpath` (or the old path is deleted), you need a full
+> restart for the new file to be tailed. Symptom of a stale reload:
+> `fail2ban-client status maw` shows the new path under `File list`
+> but `Total failed` never increments after fresh events.
+
+### Port and `MAW_TRUST_PROXY` — pick the scenario that matches prod
+
+**Behind a reverse proxy (recommended)** — MAW listens on 3000 on
+localhost, nginx/Caddy terminates TLS on 443 and forwards with
+`X-Forwarded-For`. Set `MAW_TRUST_PROXY=1` in MAW's env so `clientIp()`
+honors the forwarded header; the real attacker IP lands in `auth.log`.
+The shipped jail's `port = http,https` then bans at the edge (80/443)
+which is the only thing exposed publicly.
+
+**Direct exposure on 3000** — only safe on a trusted LAN. Leave
+`MAW_TRUST_PROXY` unset and change the jail to:
+```ini
+port = 3000
+```
+then `sudo systemctl restart fail2ban`. Without this change the ban
+installs iptables rules on 80/443 and completely misses the actual
+Node listener.
+
+Also set `MAW_PUBLIC_ORIGIN` in `.env` so the WebSocket Origin check
+is active and `ws_origin_reject` entries can accrue; with it unset
+MAW falls back to dev behavior and never rejects.
+
+### Verify
+
+1. Check the filter regex against the live log — decoupled from
+   live daemon state:
+   ```sh
+   sudo fail2ban-regex /var/lib/maw/auth.log /etc/fail2ban/filter.d/maw-auth.conf
+   ```
+   Expected: every `login_fail` / `pwchange_fail` / `rate_limited` /
+   `ws_origin_reject` line shows under "Lines matched".
+
+2. Fire a failed login from a non-local IP (localhost is always
+   dropped by fail2ban's `ignoreself` rule — bans will never register
+   from 127.0.0.1 regardless of config) and check:
+   ```sh
+   sudo fail2ban-client status maw
+   sudo tail -n 40 /var/log/fail2ban.log
+   ```
+   `Total failed` increments, and after `maxretry` hits within
+   `findtime` the offending IP appears under `Banned IP list`.
+
+3. Unban in a test:
+   ```sh
+   sudo fail2ban-client set maw unbanip <ip>
+   ```
 
 ## Adapters
 
