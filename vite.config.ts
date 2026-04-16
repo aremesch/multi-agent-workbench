@@ -73,13 +73,13 @@ export default defineConfig({
       thresholds: {
         // Ratcheted by each phase of v0.2-vitest-unit-tests.md. Numbers
         // sit just below current actuals so the gate bites on regressions
-        // without false alarms on CI jitter. Phase 3 added adapter-engine
-        // coverage (src/lib/server/agents/adapters at ~91% line /
-        // ~94% branch).
-        lines: 18,
-        branches: 82,
-        functions: 44,
-        statements: 18
+        // without false alarms on CI jitter. Phase 4 added history
+        // rendering + token summarization (src/lib/server/agents/history
+        // at ~98.7% line / ~95.9% branch / 100% function).
+        lines: 20,
+        branches: 84,
+        functions: 47,
+        statements: 20
       }
     },
     projects: [
