@@ -11,3 +11,8 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# Playwright
+tests/e2e/auth.storage.json
+playwright-report/
+test-results/
