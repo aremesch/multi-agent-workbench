@@ -213,19 +213,74 @@ describe('Tmux — session lifecycle', () => {
     await expect(Tmux.killSession('sid')).rejects.toThrow();
   });
 
-  it('setSessionClosedSignal installs a session-closed → wait-for hook', async () => {
-    execaMock.mockResolvedValueOnce({ stdout: '' });
-    await Tmux.setSessionClosedSignal('sid', 'maw-exit-01ABC');
-    const args = execaMock.mock.calls[0][1];
-    expect(args).toEqual([
-      '-L',
-      'maw',
-      'set-hook',
-      '-t',
-      'sid',
-      'session-closed',
-      'wait-for -S maw-exit-01ABC'
-    ]);
+  /**
+   * Regression guard for the "2 bash agents, exit one → both reaped" bug.
+   *
+   * tmux's `session-closed` hook CANNOT be usefully scoped per-session:
+   * by the time it fires, the closing session's options are gone, so tmux
+   * picks an arbitrary remaining session's scope to run the hook under.
+   * A per-session (`-t <session>`) `session-closed 'wait-for -S
+   * maw-exit-<agentId>'` therefore signals the WRONG agent's exit waiter
+   * when any other session closes — cascading false exits. The fix is a
+   * server-wide (`-g`) hook that uses `run-shell` + the `#{hook_session_name}`
+   * format token so the channel is always derived from the closing session
+   * itself. The asserts below pin every part of that contract so a future
+   * refactor that reintroduces `-t`, drops `run-shell`, or hard-codes a
+   * channel name fails loudly here rather than in production.
+   */
+  describe('ensureGlobalSessionClosedHook', () => {
+    it('installs a SERVER-WIDE (`-g`) session-closed hook, never per-session', async () => {
+      execaMock.mockResolvedValueOnce({ stdout: '' });
+      await Tmux.ensureGlobalSessionClosedHook();
+      const args = execaMock.mock.calls[0]![1] as string[];
+      expect(args.slice(0, 5)).toEqual(['-L', 'maw', 'set-hook', '-g', 'session-closed']);
+      // Anti-regression: never scope via `-t` for this hook.
+      expect(args).not.toContain('-t');
+    });
+
+    it('bounces through `run-shell` so format tokens expand', async () => {
+      execaMock.mockResolvedValueOnce({ stdout: '' });
+      await Tmux.ensureGlobalSessionClosedHook();
+      const args = execaMock.mock.calls[0]![1] as string[];
+      const hookCmd = args.at(-1)!;
+      // run-shell (not a bare `wait-for …`) — raw tmux commands don't
+      // expand `#{…}` tokens, so this wrapper is load-bearing.
+      expect(hookCmd).toMatch(/^run-shell\b/);
+      expect(hookCmd).toContain('-b'); // non-blocking: don't stall tmux's event loop
+    });
+
+    it('signals a channel derived from the CLOSING session — not any agent id', async () => {
+      execaMock.mockResolvedValueOnce({ stdout: '' });
+      await Tmux.ensureGlobalSessionClosedHook();
+      const args = execaMock.mock.calls[0]![1] as string[];
+      const hookCmd = args.at(-1)!;
+      // Must use the closing-session format token, NOT any baked-in agent/session name.
+      // Without this the hook fires with whoever-tmux-picked's scope, not
+      // the actual closer → cascading false exits (the original bug).
+      expect(hookCmd).toContain('#{hook_session_name}');
+      expect(hookCmd).toContain('wait-for -S maw-exit-#{hook_session_name}');
+      // And it must signal via the dedicated `-L maw` socket.
+      expect(hookCmd).toContain('tmux -L maw wait-for');
+    });
+  });
+
+  describe('Tmux.exitChannel', () => {
+    it('derives the channel from the tmux session name (matches the global hook)', () => {
+      expect(Tmux.exitChannel('maw-agent-01ABC')).toBe('maw-exit-maw-agent-01ABC');
+    });
+
+    it('stays in lock-step with the format token the global hook expands', async () => {
+      execaMock.mockResolvedValueOnce({ stdout: '' });
+      await Tmux.ensureGlobalSessionClosedHook();
+      const args = execaMock.mock.calls[0]![1] as string[];
+      const hookCmd = args.at(-1)!;
+      // Simulate what tmux does when a session named `maw-agent-FOO` closes:
+      // substitute the `#{hook_session_name}` token. The resulting channel
+      // MUST be exactly what `Tmux.exitChannel` returns for that session —
+      // otherwise per-agent `wait-for` blocks forever.
+      const expanded = hookCmd.replace('#{hook_session_name}', 'maw-agent-FOO');
+      expect(expanded).toContain(`wait-for -S ${Tmux.exitChannel('maw-agent-FOO')}`);
+    });
   });
 });
 

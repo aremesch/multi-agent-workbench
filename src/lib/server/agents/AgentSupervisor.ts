@@ -74,24 +74,32 @@ export class AgentSupervisor {
   constructor(public readonly registry: AdapterRegistry) {}
 
   /**
-   * Install a per-session `session-closed` hook on tmux that signals a
-   * unique wait-for channel, then fork a blocking `tmux wait-for` client
-   * that resolves the moment tmux fires the hook. When it resolves we
-   * reap the agent immediately — so Ctrl-D twice in a shell closes the
-   * terminal modal in single-digit milliseconds, without any polling.
+   * Fork a blocking `tmux wait-for` client on the per-session exit channel
+   * that the server-wide `session-closed` hook signals. The waiter
+   * resolves the moment tmux fires the hook for *this* session — so
+   * Ctrl-D twice in a shell closes the terminal modal in single-digit
+   * milliseconds, without any polling.
    *
-   * Set the hook *first* and then start the waiter: both happen while the
-   * session is still alive (we've only just spawned/reattached it), so
-   * there's no race where the hook could fire before the waiter exists.
+   * The channel is derived from the tmux session name
+   * (`maw-exit-<session>`), not the agent id, so it matches the format-
+   * expanded channel the global hook emits via `#{hook_session_name}`.
+   *
+   * We re-assert the global hook here (idempotent `set-hook -g` replace)
+   * rather than trust the one-shot install in `init()`. In dev the `-L maw`
+   * server isn't running at bootstrap time — it only comes up on the first
+   * `new-session` — so init's set-hook call fails with "no server running".
+   * Reattach and first-spawn both call startExitWatcher after the server
+   * is guaranteed to exist, so pinning the hook here is the reliable spot.
+   *
    * Errors are non-fatal — the periodic reaper in bootstrap.ts is still
    * the safety net for edge cases (tmux server restart, external hook
    * clearing, external kill-session, …).
    */
   private startExitWatcher(agentId: string, session: string): void {
-    const channel = `maw-exit-${agentId}`;
-    Tmux.setSessionClosedSignal(session, channel).catch((err) => {
-      console.warn(`[AgentSupervisor] set-hook failed for ${agentId}:`, err);
+    Tmux.ensureGlobalSessionClosedHook().catch((err) => {
+      console.warn(`[AgentSupervisor] set-hook failed (hook is on -g, one attempt per agent start — reap is fallback):`, err);
     });
+    const channel = Tmux.exitChannel(session);
     const proc = Tmux.spawnWaitForChannel(channel);
     this.exitWaiters.set(agentId, proc);
     proc.then(
@@ -136,6 +144,15 @@ export class AgentSupervisor {
     const cfg = getConfig();
     let reattached = 0;
     let crashed = 0;
+
+    // Install the server-wide session-closed hook BEFORE we start any exit
+    // waiters. The hook signals `maw-exit-<session>` when any session
+    // closes; each per-agent `wait-for` resolves only on its own channel.
+    // See `Tmux.ensureGlobalSessionClosedHook` for the why (the per-session
+    // variant is fundamentally broken for `session-closed`).
+    await Tmux.ensureGlobalSessionClosedHook().catch((err) => {
+      console.warn('[AgentSupervisor] ensure global session-closed hook failed:', err);
+    });
 
     const liveSessions = new Set(await Tmux.listMawSessions());
     const rows = listLiveAgents();

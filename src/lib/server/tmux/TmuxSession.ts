@@ -219,24 +219,48 @@ export class Tmux {
   }
 
   /**
-   * Install a `session-closed` hook on the given tmux session so that when
-   * the session ends (CLI exited, window closed, killed, …) tmux signals a
-   * wait-for channel we can block on from Node. Paired with
-   * `spawnWaitForChannel` to get event-driven exit detection instead of
-   * polling `tmux list-sessions` every REAP_INTERVAL_MS.
+   * Install the server-wide `session-closed` hook on `-L maw`. Every session
+   * that closes fires `wait-for -S maw-exit-<session_name>` via a
+   * run-shell bounce, so the per-agent exit waiter resolves the instant
+   * that agent's session goes away — and only that agent's waiter.
    *
-   * The hook command is parsed directly by tmux's command parser — no shell
-   * involved — so keep `channel` alphanumeric + dashes. We use
-   * `maw-exit-<agentId>` in AgentSupervisor, which is safe.
+   * Why global (`-g`) and not per-session (`-t <session>`): when a session
+   * closes its own options are already destroyed, so tmux runs the
+   * `session-closed` hook using the *remaining* sessions' scope (pick one).
+   * A per-session hook therefore fires with the wrong session's scope when
+   * *another* session closes — so `wait-for -S maw-exit-<thatOther>`
+   * cascades a spurious "exited" event to every live agent every time any
+   * single agent ends. The 2-bash-agents-regression: quit agent B → tmux
+   * runs agent A's stored `session-closed` hook → agent A is reaped as if
+   * it had exited too. See `ensureGlobalSessionClosedHook` test + the
+   * "cross-session cascade" regression test in TmuxSession.test.ts.
+   *
+   * Why run-shell: the raw `wait-for` tmux command does NOT interpolate
+   * format tokens. `run-shell`'s argument DOES, so
+   * `#{hook_session_name}` expands to the closing session's name, and we
+   * bounce out to a child `tmux -L maw wait-for -S …` to signal the
+   * channel. `-b` keeps run-shell non-blocking so tmux's event loop is
+   * never held up.
+   *
+   * Idempotent — `set-hook -g` without `-a` replaces.
    */
-  static async setSessionClosedSignal(session: string, channel: string): Promise<void> {
+  static async ensureGlobalSessionClosedHook(): Promise<void> {
     await execa('tmux', t([
       'set-hook',
-      '-t',
-      session,
+      '-g',
       'session-closed',
-      `wait-for -S ${channel}`
+      `run-shell -b "tmux -L ${SOCKET} wait-for -S maw-exit-#{hook_session_name}"`
     ]));
+  }
+
+  /**
+   * The wait-for channel name the global session-closed hook signals for a
+   * given tmux session. Callers block on this via `spawnWaitForChannel` to
+   * get event-driven exit detection. Keep in sync with the hook command in
+   * `ensureGlobalSessionClosedHook` — they MUST produce the same string.
+   */
+  static exitChannel(session: string): string {
+    return `maw-exit-${session}`;
   }
 
   /**
