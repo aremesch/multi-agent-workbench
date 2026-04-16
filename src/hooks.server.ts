@@ -62,16 +62,11 @@ export const handle: Handle = async ({ event, resolve }) => {
   // and WS-adjacent ones — they're cheap and some (X-Content-Type-Options,
   // Referrer-Policy) matter on non-HTML responses too.
   //
-  // CSP notes: SvelteKit style hydration needs 'unsafe-inline' for styles;
-  // we deliberately do NOT allow it for scripts. Revisit once we wire up
-  // CSP nonces via SvelteKit's csp config.
+  // CSP is emitted by SvelteKit itself (see `kit.csp` in svelte.config.js)
+  // so its inline hydration script gets a matching SHA-256 hash. Setting
+  // a second, flat CSP here would be intersected by the browser and would
+  // silently block that inline script — killing every onclick in the app.
   const h = response.headers;
-  if (!h.has('Content-Security-Policy')) {
-    h.set(
-      'Content-Security-Policy',
-      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-    );
-  }
   if (!h.has('Strict-Transport-Security')) {
     h.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
   }
