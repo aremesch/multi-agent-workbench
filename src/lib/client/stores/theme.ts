@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { DEFAULT_THEME, type ThemeId } from '$lib/shared/dashboard';
+import { apiFetch } from '$lib/client/api';
 
 /**
  * Client-side store holding the active theme id. Kept in sync with
@@ -23,7 +24,7 @@ export async function setTheme(id: ThemeId): Promise<void> {
   currentTheme.set(id);
   applyToDocument(id);
   try {
-    await fetch('/api/user/theme', {
+    await apiFetch('/api/user/theme', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ theme: id })

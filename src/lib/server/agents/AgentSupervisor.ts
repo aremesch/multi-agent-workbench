@@ -48,6 +48,21 @@ export interface SpawnAgentArgs {
 export class AgentSupervisor {
   private runtimes = new Map<string, AgentRuntime>();
   /**
+   * Latched to true when the process begins shutting down. All paths that
+   * would flip a DB row to `exited` (periodic reaper, exit-watcher success)
+   * MUST short-circuit once this is set. Reason: systemd's default
+   * `KillMode=control-group` sends SIGTERM to every PID in maw.service's
+   * cgroup, including any tmux CLI child of node mid-`list-sessions`.
+   * `Tmux.listMawSessions()` catches the error and returns []; without
+   * this guard the reaper concludes all sessions died and writes
+   * `exited` to every live agent — orphaning them across restart.
+   */
+  private shuttingDown = false;
+
+  markShuttingDown(): void {
+    this.shuttingDown = true;
+  }
+  /**
    * One `tmux wait-for` subprocess per live agent. Resolves the instant the
    * session-closed hook fires, giving us event-driven exit detection with
    * no polling. Tracked here so we can kill the waiter cleanly when an
@@ -59,41 +74,42 @@ export class AgentSupervisor {
   constructor(public readonly registry: AdapterRegistry) {}
 
   /**
-   * Install a per-session `session-closed` hook on tmux that signals a
-   * unique wait-for channel, then fork a blocking `tmux wait-for` client
-   * that resolves the moment tmux fires the hook. When it resolves we
-   * reap the agent immediately — so Ctrl-D twice in a shell closes the
-   * terminal modal in single-digit milliseconds, without any polling.
+   * Fork a blocking `tmux wait-for` client on the per-session exit channel
+   * that the server-wide `session-closed` hook signals. The waiter
+   * resolves the moment tmux fires the hook for *this* session — so
+   * Ctrl-D twice in a shell closes the terminal modal in single-digit
+   * milliseconds, without any polling.
    *
-   * Set the hook *first* and then start the waiter: both happen while the
-   * session is still alive (we've only just spawned/reattached it), so
-   * there's no race where the hook could fire before the waiter exists.
+   * The channel is derived from the tmux session name
+   * (`maw-exit-<session>`), not the agent id, so it matches the format-
+   * expanded channel the global hook emits via `#{hook_session_name}`.
+   *
+   * We re-assert the global hook here (idempotent `set-hook -g` replace)
+   * rather than trust the one-shot install in `init()`. In dev the `-L maw`
+   * server isn't running at bootstrap time — it only comes up on the first
+   * `new-session` — so init's set-hook call fails with "no server running".
+   * Reattach and first-spawn both call startExitWatcher after the server
+   * is guaranteed to exist, so pinning the hook here is the reliable spot.
+   *
    * Errors are non-fatal — the periodic reaper in bootstrap.ts is still
    * the safety net for edge cases (tmux server restart, external hook
    * clearing, external kill-session, …).
    */
   private startExitWatcher(agentId: string, session: string): void {
-    const channel = `maw-exit-${agentId}`;
-    Tmux.setSessionClosedSignal(session, channel).catch((err) => {
-      console.warn(`[AgentSupervisor] set-hook failed for ${agentId}:`, err);
+    Tmux.ensureGlobalSessionClosedHook().catch((err) => {
+      console.warn(`[AgentSupervisor] set-hook failed (hook is on -g, one attempt per agent start — reap is fallback):`, err);
     });
+    const channel = Tmux.exitChannel(session);
     const proc = Tmux.spawnWaitForChannel(channel);
     this.exitWaiters.set(agentId, proc);
     proc.then(
-      async () => {
+      () => {
         this.exitWaiters.delete(agentId);
+        if (this.shuttingDown) return;
         const rt = this.runtimes.get(agentId);
         if (!rt) return;
-        // Guard against stale pre-signaled tmux channels from a previous
-        // backend run: if the session is still alive, the channel fired
-        // spuriously (e.g. a previous `wait-for` was killed before consuming
-        // the signal). Log and let the periodic reaper handle real exits.
-        if (await Tmux.hasSession(rt.tmuxSession)) {
-          console.warn(
-            `[AgentSupervisor] exit-watcher fired for live session ${agentId} — ignoring (stale channel?)`
-          );
-          return;
-        }
+        // tmux only fires `session-closed` once the session is really
+        // gone, so the hook firing is authoritative. Reap immediately.
         this.finishAsExited(agentId, rt).catch((err) => {
           console.error(`[AgentSupervisor] exit-watcher finish failed for ${agentId}:`, err);
         });
@@ -128,6 +144,15 @@ export class AgentSupervisor {
     const cfg = getConfig();
     let reattached = 0;
     let crashed = 0;
+
+    // Install the server-wide session-closed hook BEFORE we start any exit
+    // waiters. The hook signals `maw-exit-<session>` when any session
+    // closes; each per-agent `wait-for` resolves only on its own channel.
+    // See `Tmux.ensureGlobalSessionClosedHook` for the why (the per-session
+    // variant is fundamentally broken for `session-closed`).
+    await Tmux.ensureGlobalSessionClosedHook().catch((err) => {
+      console.warn('[AgentSupervisor] ensure global session-closed hook failed:', err);
+    });
 
     const liveSessions = new Set(await Tmux.listMawSessions());
     const rows = listLiveAgents();
@@ -184,8 +209,10 @@ export class AgentSupervisor {
    * the in-memory registry so we don't leak FDs.
    */
   async reap(): Promise<number> {
+    if (this.shuttingDown) return 0;
     if (this.runtimes.size === 0) return 0;
     const liveSessions = new Set(await Tmux.listMawSessions());
+    if (this.shuttingDown) return 0;
     let reaped = 0;
     for (const [agentId, runtime] of Array.from(this.runtimes.entries())) {
       if (!liveSessions.has(runtime.tmuxSession)) {
@@ -211,16 +238,18 @@ export class AgentSupervisor {
   }
 
   private async finishAsExited(agentId: string, runtime: AgentRuntime): Promise<void> {
+    // Delete-first so concurrent reap paths (periodic reaper, explicit
+    // kill, snapshot-410) see the agent is already being finalized and
+    // bail out — avoids double stop()/status-flip races.
+    if (!this.runtimes.has(agentId)) return;
+    this.runtimes.delete(agentId);
     this.stopExitWatcher(agentId);
-    // Snapshot agent metadata before stopping — runtime.agent may not be
-    // accessible after stop().
     const agent = runtime.agent;
     try {
       await runtime.stop();
     } catch (err) {
       console.error(`[AgentSupervisor] reap: stop failed for ${agentId}:`, err);
     }
-    this.runtimes.delete(agentId);
     updateAgentStatus(agentId, 'exited');
     // Notify anyone still subscribed to this runtime (e.g. an open terminal
     // modal on the dashboard) so their UI can react immediately — without

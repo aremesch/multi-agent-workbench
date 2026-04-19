@@ -1,9 +1,11 @@
 import { error } from '@sveltejs/kit';
+import { verifyCsrf } from '$lib/server/auth/csrf';
 import type { RequestHandler } from './$types';
 import { setUserSetting } from '$lib/server/db/queries';
 import { THEME_SETTING_KEY, isThemeId } from '$lib/shared/dashboard';
 
-export const PUT: RequestHandler = async ({ locals, request }) => {
+export const PUT: RequestHandler = async ({ locals, request, cookies }) => {
+  verifyCsrf({ cookies, request });
   if (!locals.user) throw error(401, 'Unauthorized');
   let body: unknown;
   try {

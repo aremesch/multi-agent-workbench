@@ -3,8 +3,11 @@ import type { Actions, PageServerLoad } from './$types';
 import { hashPassword, verifyPassword } from '$lib/server/auth/password';
 import {
   deleteSessionsForUserExcept,
+  setMustChangePassword,
   updateUserPasswordHash
 } from '$lib/server/db/queries';
+import { logAuth } from '$lib/server/auth/authLog';
+import { clientIp } from '$lib/server/net/clientIp';
 import { t } from '$lib/i18n';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -13,10 +16,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
-  changePassword: async ({ request, locals }) => {
+  changePassword: async (event) => {
+    const { request, locals } = event;
     if (!locals.user || !locals.session) {
       return fail(401, { error: t(locals.locale, 'account.error.notSignedIn') });
     }
+    const ip = clientIp(event);
+    const ua = request.headers.get('user-agent');
+    const username = locals.user.username;
+    const userId = locals.user.id;
     const form = await request.formData();
     const current = String(form.get('current') ?? '');
     const next = String(form.get('next') ?? '');
@@ -37,12 +45,21 @@ export const actions: Actions = {
 
     const ok = await verifyPassword(locals.user.password_hash, current);
     if (!ok) {
+      logAuth('pwchange_fail', {
+        userId,
+        username,
+        ip,
+        userAgent: ua,
+        detail: 'wrong-current'
+      });
       return fail(401, { error: t(locals.locale, 'account.error.wrongCurrent') });
     }
 
     const hash = await hashPassword(next);
-    updateUserPasswordHash(locals.user.id, hash);
-    deleteSessionsForUserExcept(locals.user.id, locals.session.id);
+    updateUserPasswordHash(userId, hash);
+    setMustChangePassword(userId, false);
+    deleteSessionsForUserExcept(userId, locals.session.id);
+    logAuth('pwchange_ok', { userId, username, ip, userAgent: ua });
 
     return { success: true };
   }

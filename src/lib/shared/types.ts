@@ -32,7 +32,7 @@ export interface AgentCardRow {
   updated_at: number;
   role_name: string;
   repo_path: string;
-  project_name: string;
+  project_name: string | null;
   task_title: string | null;
 }
 
@@ -40,7 +40,7 @@ export interface AgentCardRow {
 export interface SidebarRepoNode {
   repoId: string;
   repoPath: string;
-  projectName: string;
+  projectName: string | null;
   agents: AgentCardRow[];
 }
 

@@ -27,6 +27,7 @@ const en = {
   'login.submit': 'Sign in',
   'login.error.required': 'Username and password required',
   'login.error.invalid': 'Invalid credentials',
+  'login.error.rateLimited': 'Too many attempts — wait a minute and try again',
 
   // ── Account ──────────────────────────────────────────────────────
   'account.title': 'Account',
@@ -115,6 +116,9 @@ const en = {
   'spawn.error.unknownRepo': 'Unknown repo',
   'spawn.error.unknownCliKind': 'Unknown CLI kind',
   'spawn.error.orphanedRepo': 'Repo is orphaned (no project)',
+  'spawn.error.titleRequired': 'Title is required',
+  'spawn.error.titleUnslugifiable': 'Title must contain at least one letter or digit',
+  'spawn.error.titleTaken': 'Title already used — pick a different one',
   'spawn.error.spawnFailed': 'Spawn failed',
   'spawn.error.worktreeFailed': 'Worktree creation failed: {message}',
   'spawn.error.failedCreateRole': 'Failed to create role',
@@ -184,6 +188,26 @@ const en = {
   'archive.th.cacheR': 'Cache R',
   'archive.note':
     "Active/idle is a 30s-gap heuristic over the persisted terminal log. Token counts are sourced from Claude Code's JSONL transcript (available for claude-code agents only).",
+  'archive.th.total.row': 'Total',
+  'archive.delete.btn': 'Delete',
+  'archive.delete.title': 'Delete archived agent',
+  'archive.delete.confirm':
+    'Permanently delete this agent and remove its worktree from disk? This cannot be undone.',
+  'archive.delete.confirmDirty':
+    'This worktree has uncommitted changes that will be lost if you delete it:',
+  'archive.delete.dirtyMore': '… and {count} more',
+  'archive.delete.confirmBtn': 'Delete',
+  'archive.delete.forceBtn': 'Delete anyway',
+  'archive.delete.error': 'Delete failed: {message}',
+
+  // ── Archive overview (cross-repo) ────────────────────────────────
+  'archive.overview.title': 'Archive overview',
+  'archive.overview.empty': 'No archived agents across any repo.',
+  'archive.overview.th.project': 'Project',
+  'archive.overview.th.repo': 'Repo',
+  'archive.overview.th.agents': 'Agents',
+  'archive.overview.note':
+    'One row per repo with archived agents. Click a row to see its per-agent breakdown.',
 
   // ── Common / API errors ──────────────────────────────────────────
   'common.close': 'Close',

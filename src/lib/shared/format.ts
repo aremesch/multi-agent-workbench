@@ -28,3 +28,11 @@ export function formatTimestamp(sec: number | null | undefined): string {
   const d = new Date(sec * 1000);
   return d.toLocaleString();
 }
+
+/** Render a token count as a compact human string (e.g. 1.2M, 3.4k). */
+export function formatTokens(n: number | null | undefined): string {
+  if (n == null || n === 0) return '—';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}

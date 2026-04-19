@@ -10,6 +10,7 @@
  */
 
 import { error, json } from '@sveltejs/kit';
+import { verifyCsrf } from '$lib/server/auth/csrf';
 import { z } from 'zod';
 import type { RequestHandler } from './$types';
 import { getUserSetting, setUserSetting } from '$lib/server/db/queries';
@@ -50,7 +51,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   }
 };
 
-export const PUT: RequestHandler = async ({ locals, request }) => {
+export const PUT: RequestHandler = async ({ locals, request, cookies }) => {
+  verifyCsrf({ cookies, request });
   if (!locals.user) throw error(401, 'Unauthorized');
   let body: unknown;
   try {

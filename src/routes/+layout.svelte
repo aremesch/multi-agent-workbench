@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { apiFetch } from '$lib/client/api';
   import '../app.css';
   import { onMount, setContext, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
@@ -59,7 +60,7 @@
   async function toggleSidebar(): Promise<void> {
     sidebarCollapsed = !sidebarCollapsed;
     try {
-      await fetch('/api/user/sidebar-state', {
+      await apiFetch('/api/user/sidebar-state', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ collapsed: sidebarCollapsed })

@@ -18,6 +18,7 @@ import type {
   AgentRunRow,
   AgentStatus,
   AlertRow,
+  AuthEventRow,
   AlertSeverity,
   EventRow,
   MessageRow,
@@ -64,20 +65,76 @@ export function countUsers(): number {
 }
 
 export function updateUserPasswordHash(userId: string, hash: string): void {
-  prep<[string, number, string]>(
-    'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?'
-  ).run(hash, now(), userId);
+  const ts = now();
+  prep<[string, number, number, string]>(
+    'UPDATE users SET password_hash = ?, password_updated_at = ?, updated_at = ? WHERE id = ?'
+  ).run(hash, ts, ts, userId);
+}
+
+export function setMustChangePassword(userId: string, value: boolean): void {
+  prep<[number, number, string]>(
+    'UPDATE users SET must_change_password = ?, updated_at = ? WHERE id = ?'
+  ).run(value ? 1 : 0, now(), userId);
 }
 
 export function insertUser(row: {
   id: string;
   username: string;
   password_hash: string;
+  must_change_password?: boolean;
 }): void {
   const ts = now();
-  prep<[string, string, string, number, number]>(
-    'INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
-  ).run(row.id, row.username, row.password_hash, ts, ts);
+  prep<[string, string, string, number, number, number]>(
+    'INSERT INTO users (id, username, password_hash, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(
+    row.id,
+    row.username,
+    row.password_hash,
+    row.must_change_password ? 1 : 0,
+    ts,
+    ts
+  );
+}
+
+// --------------- auth events ---------------
+
+export function insertAuthEvent(row: {
+  ts: number;
+  event: string;
+  user_id?: string | null;
+  username?: string | null;
+  ip?: string | null;
+  user_agent?: string | null;
+  detail?: string | null;
+}): void {
+  prep<
+    [
+      number,
+      string,
+      string | null,
+      string | null,
+      string | null,
+      string | null,
+      string | null
+    ]
+  >(
+    `INSERT INTO auth_events (ts, event, user_id, username, ip, user_agent, detail)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    row.ts,
+    row.event,
+    row.user_id ?? null,
+    row.username ?? null,
+    row.ip ?? null,
+    row.user_agent ?? null,
+    row.detail ?? null
+  );
+}
+
+export function listRecentAuthEvents(limit = 100): AuthEventRow[] {
+  return prep<[number], AuthEventRow>(
+    'SELECT * FROM auth_events ORDER BY ts DESC LIMIT ?'
+  ).all(limit);
 }
 
 // --------------- sessions ---------------
@@ -149,16 +206,22 @@ export function listReposForProject(projectId: string): RepoRow[] {
 export interface RepoWithProjectRow {
   id: string;
   path: string;
-  project_name: string;
+  project_name: string | null;
 }
 
 export function listReposWithProjectForUser(userId: string): RepoWithProjectRow[] {
   return prep<[string], RepoWithProjectRow>(
     `SELECT r.id AS id, r.path AS path, p.name AS project_name
        FROM repos r
-       JOIN projects p ON p.id = r.project_id
+       LEFT JOIN projects p ON p.id = r.project_id
       WHERE r.user_id = ?
       ORDER BY r.path`
+  ).all(userId);
+}
+
+export function listReposForUser(userId: string): RepoRow[] {
+  return prep<[string], RepoRow>(
+    'SELECT * FROM repos WHERE user_id = ? ORDER BY path'
   ).all(userId);
 }
 
@@ -169,20 +232,34 @@ export function getRepo(id: string): RepoRow | undefined {
 export function insertRepo(row: {
   id: string;
   user_id: string;
-  project_id: string;
+  project_id: string | null;
   path: string;
   origin_url: string | null;
+  default_branch: string | null;
 }): void {
   const ts = now();
-  prep<[string, string, string, string, string | null, number, number]>(
-    'INSERT INTO repos (id, user_id, project_id, path, origin_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(row.id, row.user_id, row.project_id, row.path, row.origin_url, ts, ts);
+  prep<[string, string, string | null, string, string | null, string | null, number, number]>(
+    'INSERT INTO repos (id, user_id, project_id, path, origin_url, default_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(
+    row.id,
+    row.user_id,
+    row.project_id,
+    row.path,
+    row.origin_url,
+    row.default_branch,
+    ts,
+    ts
+  );
 }
 
 // --------------- worktrees ---------------
 
 export function getWorktree(id: string): WorktreeRow | undefined {
   return prep<[string], WorktreeRow>('SELECT * FROM worktrees WHERE id = ?').get(id);
+}
+
+export function findWorktreeByPath(path: string): WorktreeRow | undefined {
+  return prep<[string], WorktreeRow>('SELECT * FROM worktrees WHERE path = ?').get(path);
 }
 
 export function listWorktreesForRepo(repoId: string): WorktreeRow[] {
@@ -272,7 +349,7 @@ export function listAgentsForUser(userId: string): AgentRow[] {
 export interface AgentCardRow extends AgentRow {
   role_name: string;
   repo_path: string;
-  project_name: string;
+  project_name: string | null;
   task_title: string | null;
 }
 
@@ -291,7 +368,7 @@ export function listAgentCardsForUser(
     FROM agents a
     JOIN roles r ON r.id = a.role_id
     JOIN repos rp ON rp.id = a.repo_id
-    JOIN projects p ON p.id = rp.project_id
+    LEFT JOIN projects p ON p.id = rp.project_id
     LEFT JOIN tasks t ON t.id = a.current_task_id
     WHERE a.user_id = ? AND a.status IN (${placeholders})
     ORDER BY a.created_at DESC
@@ -316,7 +393,7 @@ export function listAgentCardsForRepo(
     FROM agents a
     JOIN roles r ON r.id = a.role_id
     JOIN repos rp ON rp.id = a.repo_id
-    JOIN projects p ON p.id = rp.project_id
+    LEFT JOIN projects p ON p.id = rp.project_id
     LEFT JOIN tasks t ON t.id = a.current_task_id
     WHERE a.user_id = ? AND a.repo_id = ? AND a.status IN (${placeholders})
     ORDER BY a.created_at DESC
@@ -564,14 +641,18 @@ export function pruneTerminalLogByBytes(agentId: string, maxBytes: number): numb
   let total = totalRow?.total ?? 0;
   if (total <= maxBytes) return 0;
 
+  // Materialize the oldest→newest list before any DELETE. better-sqlite3
+  // throws "this database connection is busy executing a query" if we
+  // call .run() on one statement while another is mid-iterate on the
+  // same connection. Loading ids + sizes is cheap (id + int per row).
   const oldest = prep<[string], { id: string; size: number }>(
     'SELECT id, LENGTH(chunk) AS size FROM terminal_log WHERE agent_id = ? ORDER BY seq'
-  );
+  ).all(agentId);
   const del = prep<[string]>('DELETE FROM terminal_log WHERE id = ?');
 
   let deleted = 0;
   const tx = getDb().transaction(() => {
-    for (const row of oldest.iterate(agentId)) {
+    for (const row of oldest) {
       if (total <= maxBytes) break;
       del.run(row.id);
       total -= row.size;

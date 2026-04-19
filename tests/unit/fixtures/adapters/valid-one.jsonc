@@ -1,0 +1,10 @@
+{
+  // Minimal valid adapter for AdapterRegistry tests.
+  "kind": "fixture-one",
+  "displayName": "Fixture One",
+  "spawn": { "command": "bash" },
+  "input": {},
+  "patterns": [
+    { "id": "prompt", "kind": "ready", "regex": "\\$ $" }
+  ]
+}

@@ -16,7 +16,7 @@
 import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import { handler } from './build/handler.js';
-import { bootstrap } from './src/lib/server/bootstrap.ts';
+import { bootstrap, getSupervisor } from './src/lib/server/bootstrap.ts';
 import { getWsHub } from './src/lib/server/ws/hub.ts';
 
 async function main() {
@@ -63,10 +63,20 @@ async function main() {
   });
 
   // Graceful shutdown: let tmux sessions keep running; just close listeners.
+  // Latch the supervisor into shutdown mode *first* so the periodic reaper
+  // stops writing `exited` to DB rows. Under systemd's default
+  // `KillMode=control-group` every child of node (including tmux CLI
+  // invocations) gets SIGTERM'd in parallel with us; without the latch a
+  // reap() call in flight would see list-sessions fail, conclude all
+  // sessions died, and orphan every agent.
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => {
       console.log(`[maw] received ${sig}, shutting down`);
+      try { getSupervisor().markShuttingDown(); } catch { /* bootstrap not done */ }
       server.close(() => process.exit(0));
+      // Fail-safe: if connections keep us alive past systemd's
+      // TimeoutStopSec we'd get SIGKILL'd anyway; exit promptly.
+      setTimeout(() => process.exit(0), 2000).unref();
     });
   }
 }

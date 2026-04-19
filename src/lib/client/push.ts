@@ -1,3 +1,4 @@
+import { apiFetch } from '$lib/client/api';
 /**
  * Client-side push notification registration.
  *
@@ -33,7 +34,7 @@ export async function registerPush(vapidPublicKey: string): Promise<void> {
     });
   }
   const keys = sub.toJSON().keys!;
-  await fetch('/api/push/subscribe', {
+  await apiFetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

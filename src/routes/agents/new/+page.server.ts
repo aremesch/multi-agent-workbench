@@ -1,37 +1,38 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { ulid } from 'ulid';
 import type { Actions, PageServerLoad } from './$types';
 import { t } from '$lib/i18n';
 import {
+  findWorktreeByPath,
   getProject,
   getRepo,
   getRole,
   getSpawnDefaultsAll,
   insertTask,
   insertWorktree,
-  listProjects,
-  listReposForProject,
+  listReposWithProjectForUser,
   listRoles,
   updateAgentCurrentTask
 } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
 import { getConfig } from '$lib/server/config';
+import { slugifyTitle } from '$lib/server/util/slug';
 import type { RepoRow } from '$lib/server/db/types';
 
 interface RepoOption {
   id: string;
   path: string;
-  projectName: string;
+  projectName: string | null;
 }
 
 function loadRepoOptions(userId: string): RepoOption[] {
-  const options: RepoOption[] = [];
-  for (const project of listProjects(userId)) {
-    for (const repo of listReposForProject(project.id)) {
-      options.push({ id: repo.id, path: repo.path, projectName: project.name });
-    }
-  }
-  return options;
+  return listReposWithProjectForUser(userId).map((r) => ({
+    id: r.id,
+    path: r.path,
+    projectName: r.project_name
+  }));
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -40,7 +41,6 @@ export const load: PageServerLoad = async ({ locals }) => {
   return {
     roles: listRoles(locals.user.id),
     repos: loadRepoOptions(locals.user.id),
-    projects: listProjects(locals.user.id),
     cliKinds,
     spawnDefaults: getSpawnDefaultsAll(
       locals.user.id,
@@ -63,6 +63,14 @@ export const actions: Actions = {
     if (!role_id || !repo_id) {
       return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.roleRepoRequired') });
     }
+    if (!task_title) {
+      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.titleRequired') });
+    }
+
+    const slug = slugifyTitle(task_title);
+    if (!slug) {
+      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.titleUnslugifiable') });
+    }
 
     const role = getRole(role_id);
     if (!role || role.user_id !== locals.user.id) {
@@ -73,12 +81,14 @@ export const actions: Actions = {
       return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.unknownRepo') });
     }
 
-    const project = getProject(repo.project_id);
-    if (!project) {
-      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.orphanedRepo') });
-    }
+    const startPoint =
+      repo.default_branch ??
+      (repo.project_id ? getProject(repo.project_id)?.default_branch : null) ??
+      'main';
 
-    // Pre-generate agent id so worktree dir, branch and agent row stay in lock-step.
+    // Pre-generate agent id so the branch name + agent row stay in lock-step;
+    // branch stays ULID-based so it's globally unique even if titles are
+    // reused across repos.
     const agentId = ulid();
     const branch = `maw/${agentId}`;
 
@@ -90,27 +100,31 @@ export const actions: Actions = {
     let worktreeBranch: string;
 
     if (shouldCreate) {
+      const targetPath = join(cfg.worktreeRoot, slug);
+      if (findWorktreeByPath(targetPath) || existsSync(targetPath)) {
+        return fail(409, { ...fields, error: t(locals.locale, 'spawn.error.titleTaken') });
+      }
       try {
         worktreePath = await wtm.create({
           repoPath: repo.path,
           agentId,
           branch,
-          startPoint: project.default_branch
+          startPoint,
+          dirName: slug
         });
       } catch (err) {
         return fail(400, {
           ...fields,
-          error: t(locals.locale, 'spawn.error.worktreeFailed', {
-            message: (err as Error).message
-          })
+          error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
         });
       }
       worktreeBranch = branch;
     } else {
       // Adapter opted out: run directly in the repo root on whatever branch
-      // is already checked out. No throwaway `maw/<agentId>` branch.
+      // is already checked out. No throwaway `maw/<agentId>` branch, and no
+      // slug/targetPath collision check — we aren't taking a worktree dir.
       worktreePath = repo.path;
-      worktreeBranch = project.default_branch;
+      worktreeBranch = startPoint;
     }
 
     const worktreeId = ulid();
@@ -123,7 +137,7 @@ export const actions: Actions = {
       status: 'active'
     });
 
-    const task = task_title || task_body ? { title: task_title, body: task_body } : null;
+    const task = { title: task_title, body: task_body };
 
     // Parse optionalArgs[*] toggles from form data.
     const optionalArgs: Record<string, boolean> = {};
