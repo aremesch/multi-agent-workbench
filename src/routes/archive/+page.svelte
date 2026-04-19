@@ -40,7 +40,9 @@
           {#each data.summaries as s (s.repo.id)}
             <tr>
               <td>
-                <a class="row-link" href={archiveHref(s.repo.id)}>{s.repo.projectName}</a>
+                <a class="row-link" href={archiveHref(s.repo.id)}
+                  >{s.repo.projectName ?? '—'}</a
+                >
               </td>
               <td>
                 <a class="row-link repo-path" href={archiveHref(s.repo.id)}>{s.repo.path}</a>

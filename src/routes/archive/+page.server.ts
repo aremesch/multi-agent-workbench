@@ -19,7 +19,7 @@ export interface ArchiveRepoSummary {
   repo: {
     id: string;
     path: string;
-    projectName: string;
+    projectName: string | null;
   };
   archivedCount: number;
   totals: {
