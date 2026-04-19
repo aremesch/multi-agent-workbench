@@ -96,6 +96,10 @@
         // below will retry once the real dimensions land.
       }
 
+      // Runs after the native <dialog> focus trap picked the close button,
+      // so this wins and the user can type immediately on modal open.
+      term.focus();
+
       if (onData) {
         term.onData((d) => onData(d));
       }
