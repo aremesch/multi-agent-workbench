@@ -84,20 +84,33 @@ export const actions: Actions = {
 
     const cfg = getConfig();
     const wtm = new WorktreeManager(cfg.worktreeRoot);
+    const shouldCreate = locals.supervisor.registry.shouldCreateWorktree(role.cli_kind);
 
     let worktreePath: string;
-    try {
-      worktreePath = await wtm.create({
-        repoPath: repo.path,
-        agentId,
-        branch,
-        startPoint: project.default_branch
-      });
-    } catch (err) {
-      return fail(400, {
-        ...fields,
-        error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
-      });
+    let worktreeBranch: string;
+
+    if (shouldCreate) {
+      try {
+        worktreePath = await wtm.create({
+          repoPath: repo.path,
+          agentId,
+          branch,
+          startPoint: project.default_branch
+        });
+      } catch (err) {
+        return fail(400, {
+          ...fields,
+          error: t(locals.locale, 'spawn.error.worktreeFailed', {
+            message: (err as Error).message
+          })
+        });
+      }
+      worktreeBranch = branch;
+    } else {
+      // Adapter opted out: run directly in the repo root on whatever branch
+      // is already checked out. No throwaway `maw/<agentId>` branch.
+      worktreePath = repo.path;
+      worktreeBranch = project.default_branch;
     }
 
     const worktreeId = ulid();
@@ -106,7 +119,7 @@ export const actions: Actions = {
       user_id: locals.user.id,
       repo_id: repo.id,
       path: worktreePath,
-      branch,
+      branch: worktreeBranch,
       status: 'active'
     });
 

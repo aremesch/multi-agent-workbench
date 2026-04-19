@@ -66,6 +66,15 @@ export const adapterConfigSchema = z.object({
    */
   scrollbackMode: scrollbackModeEnum.default('visible'),
 
+  /**
+   * Whether spawning an agent of this kind should create a dedicated git
+   * worktree under <worktreeRoot>/<agentId>. Defaults to true — what every
+   * real coding-agent CLI wants. Set to false for adapters that should run
+   * directly in the repo root on whatever branch is already checked out
+   * (e.g. the shell smoke adapter).
+   */
+  createWorktree: z.boolean().default(true),
+
   historySource: historySourceSchema.optional(),
 
   spawn: z.object({

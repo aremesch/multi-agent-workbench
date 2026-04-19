@@ -8,6 +8,11 @@
   // session backlog (deduped) instead of just the visible screen.
   "scrollbackMode": "history",
 
+  // Run directly in the repo root on whatever branch is already checked
+  // out — no disposable `maw/<agentId>` worktree. The smoke adapter is a
+  // plain bash shell; a throwaway side branch would be noise.
+  "createWorktree": false,
+
   // Minimal adapter with no pattern matching — exists only to exercise the
   // tmux + FIFO + WebSocket pipeline end-to-end without depending on any
   // third-party CLI being installed. No prompts, no task interpolation.

@@ -84,7 +84,12 @@ Two driving goals:
 - FifoStreamer fixed: dropped `O_NONBLOCK` (kept `O_RDWR`) so libuv does
   blocking reads in the threadpool instead of crashing on EAGAIN.
 - Smoke adapter `cli-adapters/shell.jsonc` exercises the pipeline end
-  to end without needing claude/codex/gemini installed.
+  to end without needing claude/codex/gemini installed. Declares
+  `createWorktree: false` (new adapter field, default true) so spawn
+  skips `git worktree add` and the tmux pane opens in the repo root on
+  whatever branch is already checked out — no throwaway `maw/<agentId>`
+  branch. Real CLI adapters keep the default and still get their own
+  worktree per spawn.
 - Production server is bundled: `pnpm build` runs `vite build` then
   `esbuild` to emit `build/server.js` — a single ESM file that wraps
   the SvelteKit handler with the `/ws` WebSocket upgrade listener.
@@ -145,3 +150,4 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-sidebar-polish.md`](docs/plans/v0.1-sidebar-polish.md) — sidebar bg matches page, lighter treeview hierarchy, smaller collapsed width, all user repos listed even with zero agents (executed).
 - [`docs/plans/v0.1-jsonl-history.md`](docs/plans/v0.1-jsonl-history.md) — out-of-band reconnect history sourced from Claude Code's `~/.claude/projects/.../<sessionId>.jsonl` transcript instead of tmux scrollback; `historySource` adapter field, deterministic `--session-id <uuid>` spawn, `history_snapshot` WS message (protocol v3) prepended to the live capture (executed).
 - [`docs/plans/v0.1-archive-dashboard.md`](docs/plans/v0.1-archive-dashboard.md) — sidebar Archive lists repos only (no per-agent expansion); new `/repos/[id]/archive` dashboard table for exited/crashed agents with total/active/idle time and an xterm log-replay modal backed by `/api/agents/[id]/log` (executed).
+- [`docs/plans/v0.2-adapter-create-worktree-flag.md`](docs/plans/v0.2-adapter-create-worktree-flag.md) — adapter JSONC `createWorktree` flag (default true); when false, spawn skips `git worktree add` and the agent's tmux cwd is the repo root. Flipped off in `shell.jsonc` (executed).

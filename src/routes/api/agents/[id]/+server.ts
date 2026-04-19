@@ -42,14 +42,20 @@ export const DELETE: RequestHandler = async ({ locals, params, url }) => {
     const worktree = getWorktree(agent.worktree_id);
     const repo = worktree ? getRepo(worktree.repo_id) : undefined;
     if (worktree && repo) {
-      try {
-        const wtm = new WorktreeManager(getConfig().worktreeRoot);
-        await wtm.remove({ repoPath: repo.path, wtPath: worktree.path, force: true });
+      if (worktree.path === repo.path) {
+        // Adapter spawned with createWorktree=false — the worktrees row
+        // points at the repo root, which we must never `git worktree remove`.
         updateWorktreeStatus(worktree.id, 'removed');
-      } catch (err) {
-        console.error('[delete-agent] worktree remove failed', err);
-        // Fall through — still delete the agent row so it stops haunting
-        // the dashboard. The orphaned worktree can be cleaned up manually.
+      } else {
+        try {
+          const wtm = new WorktreeManager(getConfig().worktreeRoot);
+          await wtm.remove({ repoPath: repo.path, wtPath: worktree.path, force: true });
+          updateWorktreeStatus(worktree.id, 'removed');
+        } catch (err) {
+          console.error('[delete-agent] worktree remove failed', err);
+          // Fall through — still delete the agent row so it stops haunting
+          // the dashboard. The orphaned worktree can be cleaned up manually.
+        }
       }
     }
   }

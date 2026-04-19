@@ -37,6 +37,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
   readonly displayName: string;
   readonly scrollbackMode: ScrollbackMode;
   readonly historySource: HistorySourceSpec | null;
+  readonly createWorktree: boolean;
   readonly input: InputEncoding;
 
   private readonly cfg: AdapterConfig;
@@ -55,6 +56,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
     this.displayName = cfg.displayName;
     this.scrollbackMode = cfg.scrollbackMode;
     this.historySource = cfg.historySource ?? null;
+    this.createWorktree = cfg.createWorktree;
     this.patterns = cfg.patterns.map((p) => ({
       cfg: p,
       re: new RegExp(p.regex, p.flags ?? '')
