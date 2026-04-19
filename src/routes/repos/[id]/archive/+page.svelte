@@ -3,6 +3,7 @@
   import type { PageData } from './$types';
   import ArchivedAgentLogModal from '$lib/client/components/ArchivedAgentLogModal.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
+  import { apiFetch } from '$lib/client/api';
   import { formatDurationHMS, formatTimestamp, formatTokens } from '$lib/shared/format';
   import { useT } from '$lib/client/i18n.svelte';
 
@@ -62,7 +63,7 @@
     deleteError = '';
     const qs = force ? 'removeWorktree=1&force=1' : 'removeWorktree=1';
     try {
-      const res = await fetch(`/api/agents/${deleteAgentId}?${qs}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/agents/${deleteAgentId}?${qs}`, { method: 'DELETE' });
       if (res.status === 204) {
         deleteStage = 'closed';
         deleteAgentId = null;
