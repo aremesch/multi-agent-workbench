@@ -117,12 +117,16 @@
         </ul>
       {/if}
 
-      <div class="section-label archive-label">
+      <a
+        class="section-label archive-label archive-link"
+        class:active={page.url.pathname === '/archive'}
+        href="/archive"
+      >
         {t('sidebar.archive')}
         <span class="count" style="margin-left: auto;"
           >{archivedRepos.reduce((n, r) => n + r.agents.length, 0)}</span
         >
-      </div>
+      </a>
         {#if archivedRepos.length === 0}
           <div class="empty">{t('sidebar.noArchived')}</div>
         {:else}
@@ -183,6 +187,18 @@
     padding-top: 0.75rem;
     display: flex;
     align-items: center;
+  }
+  a.archive-link {
+    text-decoration: none;
+    border-radius: 0.25rem;
+  }
+  a.archive-link:hover {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 4%, transparent);
+  }
+  a.archive-link.active {
+    color: var(--md-sys-color-primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
   }
   ul.list,
   ul.agents {
