@@ -31,6 +31,44 @@ export interface ArchivedAgentEntry {
   commits: AgentCommit[];
 }
 
+export interface ArchiveTotals {
+  totalSec: number;
+  activeSec: number;
+  idleSec: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  /** Rows that contributed a non-null token summary; lets the UI render '—' when nothing did. */
+  tokenRowCount: number;
+}
+
+function sumTotals(entries: ArchivedAgentEntry[]): ArchiveTotals {
+  const totals: ArchiveTotals = {
+    totalSec: 0,
+    activeSec: 0,
+    idleSec: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    tokenRowCount: 0
+  };
+  for (const e of entries) {
+    totals.totalSec += e.totalSec ?? 0;
+    totals.activeSec += e.stats.activeSec ?? 0;
+    totals.idleSec += e.stats.idleSec ?? 0;
+    if (e.tokens) {
+      totals.inputTokens += e.tokens.inputTokens ?? 0;
+      totals.outputTokens += e.tokens.outputTokens ?? 0;
+      totals.cacheCreationTokens += e.tokens.cacheCreationTokens ?? 0;
+      totals.cacheReadTokens += e.tokens.cacheReadTokens ?? 0;
+      totals.tokenRowCount += 1;
+    }
+  }
+  return totals;
+}
+
 export const load: PageServerLoad = async ({ locals, params }) => {
   if (!locals.user) throw redirect(303, '/login');
   const repo = getRepo(params.id);
@@ -76,6 +114,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
   return {
     repo: { id: repo.id, path: repo.path },
     remote,
-    archivedAgents: entries
+    archivedAgents: entries,
+    totals: sumTotals(entries)
   };
 };
