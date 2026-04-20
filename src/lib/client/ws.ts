@@ -264,6 +264,9 @@ export function getMawWsClient(): MawWsClient {
     singleton = new MawWsClient();
     if (typeof window !== 'undefined') {
       singleton.connect();
+      if (import.meta.env.DEV) {
+        (window as unknown as { __maw_ws_for_test?: MawWsClient }).__maw_ws_for_test = singleton;
+      }
     }
   }
   return singleton;

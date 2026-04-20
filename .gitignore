@@ -11,3 +11,9 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+tests/e2e/.auth/

@@ -160,6 +160,35 @@ export class Tmux {
     }
   }
 
+  /**
+   * Read the pane's cursor coordinates (0-indexed, as tmux stores them) via
+   * `display-message -p '#{cursor_x},#{cursor_y}'`. Returns null if the session
+   * is gone or the response doesn't parse — callers should then skip the
+   * cursor-alignment step of the reconnect snapshot and accept whatever
+   * position xterm ends at naturally.
+   */
+  static async cursorPosition(
+    session: string
+  ): Promise<{ x: number; y: number } | null> {
+    try {
+      const { stdout } = await execa('tmux', [
+        'display-message',
+        '-p',
+        '-t',
+        session,
+        '#{cursor_x},#{cursor_y}'
+      ]);
+      const m = stdout.trim().match(/^(\d+),(\d+)$/);
+      if (!m) return null;
+      const x = Number(m[1]);
+      const y = Number(m[2]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return { x, y };
+    } catch {
+      return null;
+    }
+  }
+
   static async killSession(session: string): Promise<void> {
     try {
       await execa('tmux', ['kill-session', '-t', session]);

@@ -68,6 +68,15 @@ export const adapterConfigSchema = z.object({
 
   historySource: historySourceSchema.optional(),
 
+  /**
+   * When true, the hub performs a 1-cell resize dance after shipping the
+   * reconnect snapshot. TUI CLIs (Claude Code specifically) only fully
+   * repaint on SIGWINCH; the dance forces a redraw that overwrites the
+   * frozen snapshot with a live, cursor-aligned frame. Off by default —
+   * line-based CLIs don't need it and the extra redraw is visible flicker.
+   */
+  forceRedrawOnReconnect: z.boolean().default(false),
+
   spawn: z.object({
     command: z.string().min(1),
     args: z.array(z.string()).default([]),

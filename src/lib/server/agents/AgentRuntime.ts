@@ -91,6 +91,11 @@ export class AgentRuntime extends EventEmitter {
     return this.adapter.historySource;
   }
 
+  /** Adapter-declared toggle for post-snapshot SIGWINCH nudge. */
+  get forceRedrawOnReconnect(): boolean {
+    return this.adapter.forceRedrawOnReconnect;
+  }
+
   async start(): Promise<void> {
     await this.fifo.create();
     this.fifo.start((chunk) => this.onChunk(chunk));

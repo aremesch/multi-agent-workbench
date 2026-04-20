@@ -14,6 +14,7 @@
 
 import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
+import stripAnsi from 'strip-ansi';
 import type { ClientMessage, ServerMessage } from '$shared/protocol';
 import { PROTOCOL_VERSION } from '$shared/protocol';
 import { resolveSession, SESSION_COOKIE } from '../auth/session.js';
@@ -226,9 +227,16 @@ class HubClient {
     const startLine = mode === 'history' ? -500 : 0;
     const raw = await Tmux.capturePane(runtime.tmuxSession, startLine).catch(() => '');
     if (!raw) return;
-    // Dedup only applies to the `'history'` path — the `'visible'` capture
-    // is one screenful of current state, no repeating banners to fold.
-    const snapshot = mode === 'history' ? collapseRepeatingTailBlocks(raw) : raw;
+    // Strip trailing visually-empty lines *before* dedup. capture-pane emits
+    // one line per grid row, so a mostly-empty pane produces many trailing
+    // blanks. Without this step `collapseRepeatingTailBlocks` halves those
+    // blanks but can't collapse below k=2, leaving 2–3 empty lines tailing —
+    // which then push xterm's cursor two rows below the actual content
+    // (Bug #1 for the shell adapter). The visible mode skips dedup but
+    // still needs the trim, otherwise the same padding detaches xterm's
+    // cursor from Claude's TUI footer on reopen (Bug #2).
+    const trimmed = rstripVisuallyEmptyLines(raw);
+    const snapshot = mode === 'history' ? collapseRepeatingTailBlocks(trimmed) : trimmed;
 
     // tmux capture-pane separates lines with bare `\n` (it reconstructs them
     // from the grid), but the client xterm runs with `convertEol: false` so
@@ -237,11 +245,43 @@ class HubClient {
     // starts at the cursor's current column). Normalize to CRLF here so the
     // snapshot renders the same way as the live stream.
     const normalized = snapshot.replace(/\r?\n/g, '\r\n');
+
+    // Align xterm's cursor to tmux's cursor. capture-pane emits cell contents
+    // but not CUP escapes — without this step xterm's cursor ends wherever
+    // the last written glyph fell (usually bottom-right of the trimmed
+    // frame), detaching live output from the rendered screen. Fixes the
+    // residual alignment of both bugs.
+    let cursorEscape = '';
+    const pos = await Tmux.cursorPosition(runtime.tmuxSession);
+    if (pos) {
+      let { x, y } = pos;
+      if (typeof cols === 'number' && cols > 0) x = Math.min(x, cols - 1);
+      if (typeof rows === 'number' && rows > 0) y = Math.min(y, rows - 1);
+      // CSI CUP is 1-indexed on the wire.
+      cursorEscape = `\x1b[${y + 1};${x + 1}H`;
+    }
+
+    const payload = normalized + cursorEscape;
     this.send({
       type: 'scrollback',
       agentId,
-      chunks: [{ seq: 0, b64: Buffer.from(normalized).toString('base64') }]
+      chunks: [{ seq: 0, b64: Buffer.from(payload).toString('base64') }]
     });
+
+    // Optional second pass: some TUI CLIs only fully repaint on SIGWINCH. If
+    // the adapter opts in, nudge the pane width by 1 and back to force a
+    // redraw that overwrites the snapshot with a clean, self-consistent frame
+    // aligned to the cursor position we just emitted. Gated per-adapter so
+    // line-based CLIs (shell, codex when idle) don't get gratuitous redraws.
+    if (runtime.forceRedrawOnReconnect && typeof cols === 'number' && typeof rows === 'number' && cols > 1 && rows >= 1) {
+      const bump = cols - 1;
+      try {
+        await Tmux.resizeWindow(runtime.tmuxSession, bump, rows);
+        await Tmux.resizeWindow(runtime.tmuxSession, cols, rows);
+      } catch {
+        // Best-effort — if the session died mid-dance, drop it silently.
+      }
+    }
   }
 
   /**
@@ -418,6 +458,21 @@ export function getWsHub(): WsHub {
  *
  * Complexity is O(n²) in the number of lines (~500 here), which is fine.
  */
+/**
+ * Drop trailing lines whose ANSI-stripped content is empty or whitespace.
+ * capture-pane emits one entry per grid row including padded blanks; those
+ * blanks push xterm's cursor past the actual content once we write the
+ * snapshot. Lines carrying only ANSI style resets still count as empty.
+ */
+export function rstripVisuallyEmptyLines(text: string): string {
+  const lines = text.split('\n');
+  let end = lines.length;
+  while (end > 0 && stripAnsi(lines[end - 1] ?? '').trim() === '') {
+    end--;
+  }
+  return lines.slice(0, end).join('\n');
+}
+
 export function collapseRepeatingTailBlocks(text: string): string {
   const lines = text.split('\n');
   let progressed = true;

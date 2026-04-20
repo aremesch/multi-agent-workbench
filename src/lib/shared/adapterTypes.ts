@@ -83,6 +83,13 @@ export interface CliAdapter {
   readonly scrollbackMode: ScrollbackMode;
   /** Optional structured history source — see {@link HistorySourceSpec}. */
   readonly historySource: HistorySourceSpec | null;
+  /**
+   * When true, the hub performs a 1-cell resize dance after shipping the
+   * reconnect snapshot so the CLI sees a SIGWINCH and fully repaints at the
+   * viewer's dims. Intended for TUI CLIs whose scrollback snapshot alone
+   * leaves the viewer with a frozen frame; line-based CLIs leave this false.
+   */
+  readonly forceRedrawOnReconnect: boolean;
   buildSpawnSpec(opts: BuildSpawnSpecOpts): SpawnSpec;
   ingest(chunk: Buffer): AdapterEvent[];
   input: InputEncoding;

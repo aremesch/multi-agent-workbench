@@ -85,6 +85,9 @@
       fit = new FitAddon();
       term.loadAddon(fit);
       term.open(container);
+      if (import.meta.env.DEV) {
+        (window as unknown as { __maw_xterm?: XTerm }).__maw_xterm = term;
+      }
       let initialFitOk = false;
       try {
         fit.fit();

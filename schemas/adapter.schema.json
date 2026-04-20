@@ -21,6 +21,10 @@
         "kind": { "type": "string", "enum": ["claude-jsonl"] }
       }
     },
+    "forceRedrawOnReconnect": {
+      "type": "boolean",
+      "description": "When true, the hub nudges pane width by one cell and back after shipping the reconnect snapshot so the CLI sees a SIGWINCH and fully repaints. Defaults to false; enable for TUI CLIs (Claude Code) that otherwise leave the viewer looking at a frozen frame."
+    },
     "spawn": {
       "type": "object",
       "required": ["command"],
