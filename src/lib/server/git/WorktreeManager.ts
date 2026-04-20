@@ -5,6 +5,7 @@
  */
 
 import { execa } from 'execa';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface WorktreeEntry {
@@ -48,17 +49,26 @@ export class WorktreeManager {
   }
 
   /**
-   * Create a new worktree at <worktreeRoot>/<agentId>, checking out or
-   * creating `branch`. Uses `git worktree add -B <branch> <path> <startPoint>`
+   * Create a new worktree at <worktreeRoot>/<dirName ?? agentId>, checking out
+   * or creating `branch`. Uses `git worktree add -B <branch> <path> <startPoint>`
    * which is idempotent on branch creation (-B overwrites).
+   *
+   * `dirName` is used when the caller has a human-readable slug (e.g. the
+   * agent's task title) so the worktree directory is discoverable on disk.
+   * It must already be filesystem-safe — the caller is responsible for
+   * slugifying. Throws if the resolved path already exists.
    */
   async create(opts: {
     repoPath: string;
     agentId: string;
     branch: string;
     startPoint?: string; // defaults to HEAD
+    dirName?: string;
   }): Promise<string> {
-    const wtPath = join(this.worktreeRoot, opts.agentId);
+    const wtPath = join(this.worktreeRoot, opts.dirName ?? opts.agentId);
+    if (existsSync(wtPath)) {
+      throw new Error(`worktree path already exists: ${wtPath}`);
+    }
     const start = opts.startPoint ?? 'HEAD';
     await execa('git', [
       '-C',

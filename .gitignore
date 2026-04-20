@@ -17,3 +17,7 @@ data/
 /playwright-report/
 /playwright/.cache/
 tests/e2e/.auth/
+tests/e2e/auth.storage.json
+
+# Vitest
+coverage/

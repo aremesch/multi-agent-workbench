@@ -4,8 +4,7 @@ import {
   getSpawnDefaultsAll,
   getUserSetting,
   listAgentCardsForUser,
-  listProjects,
-  listReposForProject,
+  listReposWithProjectForUser,
   listRoles
 } from '$lib/server/db/queries';
 import type { AgentStatus } from '$lib/server/db/types';
@@ -15,7 +14,7 @@ import type { LayoutEntry } from '$lib/shared/types';
 interface DashboardRepoOption {
   id: string;
   path: string;
-  projectName: string;
+  projectName: string | null;
 }
 
 interface DashboardRoleOption {
@@ -25,13 +24,11 @@ interface DashboardRoleOption {
 }
 
 function loadRepoOptions(userId: string): DashboardRepoOption[] {
-  const options: DashboardRepoOption[] = [];
-  for (const project of listProjects(userId)) {
-    for (const repo of listReposForProject(project.id)) {
-      options.push({ id: repo.id, path: repo.path, projectName: project.name });
-    }
-  }
-  return options;
+  return listReposWithProjectForUser(userId).map((r) => ({
+    id: r.id,
+    path: r.path,
+    projectName: r.project_name
+  }));
 }
 
 const LIVE_STATUSES: AgentStatus[] = ['spawning', 'running', 'waiting_input', 'idle'];
@@ -60,7 +57,6 @@ export const load: PageServerLoad = async ({ locals }) => {
     cli_kind: r.cli_kind
   }));
   const spawnRepos = loadRepoOptions(locals.user.id);
-  const spawnProjects = listProjects(locals.user.id);
   const spawnCliKinds = locals.supervisor.registry.list();
   const spawnDefaults = getSpawnDefaultsAll(
     locals.user.id,
@@ -71,7 +67,6 @@ export const load: PageServerLoad = async ({ locals }) => {
     dashboardLayout,
     spawnRoles,
     spawnRepos,
-    spawnProjects,
     spawnCliKinds,
     spawnDefaults
   };

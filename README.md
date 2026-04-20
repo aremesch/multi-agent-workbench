@@ -207,6 +207,102 @@ All configuration lives in `.env`. See `.env.example` for the full list
   `pnpm dlx web-push generate-vapid-keys`. `MAW_VAPID_SUBJECT` must be
   a `mailto:` address or an `https://` URL. Leaving all three blank
   disables push cleanly; the rest of the app still runs.
+- `MAW_PUBLIC_ORIGIN` — browser-visible origin (e.g.
+  `https://maw.example.com`); required in prod so the WebSocket upgrade
+  can reject mismatched `Origin` headers.
+- `MAW_TRUST_PROXY` — set to `1` when behind a reverse proxy so the
+  auth log / rate limiter honor `X-Forwarded-For`.
+- `MAW_AUTH_LOG_PATH` — override for the auth event log. Defaults to
+  `${MAW_DATA_DIR}/auth.log`. Symlink it to `/var/log/maw/auth.log` for
+  the included fail2ban jail.
+- `MAW_LOGIN_RATE_LIMIT` — `count/windowSeconds` (default `10/60`).
+
+**Never commit `.env` or any credential.** See `CLAUDE.md` for the full
+rules.
+
+### fail2ban (prod)
+
+`deploy/fail2ban/` ships a filter (`filter.d/maw-auth.conf`) and jail
+(`jail.d/maw.conf`) that watch `${MAW_DATA_DIR}/auth.log` for repeat
+`login_fail`, `pwchange_fail`, `rate_limited`, and `ws_origin_reject`
+entries. Defaults: 5 hits in 10 min → 1 h ban.
+
+### Install
+
+```sh
+sudo apt install -y fail2ban
+sudo cp deploy/fail2ban/filter.d/maw-auth.conf /etc/fail2ban/filter.d/
+sudo cp deploy/fail2ban/jail.d/maw.conf        /etc/fail2ban/jail.d/
+```
+
+Edit `/etc/fail2ban/jail.d/maw.conf` so `logpath` is the **real file
+path** of your auth log. It must equal `${MAW_DATA_DIR}/auth.log`
+exactly — symlinks are unreliable with the pyinotify backend, so don't
+use one. For the shipped systemd unit with `MAW_DATA_DIR=/var/lib/maw`
+the default `logpath = /var/lib/maw/auth.log` already matches.
+
+Then:
+
+```sh
+sudo systemctl enable --now fail2ban
+sudo systemctl restart fail2ban        # use restart, not reload:
+                                       # reload doesn't re-tail logs
+                                       # if the old path went away
+```
+
+> **Restart, not reload.** `fail2ban-client reload` re-reads the jail
+> config but keeps the previously-opened file descriptor. If you ever
+> change `logpath` (or the old path is deleted), you need a full
+> restart for the new file to be tailed. Symptom of a stale reload:
+> `fail2ban-client status maw` shows the new path under `File list`
+> but `Total failed` never increments after fresh events.
+
+### Port and `MAW_TRUST_PROXY` — pick the scenario that matches prod
+
+**Behind a reverse proxy (recommended)** — MAW listens on 3000 on
+localhost, nginx/Caddy terminates TLS on 443 and forwards with
+`X-Forwarded-For`. Set `MAW_TRUST_PROXY=1` in MAW's env so `clientIp()`
+honors the forwarded header; the real attacker IP lands in `auth.log`.
+The shipped jail's `port = http,https` then bans at the edge (80/443)
+which is the only thing exposed publicly.
+
+**Direct exposure on 3000** — only safe on a trusted LAN. Leave
+`MAW_TRUST_PROXY` unset and change the jail to:
+```ini
+port = 3000
+```
+then `sudo systemctl restart fail2ban`. Without this change the ban
+installs iptables rules on 80/443 and completely misses the actual
+Node listener.
+
+Also set `MAW_PUBLIC_ORIGIN` in `.env` so the WebSocket Origin check
+is active and `ws_origin_reject` entries can accrue; with it unset
+MAW falls back to dev behavior and never rejects.
+
+### Verify
+
+1. Check the filter regex against the live log — decoupled from
+   live daemon state:
+   ```sh
+   sudo fail2ban-regex /var/lib/maw/auth.log /etc/fail2ban/filter.d/maw-auth.conf
+   ```
+   Expected: every `login_fail` / `pwchange_fail` / `rate_limited` /
+   `ws_origin_reject` line shows under "Lines matched".
+
+2. Fire a failed login from a non-local IP (localhost is always
+   dropped by fail2ban's `ignoreself` rule — bans will never register
+   from 127.0.0.1 regardless of config) and check:
+   ```sh
+   sudo fail2ban-client status maw
+   sudo tail -n 40 /var/log/fail2ban.log
+   ```
+   `Total failed` increments, and after `maxretry` hits within
+   `findtime` the offending IP appears under `Banned IP list`.
+
+3. Unban in a test:
+   ```sh
+   sudo fail2ban-client set maw unbanip <ip>
+   ```
 
 ## Adapters
 
@@ -219,6 +315,64 @@ installing `claude`, `codex`, or `gemini`.
 
 Validate changes against `schemas/adapter.schema.json`; try them with
 `pnpm test:adapter`.
+
+## Running under systemd
+
+MAW uses a dedicated tmux socket (`tmux -L maw`). For agent sessions to
+survive `systemctl --user restart maw`, the tmux server must live in its
+own user systemd unit, **outside** `maw.service`'s cgroup. Without that,
+`KillMode=control-group` on `maw.service` SIGKILLs the tmux server (and
+every agent inside it) on every restart.
+
+Install the shipped `maw-tmux.service` user unit once per host:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/systemd/maw-tmux.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now maw-tmux.service
+```
+
+Then update your `~/.config/systemd/user/maw.service` so it depends on
+the tmux unit and (belt + braces) only kills the Node main process:
+
+```ini
+[Unit]
+Description=Multi-Agent Workbench
+After=default.target maw-tmux.service
+Wants=maw-tmux.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/maw
+EnvironmentFile=/home/maw/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node build/server.js
+KillMode=process
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
+```
+
+Reload and restart:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart maw
+```
+
+Verify:
+
+```bash
+cat /proc/$(pgrep -f 'tmux.*-L maw')/cgroup
+# should show .../maw-tmux.service — NOT .../maw.service
+```
+
+On macOS dev there is no systemd; tmux auto-spawns on first session and
+survives a Node crash naturally because it is not in any cgroup.
 
 ## Plans
 

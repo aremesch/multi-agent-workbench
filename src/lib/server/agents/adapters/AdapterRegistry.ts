@@ -120,6 +120,13 @@ export class AdapterRegistry {
     return new ConfigDrivenAdapter(entry.config);
   }
 
+  /** Adapter-declared opt-out of per-agent worktree creation. Defaults true
+   *  when the kind is unknown (defensive — caller already validated). */
+  shouldCreateWorktree(kind: string): boolean {
+    const entry = this.entries.get(kind);
+    return entry?.config.createWorktree ?? true;
+  }
+
   // ---------- internals ----------
 
   private loadFile(path: string): LoadedEntry {

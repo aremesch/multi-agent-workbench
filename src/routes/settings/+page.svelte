@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { apiFetch } from '$lib/client/api';
   import type { PageData } from './$types';
   import { ALL_THEMES, type ThemeId } from '$lib/shared/dashboard';
   import { currentTheme, setTheme } from '$lib/client/stores/theme';
@@ -33,7 +34,7 @@
     } else if (!enabled) {
       pushKinds = pushKinds.filter((k) => k !== kind);
     }
-    await fetch('/api/user/push-preferences', {
+    await apiFetch('/api/user/push-preferences', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kinds: pushKinds })
@@ -61,7 +62,7 @@
     const current = agentDefaults[cliKind] ?? {};
     current[optId] = value;
     agentDefaults[cliKind] = { ...current };
-    await fetch('/api/user/spawn-defaults', {
+    await apiFetch('/api/user/spawn-defaults', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ cliKind, optionalArgs: agentDefaults[cliKind] })

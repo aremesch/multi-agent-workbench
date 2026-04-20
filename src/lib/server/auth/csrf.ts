@@ -7,7 +7,7 @@
  */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import type { Cookies, RequestEvent } from '@sveltejs/kit';
+import { error, type Cookies, type RequestEvent } from '@sveltejs/kit';
 
 export const CSRF_COOKIE = 'maw_csrf';
 export const CSRF_HEADER = 'x-csrf-token';
@@ -26,12 +26,16 @@ export function ensureCsrfCookie(cookies: Cookies): string {
   return token;
 }
 
-export function verifyCsrf(event: RequestEvent): boolean {
+/**
+ * Verify the double-submit CSRF token. Throws a SvelteKit 403 on mismatch,
+ * which lets callers write `verifyCsrf(event)` at the top of a handler
+ * without further branching.
+ */
+export function verifyCsrf(event: Pick<RequestEvent, 'cookies' | 'request'>): void {
   const cookie = event.cookies.get(CSRF_COOKIE);
   const header = event.request.headers.get(CSRF_HEADER);
-  if (!cookie || !header) return false;
+  if (!cookie || !header) throw error(403, 'csrf');
   const a = Buffer.from(cookie);
   const b = Buffer.from(header);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) throw error(403, 'csrf');
 }

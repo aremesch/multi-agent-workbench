@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { apiFetch } from '$lib/client/api';
   import { invalidateAll } from '$app/navigation';
   import type { PageData } from './$types';
   import type { AgentCardRow, LayoutEntry } from '$lib/shared/types';
@@ -42,7 +43,7 @@
 
   async function saveLayout(layout: LayoutEntry[]): Promise<void> {
     try {
-      await fetch('/api/user/dashboard-layout', {
+      await apiFetch('/api/user/dashboard-layout', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ layout })
@@ -114,7 +115,6 @@
     <SpawnAgentForm
       roles={data.spawnRoles}
       repos={data.spawnRepos}
-      projects={data.spawnProjects}
       cliKinds={data.spawnCliKinds}
       spawnDefaults={data.spawnDefaults}
       onSuccess={onSpawnSuccess}

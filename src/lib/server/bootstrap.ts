@@ -21,6 +21,7 @@ import { AdapterRegistry } from './agents/adapters/AdapterRegistry.js';
 import { AgentSupervisor } from './agents/AgentSupervisor.js';
 import { PushService } from './push/PushService.js';
 import { hashPassword } from './auth/password.js';
+import { Tmux } from './tmux/TmuxSession.js';
 
 // ---------- globalThis-backed singletons ----------
 // In production the esbuild-bundled server.js and SvelteKit's chunk copy of
@@ -48,7 +49,12 @@ export function bootstrap(): Promise<void> {
     // 2. Bootstrap user (single-user MVP).
     if (countUsers() === 0) {
       const hash = await hashPassword(cfg.bootstrapPassword);
-      insertUser({ id: ulid(), username: cfg.bootstrapUsername, password_hash: hash });
+      insertUser({
+        id: ulid(),
+        username: cfg.bootstrapUsername,
+        password_hash: hash,
+        must_change_password: true
+      });
       console.log(
         `[maw] bootstrap user '${cfg.bootstrapUsername}' created — change password after first login`
       );
@@ -65,7 +71,12 @@ export function bootstrap(): Promise<void> {
     for (const err of loadResult.errors) console.warn(`[maw] cli-adapter: ${err}`);
     G.__maw_registry.startWatching((kind) => console.log(`[maw] cli-adapter reloaded: ${kind}`));
 
-    // 5. Supervisor + reattach.
+    // 5. tmux server probe. In prod the dedicated maw-tmux.service user unit
+    //    owns the `-L maw` server so it survives `systemctl --user restart maw`.
+    //    See deploy/systemd/maw-tmux.service and README.
+    await Tmux.assertServerRunning();
+
+    // 6. Supervisor + reattach.
     G.__maw_supervisor = new AgentSupervisor(G.__maw_registry);
     const { reattached, crashed } = await G.__maw_supervisor.init();
     console.log(`[maw] supervisor: ${reattached} agents reattached, ${crashed} crashed`);

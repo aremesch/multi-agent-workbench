@@ -71,6 +71,7 @@
       term = new Terminal({
         convertEol: false,
         cursorBlink: true,
+        scrollOnUserInput: true,
         fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", monospace',
         fontSize: 13,
         scrollback: 10_000,
@@ -97,6 +98,10 @@
         // inside a <dialog> that hasn't laid out yet). The ResizeObserver
         // below will retry once the real dimensions land.
       }
+
+      // Runs after the native <dialog> focus trap picked the close button,
+      // so this wins and the user can type immediately on modal open.
+      term.focus();
 
       if (onData) {
         term.onData((d) => onData(d));
@@ -177,7 +182,9 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
-    overflow: hidden;
+    /* pan-y: let Android forward vertical swipes to xterm's viewport
+       instead of treating them as a parent gesture. */
+    touch-action: pan-y;
   }
   /* xterm injects its own canvas layers; make sure they fill the host. */
   .terminal-host :global(.xterm) {
@@ -186,5 +193,6 @@
   }
   .terminal-host :global(.xterm-viewport) {
     background-color: transparent !important;
+    touch-action: pan-y;
   }
 </style>

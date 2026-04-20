@@ -1,9 +1,11 @@
 import { error } from '@sveltejs/kit';
+import { verifyCsrf } from '$lib/server/auth/csrf';
 import type { RequestHandler } from './$types';
 import { setUserSetting } from '$lib/server/db/queries';
 import { LOCALE_SETTING_KEY, SUPPORTED_LOCALES, type Locale } from '$lib/i18n';
 
-export const PUT: RequestHandler = async ({ locals, request }) => {
+export const PUT: RequestHandler = async ({ locals, request, cookies }) => {
+  verifyCsrf({ cookies, request });
   if (!locals.user) throw error(401, 'Unauthorized');
   let body: unknown;
   try {

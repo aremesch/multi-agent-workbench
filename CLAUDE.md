@@ -20,6 +20,17 @@ Two driving goals:
 ## Current status
 
 - v0.1 foundation + CRUD UI landed, `pnpm check` clean (0/0).
+- Spawn dialog now requires a task title and names the worktree
+  directory after a slug of that title
+  (`~/.local/share/maw/worktrees/<slug>/` instead of the ULID). Slug is
+  lowercase kebab `[a-z0-9-]`, max 60 chars; duplicate slugs are
+  rejected via a DB + filesystem check. Branch name stays
+  `maw/<agentId>`. Migration `004_repo_project_optional.sql` makes
+  `repos.project_id` nullable and lifts `default_branch` onto the repo
+  (copied from the project on migrate). The spawn form no longer shows
+  any Project UI — inline repo creation posts to `/api/repos` without
+  a project and the resulting row has `project_id = NULL`. Existing
+  ULID-named worktrees keep working (resolved via `worktrees.path`).
 - New persistent left sidebar (`RepoTreeSidebar`) shows a Repo→Agents
   treeview with an `Archive` top-level node listing only repos that
   have archived agents (no per-agent expansion). Sidebar bg matches
@@ -84,7 +95,12 @@ Two driving goals:
 - FifoStreamer fixed: dropped `O_NONBLOCK` (kept `O_RDWR`) so libuv does
   blocking reads in the threadpool instead of crashing on EAGAIN.
 - Smoke adapter `cli-adapters/shell.jsonc` exercises the pipeline end
-  to end without needing claude/codex/gemini installed.
+  to end without needing claude/codex/gemini installed. Declares
+  `createWorktree: false` (new adapter field, default true) so spawn
+  skips `git worktree add` and the tmux pane opens in the repo root on
+  whatever branch is already checked out — no throwaway `maw/<agentId>`
+  branch. Real CLI adapters keep the default and still get their own
+  worktree per spawn.
 - Production server is bundled: `pnpm build` runs `vite build` then
   `esbuild` to emit `build/server.js` — a single ESM file that wraps
   the SvelteKit handler with the `/ws` WebSocket upgrade listener.
@@ -145,4 +161,12 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.1-sidebar-polish.md`](docs/plans/v0.1-sidebar-polish.md) — sidebar bg matches page, lighter treeview hierarchy, smaller collapsed width, all user repos listed even with zero agents (executed).
 - [`docs/plans/v0.1-jsonl-history.md`](docs/plans/v0.1-jsonl-history.md) — out-of-band reconnect history sourced from Claude Code's `~/.claude/projects/.../<sessionId>.jsonl` transcript instead of tmux scrollback; `historySource` adapter field, deterministic `--session-id <uuid>` spawn, `history_snapshot` WS message (protocol v3) prepended to the live capture (executed).
 - [`docs/plans/v0.1-archive-dashboard.md`](docs/plans/v0.1-archive-dashboard.md) — sidebar Archive lists repos only (no per-agent expansion); new `/repos/[id]/archive` dashboard table for exited/crashed agents with total/active/idle time and an xterm log-replay modal backed by `/api/agents/[id]/log` (executed).
+- [`docs/plans/v0.2-tmux-survive-restart.md`](docs/plans/v0.2-tmux-survive-restart.md) — dedicated `tmux -L maw` socket + drops the stale-channel guard so `session-closed` hook reliably closes the terminal modal on CLI exit (executed). The `systemd-run --user --scope` half is **superseded by v2** below.
+- [`docs/plans/v0.2-title-worktree-naming.md`](docs/plans/v0.2-title-worktree-naming.md) — mandatory agent titles in the spawn dialog; worktree dirs named after a lowercase-kebab slug of the title (`~/.local/share/maw/worktrees/<slug>/`) with duplicate titles rejected; project picker/creator removed from the spawn form; `repos.project_id` made nullable and `default_branch` lifted onto the repo via migration `004_repo_project_optional.sql` (executed).
+- [`docs/plans/v0.2-tmux-survive-restart-v2.md`](docs/plans/v0.2-tmux-survive-restart-v2.md) — replaces the broken transient-scope dance with a shipped `deploy/systemd/maw-tmux.service` user unit that owns the `-L maw` server outside `maw.service`'s cgroup. `Tmux.ensureServer()` is gone; bootstrap just probes the socket and warns if missing. Operator must install the new unit + add `Wants=/After=maw-tmux.service` and `KillMode=process` to `maw.service` (executed).
+- [`docs/plans/v0.2-playwright-hydration-smoke-tests.md`](docs/plans/v0.2-playwright-hydration-smoke-tests.md) — Playwright e2e suite against the bundled prod server; three chromium smoke tests (dashboard hydration, user-menu click, spawn-FAB click) behind a fixture that fails on any CSP violation or `pageerror`, catching the "SSR renders, hydration silently dies" regression class (e.g. the `script-src 'self'` CSP that sat on `development` unnoticed for three days). `pnpm test:e2e` locally; `.github/workflows/e2e.yml` on PRs to `main` and `development` (executed).
+- [`docs/plans/v0.2-vitest-unit-tests.md`](docs/plans/v0.2-vitest-unit-tests.md) — phased comprehensive vitest unit-test suite. Phase 0 landed infra (vitest projects config — server in node + client in jsdom, v8 coverage, `@testing-library/svelte` + `jest-dom` + `jsdom` + `@vitest/coverage-v8`, CI workflow). Subsequent phases: 1 pure logic (106), 2 DB layer (65), 3 adapter engine (73), 4 history rendering (46), 5 auth (41), 6 impure server seams — git/tmux/push (75), 7 WS hub (33), 8 client MawWsClient (24), 9 Svelte 5 component harness + Modal (9). **472 cases total.** Coverage gate at 33/86/70/33; branch and function thresholds exceed the plan's original 60/70 targets. Route-layer tests (`src/routes/**`) remain untested and will land in a follow-up (executed).
+- [`docs/plans/v0.2-playwright-agent-lifecycle-e2e.md`](docs/plans/v0.2-playwright-agent-lifecycle-e2e.md) — Playwright e2e guard against the session-closed hook cascade regression (fix commit `33c4089`). Spawns two `shell` agents via the real `/agents/new` form action, fires `tmux send-keys 'exit'` into the 2nd, and asserts agent 1's `status` column in `/tmp/maw-e2e/maw.db` is still `running` (read directly via `better-sqlite3`). The snapshot route alone can't catch the bug — under the old code agent 1's tmux session stays alive while its DB row flips to `exited`, so `hasSession` still returns 200 on a zombie runtime. Verified the test fails under the pre-fix code with `Expected: "running", Received: "exited"` (executed).
+- [`docs/plans/v0.2-adapter-create-worktree-flag.md`](docs/plans/v0.2-adapter-create-worktree-flag.md) — adapter JSONC `createWorktree` flag (default true); when false, spawn skips `git worktree add` and the agent's tmux cwd is the repo root. Flipped off in `shell.jsonc` (executed).
+- [`docs/plans/v0.2-terminal-autofocus.md`](docs/plans/v0.2-terminal-autofocus.md) — xterm `.focus()` at the tail of `Terminal.svelte`'s async init so modal-open lands keyboard focus inside the terminal instead of on the dialog's close button; removes the extra click after spawn/reopen (executed).
 - [`docs/plans/v0.2-terminal-output-alignment.md`](docs/plans/v0.2-terminal-output-alignment.md) — rstrip trailing blanks before dedup in `sendReconnectSnapshot`, append a CSI CUP escape pinned to `tmux display-message '#{cursor_x},#{cursor_y}'` so the xterm cursor lands on the real pane cursor regardless of adapter; adds an opt-in `forceRedrawOnReconnect` adapter flag (SIGWINCH nudge via 1-cell resize dance) as an escape hatch for TUI CLIs; bootstraps Playwright E2E with `terminal-bash-cursor` and `terminal-claude-reopen` regression specs.

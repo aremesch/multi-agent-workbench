@@ -10,6 +10,19 @@ import { execa, type ExecaError, type ResultPromise } from 'execa';
 
 export const SESSION_PREFIX = 'maw-agent-';
 
+/**
+ * Dedicated tmux socket name. All tmux invocations use `-L maw` so the
+ * tmux server is separate from any other tmux server the user runs and
+ * — critically — lives in its own user systemd unit (`maw-tmux.service`,
+ * shipped under `deploy/systemd/`) outside maw.service's cgroup, so
+ * `systemctl --user restart maw` does not take the server down with it.
+ */
+const SOCKET = 'maw';
+
+function t(args: string[]): string[] {
+  return ['-L', SOCKET, ...args];
+}
+
 export interface SpawnOptions {
   session: string;            // e.g. 'maw-agent-<ulid>'
   command: string;            // the CLI binary name
@@ -25,9 +38,43 @@ export class Tmux {
     return `${SESSION_PREFIX}${agentId}`;
   }
 
+  /**
+   * Probe whether the `-L maw` tmux server is already up. In production it
+   * should be owned by the `maw-tmux.service` user unit (see
+   * `deploy/systemd/maw-tmux.service`) so it survives `systemctl --user
+   * restart maw`. In dev (no systemd, e.g. macOS) it's fine for tmux to
+   * auto-spawn on the first `new-session` — we just log a hint.
+   *
+   * Never throws: a missing server isn't fatal at boot, the first
+   * `new-session` will spawn one. We only want to surface the
+   * misconfiguration loudly so a prod operator notices.
+   */
+  static async assertServerRunning(): Promise<void> {
+    try {
+      await execa('tmux', t(['list-clients']));
+    } catch (err) {
+      const e = err as ExecaError;
+      const stderr = typeof e.stderr === 'string' ? e.stderr : '';
+      // Two stderr variants both mean "no tmux server on this socket yet":
+      //   - "no server running on /tmp/tmux-.../maw"      (server was up, now gone)
+      //   - "error connecting to /tmp/.../maw (No such file or directory)"
+      //                                                   (socket file never existed)
+      // Both are normal at boot — tmux will auto-spawn on first new-session.
+      if (/no server running/i.test(stderr) || /no such file or directory/i.test(stderr)) {
+        console.info(
+          '[tmux] no server on socket -L maw. In production install maw-tmux.service ' +
+          '(see deploy/systemd/maw-tmux.service) so tmux survives `systemctl --user restart maw`. ' +
+          'In dev this is fine — tmux will auto-spawn on first session.'
+        );
+      } else {
+        console.warn('[tmux] assertServerRunning probe failed:', err);
+      }
+    }
+  }
+
   static async hasSession(session: string): Promise<boolean> {
     try {
-      await execa('tmux', ['has-session', '-t', session]);
+      await execa('tmux', t(['has-session', '-t', session]));
       return true;
     } catch {
       return false;
@@ -54,7 +101,7 @@ export class Tmux {
     const cmdParts = [opts.command, ...opts.args].map((s) => JSON.stringify(s));
     const shellLine = `cd ${JSON.stringify(opts.cwd)} && exec env ${envParts.join(' ')} ${cmdParts.join(' ')}`;
 
-    await execa('tmux', [
+    await execa('tmux', t([
       'new-session',
       '-d',
       '-s',
@@ -66,24 +113,24 @@ export class Tmux {
       'sh',
       '-lc',
       shellLine
-    ]);
+    ]));
   }
 
   /** `tmux pipe-pane -o 'cat >> <fifo>'` — open-ended (-o) so restarts replace cleanly. */
   static async pipePane(session: string, fifoPath: string): Promise<void> {
-    await execa('tmux', [
+    await execa('tmux', t([
       'pipe-pane',
       '-o',
       '-t',
       session,
       `cat >> ${JSON.stringify(fifoPath)}`
-    ]);
+    ]));
   }
 
   /** Stop pipe-pane for the session. */
   static async stopPipePane(session: string): Promise<void> {
     try {
-      await execa('tmux', ['pipe-pane', '-t', session]);
+      await execa('tmux', t(['pipe-pane', '-t', session]));
     } catch {
       // ignore — session may already be gone
     }
@@ -96,12 +143,12 @@ export class Tmux {
    */
   static async sendLiteral(session: string, text: string): Promise<void> {
     if (text.length === 0) return;
-    await execa('tmux', ['send-keys', '-t', session, '-l', '--', text]);
+    await execa('tmux', t(['send-keys', '-t', session, '-l', '--', text]));
   }
 
   /** Send a named tmux key like 'Enter' or 'C-c'. */
   static async sendKey(session: string, key: string): Promise<void> {
-    await execa('tmux', ['send-keys', '-t', session, key]);
+    await execa('tmux', t(['send-keys', '-t', session, key]));
   }
 
   /**
@@ -112,7 +159,7 @@ export class Tmux {
   static async resizeWindow(session: string, cols: number, rows: number): Promise<void> {
     if (cols < 1 || rows < 1) return;
     try {
-      await execa('tmux', [
+      await execa('tmux', t([
         'resize-window',
         '-t',
         session,
@@ -120,7 +167,7 @@ export class Tmux {
         String(Math.floor(cols)),
         '-y',
         String(Math.floor(rows))
-      ]);
+      ]));
     } catch (err) {
       const e = err as ExecaError;
       const stderr = typeof e.stderr === 'string' ? e.stderr : '';
@@ -145,7 +192,7 @@ export class Tmux {
    */
   static async capturePane(session: string, startLine = -10000): Promise<string> {
     try {
-      const { stdout } = await execa('tmux', [
+      const { stdout } = await execa('tmux', t([
         'capture-pane',
         '-t',
         session,
@@ -153,7 +200,7 @@ export class Tmux {
         '-e',
         '-S',
         String(startLine)
-      ]);
+      ]));
       return stdout;
     } catch {
       return '';
@@ -191,7 +238,7 @@ export class Tmux {
 
   static async killSession(session: string): Promise<void> {
     try {
-      await execa('tmux', ['kill-session', '-t', session]);
+      await execa('tmux', t(['kill-session', '-t', session]));
     } catch (err) {
       const e = err as ExecaError;
       // "can't find session" is fine — idempotent kill.
@@ -201,24 +248,48 @@ export class Tmux {
   }
 
   /**
-   * Install a `session-closed` hook on the given tmux session so that when
-   * the session ends (CLI exited, window closed, killed, …) tmux signals a
-   * wait-for channel we can block on from Node. Paired with
-   * `spawnWaitForChannel` to get event-driven exit detection instead of
-   * polling `tmux list-sessions` every REAP_INTERVAL_MS.
+   * Install the server-wide `session-closed` hook on `-L maw`. Every session
+   * that closes fires `wait-for -S maw-exit-<session_name>` via a
+   * run-shell bounce, so the per-agent exit waiter resolves the instant
+   * that agent's session goes away — and only that agent's waiter.
    *
-   * The hook command is parsed directly by tmux's command parser — no shell
-   * involved — so keep `channel` alphanumeric + dashes. We use
-   * `maw-exit-<agentId>` in AgentSupervisor, which is safe.
+   * Why global (`-g`) and not per-session (`-t <session>`): when a session
+   * closes its own options are already destroyed, so tmux runs the
+   * `session-closed` hook using the *remaining* sessions' scope (pick one).
+   * A per-session hook therefore fires with the wrong session's scope when
+   * *another* session closes — so `wait-for -S maw-exit-<thatOther>`
+   * cascades a spurious "exited" event to every live agent every time any
+   * single agent ends. The 2-bash-agents-regression: quit agent B → tmux
+   * runs agent A's stored `session-closed` hook → agent A is reaped as if
+   * it had exited too. See `ensureGlobalSessionClosedHook` test + the
+   * "cross-session cascade" regression test in TmuxSession.test.ts.
+   *
+   * Why run-shell: the raw `wait-for` tmux command does NOT interpolate
+   * format tokens. `run-shell`'s argument DOES, so
+   * `#{hook_session_name}` expands to the closing session's name, and we
+   * bounce out to a child `tmux -L maw wait-for -S …` to signal the
+   * channel. `-b` keeps run-shell non-blocking so tmux's event loop is
+   * never held up.
+   *
+   * Idempotent — `set-hook -g` without `-a` replaces.
    */
-  static async setSessionClosedSignal(session: string, channel: string): Promise<void> {
-    await execa('tmux', [
+  static async ensureGlobalSessionClosedHook(): Promise<void> {
+    await execa('tmux', t([
       'set-hook',
-      '-t',
-      session,
+      '-g',
       'session-closed',
-      `wait-for -S ${channel}`
-    ]);
+      `run-shell -b "tmux -L ${SOCKET} wait-for -S maw-exit-#{hook_session_name}"`
+    ]));
+  }
+
+  /**
+   * The wait-for channel name the global session-closed hook signals for a
+   * given tmux session. Callers block on this via `spawnWaitForChannel` to
+   * get event-driven exit detection. Keep in sync with the hook command in
+   * `ensureGlobalSessionClosedHook` — they MUST produce the same string.
+   */
+  static exitChannel(session: string): string {
+    return `maw-exit-${session}`;
   }
 
   /**
@@ -232,13 +303,13 @@ export class Tmux {
    * leak a subprocess per reaped-another-way agent.
    */
   static spawnWaitForChannel(channel: string): ResultPromise {
-    return execa('tmux', ['wait-for', channel]);
+    return execa('tmux', t(['wait-for', channel]));
   }
 
   /** List every `maw-agent-*` session currently present on the host. */
   static async listMawSessions(): Promise<string[]> {
     try {
-      const { stdout } = await execa('tmux', ['list-sessions', '-F', '#{session_name}']);
+      const { stdout } = await execa('tmux', t(['list-sessions', '-F', '#{session_name}']));
       return stdout
         .split('\n')
         .map((s) => s.trim())

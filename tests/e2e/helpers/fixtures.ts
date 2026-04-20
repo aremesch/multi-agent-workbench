@@ -1,18 +1,21 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Page } from '@playwright/test';
+import { test, type Page } from '@playwright/test';
 
 /**
  * SvelteKit's built-in CSRF guard rejects cross-site form POSTs by comparing
  * `request.headers.origin` against the request URL. Playwright's
  * `APIRequestContext.post` doesn't populate Origin automatically for non-page
- * requests, so we attach it explicitly from `baseURL` on every form-style
- * POST. JSON `+server.ts` routes use double-submit CSRF via
+ * requests, so we attach it explicitly from the test project's baseURL on
+ * every form-style POST. JSON `+server.ts` routes use double-submit CSRF via
  * `x-csrf-token` instead and don't need the header, but it's harmless there.
  */
 function originHeader(_page: Page): Record<string, string> {
-  const baseURL = process.env.MAW_E2E_URL ?? 'http://emaw:3000';
+  const baseURL =
+    (test.info().project.use.baseURL as string | undefined) ??
+    process.env.MAW_E2E_URL ??
+    'http://127.0.0.1:4173';
   const u = new URL(baseURL);
   return { origin: `${u.protocol}//${u.host}` };
 }

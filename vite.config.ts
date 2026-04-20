@@ -59,6 +59,65 @@ export default defineConfig({
     port: 5173
   },
   test: {
-    include: ['src/**/*.{test,spec}.{js,ts}']
+    passWithNoTests: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      include: ['src/**/*.{ts,svelte}'],
+      exclude: [
+        'src/lib/components/ui/**',
+        'src/**/*.d.ts',
+        'src/app.html',
+        'src/service-worker.ts'
+      ],
+      thresholds: {
+        // Ratcheted by each phase of v0.2-vitest-unit-tests.md. Numbers
+        // sit just below current actuals so the gate bites on regressions
+        // without false alarms on CI jitter. Phase 9 added a first Svelte
+        // 5 component test (Modal) plus a jsdom `<dialog>` polyfill and
+        // the `resolve.conditions: ['browser']` client-project tweak
+        // that makes @testing-library/svelte mount() resolve to Svelte's
+        // client build.
+        lines: 33,
+        branches: 86,
+        functions: 70,
+        statements: 33
+      }
+    },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'server',
+          environment: 'node',
+          include: [
+            'src/lib/server/**/*.{test,spec}.ts',
+            'src/lib/shared/**/*.{test,spec}.ts'
+          ]
+        }
+      },
+      {
+        extends: true,
+        resolve: {
+          // Svelte 5 ships separate `svelte/index.js` (client) and
+          // `svelte/index-server.js` (server) entries, dispatched via
+          // export conditions. Vitest defaults to Node conditions, which
+          // picks the SSR entry — causing @testing-library/svelte mount()
+          // to explode with "lifecycle_function_unavailable". Force the
+          // browser build for client component tests.
+          conditions: ['browser']
+        },
+        test: {
+          name: 'client',
+          environment: 'jsdom',
+          include: [
+            'src/lib/client/**/*.{test,spec}.ts',
+            'src/lib/components/**/*.{test,spec}.ts',
+            'src/routes/**/*.{test,spec}.ts'
+          ],
+          setupFiles: ['tests/unit/setup.client.ts']
+        }
+      }
+    ]
   }
 });

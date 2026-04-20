@@ -90,6 +90,12 @@ export interface CliAdapter {
    * leaves the viewer with a frozen frame; line-based CLIs leave this false.
    */
   readonly forceRedrawOnReconnect: boolean;
+  /**
+   * Whether spawning an agent of this kind should create a dedicated git
+   * worktree. Defaults to true; set false for adapters that run in the repo
+   * root on whatever branch is already checked out. See adapter.config.schema.ts.
+   */
+  readonly createWorktree: boolean;
   buildSpawnSpec(opts: BuildSpawnSpecOpts): SpawnSpec;
   ingest(chunk: Buffer): AdapterEvent[];
   input: InputEncoding;
