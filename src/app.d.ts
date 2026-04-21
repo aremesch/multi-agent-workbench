@@ -17,6 +17,11 @@ declare global {
     // interface PageState {}
     // interface Platform {}
   }
+
+  // Injected by Vite `define` at build time from scripts/gen-version.mjs.
+  const __APP_VERSION__: string;
+  const __APP_BUILD_NUMBER__: string;
+  const __APP_BUILD_DATE__: string;
 }
 
 export {};

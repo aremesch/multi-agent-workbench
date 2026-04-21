@@ -5,6 +5,13 @@ import { defineConfig, type PluginOption } from 'vite';
 import { WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
+import { generateVersionInfo } from './scripts/gen-version.mjs';
+
+const {
+  version: appVersion,
+  buildNumber: appBuildNumber,
+  buildDate: appBuildDate
+} = generateVersionInfo();
 
 /**
  * Dev WebSocket plugin: attaches a `ws` server to Vite's HTTP server so the
@@ -54,6 +61,11 @@ function devWebSocketPlugin(): PluginOption {
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit(), devWebSocketPlugin()],
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_BUILD_NUMBER__: JSON.stringify(appBuildNumber),
+    __APP_BUILD_DATE__: JSON.stringify(appBuildDate)
+  },
   server: {
     host: '127.0.0.1',
     port: 5173
@@ -92,7 +104,8 @@ export default defineConfig({
           environment: 'node',
           include: [
             'src/lib/server/**/*.{test,spec}.ts',
-            'src/lib/shared/**/*.{test,spec}.ts'
+            'src/lib/shared/**/*.{test,spec}.ts',
+            'scripts/**/*.{test,spec}.ts'
           ]
         }
       },

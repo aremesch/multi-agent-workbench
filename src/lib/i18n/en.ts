@@ -7,10 +7,19 @@ const en = {
   'nav.appTitle': 'Multi-Agent Workbench',
   'nav.settings': 'Settings',
   'nav.account': 'Account',
+  'nav.about': 'About',
   'nav.logout': 'Logout',
   'nav.userMenu': 'User menu',
   'nav.showSidebar': 'Show sidebar',
   'nav.hideSidebar': 'Hide sidebar',
+
+  // ── About dialog ─────────────────────────────────────────────────
+  'about.title': 'About',
+  'about.version': 'Version',
+  'about.build': 'Build',
+  'about.buildDate': 'Build date',
+  'about.tagline':
+    'Self-hosted workbench for orchestrating LLM coding agents across git repos.',
 
   // ── Sidebar ──────────────────────────────────────────────────────
   'sidebar.repositories': 'Repositories',
