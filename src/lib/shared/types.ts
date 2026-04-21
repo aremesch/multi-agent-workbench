@@ -47,11 +47,20 @@ export interface SidebarRepoNode {
 export interface AgentCommit {
   sha: string;
   shortSha: string;
+  parentShas: string[];
   author: string;
+  authorName: string;
+  authorEmail: string;
+  committerName: string;
+  committerEmail: string;
+  authoredAt: number;
+  committedAt: number;
   date: string;
   subject: string;
   body: string;
 }
+
+export type AgentCommitSource = 'committer' | 'range' | 'merge_base';
 
 export interface AgentRemote {
   provider: 'github' | 'gitea' | 'unknown';

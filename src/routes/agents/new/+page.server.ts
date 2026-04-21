@@ -17,6 +17,7 @@ import {
   updateAgentCurrentTask
 } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
+import { resolveSha } from '$lib/server/git/agentCommits';
 import { getConfig } from '$lib/server/config';
 import { slugifyTitle } from '$lib/server/util/slug';
 import type { RepoRow } from '$lib/server/db/types';
@@ -98,6 +99,7 @@ export const actions: Actions = {
 
     let worktreePath: string;
     let worktreeBranch: string;
+    let baseSha: string | null = null;
 
     if (shouldCreate) {
       const targetPath = join(cfg.worktreeRoot, slug);
@@ -105,13 +107,15 @@ export const actions: Actions = {
         return fail(409, { ...fields, error: t(locals.locale, 'spawn.error.titleTaken') });
       }
       try {
-        worktreePath = await wtm.create({
+        const created = await wtm.create({
           repoPath: repo.path,
           agentId,
           branch,
           startPoint,
           dirName: slug
         });
+        worktreePath = created.path;
+        baseSha = created.baseSha;
       } catch (err) {
         return fail(400, {
           ...fields,
@@ -123,8 +127,11 @@ export const actions: Actions = {
       // Adapter opted out: run directly in the repo root on whatever branch
       // is already checked out. No throwaway `maw/<agentId>` branch, and no
       // slug/targetPath collision check — we aren't taking a worktree dir.
+      // Resolve baseSha from the current HEAD so commit attribution still
+      // anchors to a real SHA on branches MAW didn't create.
       worktreePath = repo.path;
       worktreeBranch = startPoint;
+      baseSha = await resolveSha(repo.path, startPoint);
     }
 
     const worktreeId = ulid();
@@ -155,6 +162,7 @@ export const actions: Actions = {
         repoPath: repo.path,
         worktreeId,
         worktreePath,
+        baseSha,
         task,
         optionalArgs
       });

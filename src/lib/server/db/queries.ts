@@ -14,6 +14,8 @@
 import type { Statement } from 'better-sqlite3';
 import { getDb } from './index.js';
 import type {
+  AgentCommitRow,
+  AgentCommitSource,
   AgentRow,
   AgentRunRow,
   AgentStatus,
@@ -34,6 +36,7 @@ import type {
   WorktreeRow,
   WorktreeStatus
 } from './types.js';
+import type { AgentCommit } from '../../shared/types.js';
 
 // --------------- prepared statement cache ---------------
 
@@ -423,6 +426,8 @@ export function insertAgent(row: {
   tmux_session: string;
   status: AgentStatus;
   cli_session_id: string | null;
+  base_sha?: string | null;
+  committer_email?: string | null;
 }): void {
   const ts = now();
   prep<
@@ -436,13 +441,16 @@ export function insertAgent(row: {
       string,
       AgentStatus,
       string | null,
+      string | null,
+      string | null,
       number,
       number
     ]
   >(
     `INSERT INTO agents
-       (id, user_id, role_id, repo_id, worktree_id, cli_kind, tmux_session, status, cli_session_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, user_id, role_id, repo_id, worktree_id, cli_kind, tmux_session, status,
+        cli_session_id, base_sha, committer_email, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     row.id,
     row.user_id,
@@ -453,9 +461,21 @@ export function insertAgent(row: {
     row.tmux_session,
     row.status,
     row.cli_session_id,
+    row.base_sha ?? null,
+    row.committer_email ?? null,
     ts,
     ts
   );
+}
+
+export function updateAgentCommitSnapshot(
+  id: string,
+  head_sha_at_snapshot: string | null,
+  commits_snapshotted_at: number
+): void {
+  prep<[string | null, number, number, string]>(
+    'UPDATE agents SET head_sha_at_snapshot = ?, commits_snapshotted_at = ?, updated_at = ? WHERE id = ?'
+  ).run(head_sha_at_snapshot, commits_snapshotted_at, now(), id);
 }
 
 export function updateAgentStatus(id: string, status: AgentStatus): void {
@@ -835,6 +855,90 @@ export function getSpawnDefaults(
   } catch {
     return null;
   }
+}
+
+// --------------- agent commits ---------------
+
+export function listPersistedAgentCommits(agentId: string): AgentCommitRow[] {
+  return prep<[string], AgentCommitRow>(
+    'SELECT * FROM agent_commits WHERE agent_id = ? ORDER BY position ASC'
+  ).all(agentId);
+}
+
+export function countAgentCommits(agentId: string): number {
+  const row = prep<[string], { n: number }>(
+    'SELECT COUNT(*) AS n FROM agent_commits WHERE agent_id = ?'
+  ).get(agentId);
+  return row?.n ?? 0;
+}
+
+export function replaceAgentCommits(
+  agentId: string,
+  userId: string,
+  repoId: string,
+  commits: AgentCommit[],
+  source: AgentCommitSource,
+  mintId: () => string
+): void {
+  const ts = now();
+  const del = prep<[string]>('DELETE FROM agent_commits WHERE agent_id = ?');
+  const ins = prep<
+    [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      number,
+      number,
+      string,
+      string,
+      AgentCommitSource,
+      number,
+      number,
+      number,
+      number
+    ]
+  >(
+    `INSERT INTO agent_commits
+       (id, user_id, agent_id, repo_id, sha, parent_shas,
+        author_name, author_email, committer_name, committer_email,
+        authored_at, committed_at, subject, body,
+        source, snapshotted_at, position, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const tx = getDb().transaction(() => {
+    del.run(agentId);
+    commits.forEach((c, i) => {
+      ins.run(
+        mintId(),
+        userId,
+        agentId,
+        repoId,
+        c.sha,
+        JSON.stringify(c.parentShas),
+        c.authorName,
+        c.authorEmail,
+        c.committerName,
+        c.committerEmail,
+        c.authoredAt,
+        c.committedAt,
+        c.subject,
+        c.body,
+        source,
+        ts,
+        i,
+        ts,
+        ts
+      );
+    });
+  });
+  tx();
 }
 
 export function getSpawnDefaultsAll(

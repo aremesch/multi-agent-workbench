@@ -57,6 +57,10 @@ export class WorktreeManager {
    * agent's task title) so the worktree directory is discoverable on disk.
    * It must already be filesystem-safe — the caller is responsible for
    * slugifying. Throws if the resolved path already exists.
+   *
+   * Also resolves `startPoint` to its full SHA so callers can record the
+   * exact commit the agent was anchored to (the `base_sha` used by the
+   * commit attribution layer). Unresolved SHAs fall through as null.
    */
   async create(opts: {
     repoPath: string;
@@ -64,7 +68,7 @@ export class WorktreeManager {
     branch: string;
     startPoint?: string; // defaults to HEAD
     dirName?: string;
-  }): Promise<string> {
+  }): Promise<{ path: string; baseSha: string | null }> {
     const wtPath = join(this.worktreeRoot, opts.dirName ?? opts.agentId);
     if (existsSync(wtPath)) {
       throw new Error(`worktree path already exists: ${wtPath}`);
@@ -80,7 +84,20 @@ export class WorktreeManager {
       wtPath,
       start
     ]);
-    return wtPath;
+    let baseSha: string | null = null;
+    try {
+      const { stdout } = await execa('git', [
+        '-C',
+        opts.repoPath,
+        'rev-parse',
+        '--verify',
+        `${start}^{commit}`
+      ]);
+      baseSha = stdout.trim() || null;
+    } catch {
+      baseSha = null;
+    }
+    return { path: wtPath, baseSha };
   }
 
   /**

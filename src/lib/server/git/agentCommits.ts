@@ -1,25 +1,145 @@
 import { execa } from 'execa';
 import type { AgentCommit } from '$lib/shared/types';
 
-const FMT = '%H%x1f%an%x1f%aI%x1f%s%x1f%b%x1e';
+// hash \x1f parents \x1f author-name \x1f author-email \x1f committer-name
+// \x1f committer-email \x1f author-date-epoch \x1f committer-date-epoch
+// \x1f author-date-iso \x1f subject \x1f body \x1e
+const FMT = '%H%x1f%P%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%at%x1f%ct%x1f%aI%x1f%s%x1f%b%x1e';
+
+function parseLog(stdout: string): AgentCommit[] {
+  if (!stdout.trim()) return [];
+  return stdout
+    .split('\x1e')
+    .map((r) => r.replace(/^\n/, ''))
+    .filter((r) => r.length > 0)
+    .map((record) => {
+      const fields = record.split('\x1f');
+      const [
+        sha = '',
+        parents = '',
+        authorName = '',
+        authorEmail = '',
+        committerName = '',
+        committerEmail = '',
+        authoredAtStr = '0',
+        committedAtStr = '0',
+        date = '',
+        subject = '',
+        body = ''
+      ] = fields;
+      return {
+        sha,
+        shortSha: sha.slice(0, 7),
+        parentShas: parents.trim() ? parents.trim().split(' ') : [],
+        author: authorEmail ? `${authorName} <${authorEmail}>` : authorName,
+        authorName,
+        authorEmail,
+        committerName,
+        committerEmail,
+        authoredAt: Number(authoredAtStr) || 0,
+        committedAt: Number(committedAtStr) || 0,
+        date,
+        subject,
+        body: body.trimEnd()
+      };
+    });
+}
+
+/** Resolve a revspec to a full SHA. Returns null on failure. */
+export async function resolveSha(repoPath: string, rev: string): Promise<string | null> {
+  try {
+    const { stdout } = await execa('git', [
+      '-C',
+      repoPath,
+      'rev-parse',
+      '--verify',
+      `${rev}^{commit}`
+    ]);
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Return commits unique to `branch` relative to `defaultBranch`, via merge-base.
- * If the branch is missing (e.g. deleted post-archive), returns []. Any other
- * git failure bubbles up to the caller so it can distinguish empty from error.
+ * Primary attribution query: commits whose committer matches the agent's
+ * per-agent email, optionally scoped to the <baseSha..branch> range so we
+ * don't pick up unrelated commits from elsewhere in the repo's history.
+ *
+ * Uses a regex anchored to the start of the email field to avoid prefix
+ * collisions between agent IDs; the `--fixed-strings` alternative would
+ * match substrings, which is wrong when two agent emails share a prefix.
  */
-export async function listAgentCommits(
+export async function listCommitsByCommitter(
+  repoPath: string,
+  committerEmail: string,
+  baseSha: string | null,
+  branch: string | null
+): Promise<AgentCommit[]> {
+  const args = ['-C', repoPath, 'log', `--pretty=format:${FMT}`, '--no-merges'];
+  args.push(`--committer=^<?${escapeRegex(committerEmail)}>?$`);
+
+  if (baseSha && branch) {
+    const branchExists = await refExists(repoPath, `refs/heads/${branch}`);
+    if (branchExists) {
+      args.push(`${baseSha}..${branch}`);
+    } else {
+      args.push('--all');
+    }
+  } else if (branch) {
+    const branchExists = await refExists(repoPath, `refs/heads/${branch}`);
+    if (branchExists) args.push(branch);
+    else args.push('--all');
+  } else {
+    args.push('--all');
+  }
+
+  try {
+    const { stdout } = await execa('git', args);
+    return parseLog(stdout);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fallback: list all commits in `<baseSha>..<branch>` with no committer
+ * filter. Used when the committer query returns nothing (e.g. an adapter
+ * stripped GIT_COMMITTER_*), so we at least capture what's in the range.
+ */
+export async function listCommitsInRange(
+  repoPath: string,
+  baseSha: string,
+  branch: string
+): Promise<AgentCommit[]> {
+  if (!(await refExists(repoPath, `refs/heads/${branch}`))) return [];
+  try {
+    const { stdout } = await execa('git', [
+      '-C',
+      repoPath,
+      'log',
+      `--pretty=format:${FMT}`,
+      '--no-merges',
+      `${baseSha}..${branch}`
+    ]);
+    return parseLog(stdout);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Legacy merge-base heuristic. Retained only for one-shot back-fill of
+ * agents that predate this migration (no base_sha, no committer_email).
+ *
+ * @deprecated Use listCommitsByCommitter / listCommitsInRange for new code.
+ */
+export async function listAgentCommitsViaMergeBase(
   repoPath: string,
   branch: string,
   defaultBranch: string
 ): Promise<AgentCommit[]> {
-  // Verify branch exists first — avoids a confusing "unknown revision" error
-  // in the more interesting log call.
-  try {
-    await execa('git', ['-C', repoPath, 'rev-parse', '--verify', `refs/heads/${branch}`]);
-  } catch {
-    return [];
-  }
+  if (!(await refExists(repoPath, `refs/heads/${branch}`))) return [];
 
   let range: string;
   try {
@@ -36,30 +156,30 @@ export async function listAgentCommits(
     range = branch;
   }
 
-  const { stdout } = await execa('git', [
-    '-C',
-    repoPath,
-    'log',
-    `--pretty=format:${FMT}`,
-    '--no-merges',
-    range
-  ]);
+  try {
+    const { stdout } = await execa('git', [
+      '-C',
+      repoPath,
+      'log',
+      `--pretty=format:${FMT}`,
+      '--no-merges',
+      range
+    ]);
+    return parseLog(stdout);
+  } catch {
+    return [];
+  }
+}
 
-  if (!stdout.trim()) return [];
+async function refExists(repoPath: string, ref: string): Promise<boolean> {
+  try {
+    await execa('git', ['-C', repoPath, 'rev-parse', '--verify', ref]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  return stdout
-    .split('\x1e')
-    .map((r) => r.replace(/^\n/, ''))
-    .filter((r) => r.length > 0)
-    .map((record) => {
-      const [sha = '', author = '', date = '', subject = '', body = ''] = record.split('\x1f');
-      return {
-        sha,
-        shortSha: sha.slice(0, 7),
-        author,
-        date,
-        subject,
-        body: body.trimEnd()
-      };
-    });
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

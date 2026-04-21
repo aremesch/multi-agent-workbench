@@ -26,6 +26,7 @@ import { getPushService } from '../bootstrap.js';
 import { PUSH_PREFS_KEY, DEFAULT_NOTIFY_KINDS, parseNotifyKinds } from '../push/pushPrefs.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import { WorktreeManager } from '../git/WorktreeManager.js';
+import { snapshotAgentCommits } from '../git/commitSnapshot.js';
 import { getConfig } from '../config.js';
 
 export interface SpawnAgentArgs {
@@ -40,6 +41,13 @@ export interface SpawnAgentArgs {
   repoPath: string;
   worktreeId: string;
   worktreePath: string;
+  /**
+   * Resolved SHA of the worktree's start point (project.default_branch at
+   * the moment `git worktree add` ran). Anchors commit attribution so it
+   * survives `main` moving later. Null when resolving the SHA failed
+   * (unborn repo, odd default branch) — snapshotter falls back to merge-base.
+   */
+  baseSha: string | null;
   task: { title: string; body: string } | null;
   /** Per-spawn optional arg overrides keyed by optionalArg id. */
   optionalArgs?: Record<string, boolean>;
@@ -257,6 +265,20 @@ export class AgentSupervisor {
     // poll, which means the modal stays stuck until the user closes it.
     runtime.emit('state', 'exited');
 
+    // Snapshot git commits into agent_commits. Fire-and-forget: UI status
+    // transitions are instant regardless of git latency.
+    snapshotAgentCommits(agentId)
+      .then((r) => {
+        if ('error' in r) {
+          console.warn(`[AgentSupervisor] commit snapshot failed for ${agentId}: ${r.error}`);
+        } else {
+          console.log(
+            `[AgentSupervisor] captured ${r.captured} commits for ${agentId} (${r.source})`
+          );
+        }
+      })
+      .catch(() => {});
+
     // Push notification for agent exit.
     const kinds = parseNotifyKinds(getUserSetting(agent.user_id, PUSH_PREFS_KEY));
     if (kinds.includes('exited')) {
@@ -324,6 +346,11 @@ export class AgentSupervisor {
     });
 
     const tmuxSession = Tmux.sessionName(agentId);
+    // Distinctive per-agent committer identity. The author fields are NOT
+    // touched — PR UIs upstream still show the user's real name/avatar.
+    // See docs/plans/v0.2-agent-git-attribution.md (mechanism E).
+    const committerEmail = `${agentId}@maw.local`;
+    const committerName = `MAW-Agent-${agentId}`;
 
     insertAgent({
       id: agentId,
@@ -334,14 +361,18 @@ export class AgentSupervisor {
       cli_kind: role.cli_kind,
       tmux_session: tmuxSession,
       status: 'spawning',
-      cli_session_id: cliSessionId
+      cli_session_id: cliSessionId,
+      base_sha: args.baseSha,
+      committer_email: committerEmail
     });
 
     // Merge env: our agent-id/url identity vars go alongside the adapter's.
     const env: Record<string, string> = {
       ...spec.env,
       MAW_AGENT_ID: agentId,
-      MAW_URL: `http://${cfg.host}:${cfg.port}`
+      MAW_URL: `http://${cfg.host}:${cfg.port}`,
+      GIT_COMMITTER_NAME: committerName,
+      GIT_COMMITTER_EMAIL: committerEmail
     };
 
     await Tmux.newSession({
@@ -390,6 +421,13 @@ export class AgentSupervisor {
       await Tmux.killSession(row.tmux_session);
       updateAgentStatus(agentId, 'exited');
       runtime?.emit('state', 'exited');
+      snapshotAgentCommits(agentId)
+        .then((r) => {
+          if ('error' in r) {
+            console.warn(`[AgentSupervisor] commit snapshot failed for ${agentId}: ${r.error}`);
+          }
+        })
+        .catch(() => {});
     }
   }
 }
@@ -403,6 +441,6 @@ export async function ensureWorktree(
   repoPath: string,
   agentId: string,
   branch: string
-): Promise<string> {
+): Promise<{ path: string; baseSha: string | null }> {
   return wtm.create({ repoPath, agentId, branch });
 }

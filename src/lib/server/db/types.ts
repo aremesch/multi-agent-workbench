@@ -107,6 +107,34 @@ export interface AgentRow {
   last_attention_at: number | null;
   current_task_id: string | null;
   cli_session_id: string | null;
+  base_sha: string | null;
+  committer_email: string | null;
+  head_sha_at_snapshot: string | null;
+  commits_snapshotted_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type AgentCommitSource = 'committer' | 'range' | 'merge_base';
+
+export interface AgentCommitRow {
+  id: string;
+  user_id: string;
+  agent_id: string;
+  repo_id: string;
+  sha: string;
+  parent_shas: string;
+  author_name: string;
+  author_email: string;
+  committer_name: string;
+  committer_email: string;
+  authored_at: number;
+  committed_at: number;
+  subject: string;
+  body: string;
+  source: AgentCommitSource;
+  snapshotted_at: number;
+  position: number;
   created_at: number;
   updated_at: number;
 }

@@ -2,21 +2,21 @@ import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import {
   getLatestRunForAgent,
-  getProject,
   getRepo,
   getWorktree,
   listAgentCardsForRepo,
+  listPersistedAgentCommits,
   summarizeTerminalActivity,
   type AgentCardRow,
   type TerminalActivitySummary
 } from '$lib/server/db/queries';
-import type { AgentRunRow, AgentStatus } from '$lib/server/db/types';
+import type { AgentCommitRow, AgentRunRow, AgentStatus } from '$lib/server/db/types';
 import {
   summarizeTokenUsage,
   jsonlPathFor,
   type TokenUsageSummary
 } from '$lib/server/agents/history/ClaudeJsonlTokens';
-import { listAgentCommits } from '$lib/server/git/agentCommits';
+import { snapshotAgentCommits } from '$lib/server/git/commitSnapshot';
 import { parseRemoteUrl } from '$lib/server/git/remoteUrl';
 import type { AgentCommit, AgentRemote } from '$lib/shared/types';
 
@@ -69,13 +69,37 @@ function sumTotals(entries: ArchivedAgentEntry[]): ArchiveTotals {
   return totals;
 }
 
+function rowToCommit(row: AgentCommitRow): AgentCommit {
+  let parents: string[] = [];
+  try {
+    parents = JSON.parse(row.parent_shas) as string[];
+  } catch {
+    parents = [];
+  }
+  return {
+    sha: row.sha,
+    shortSha: row.sha.slice(0, 7),
+    parentShas: parents,
+    author: row.author_email
+      ? `${row.author_name} <${row.author_email}>`
+      : row.author_name,
+    authorName: row.author_name,
+    authorEmail: row.author_email,
+    committerName: row.committer_name,
+    committerEmail: row.committer_email,
+    authoredAt: row.authored_at,
+    committedAt: row.committed_at,
+    date: new Date(row.authored_at * 1000).toISOString(),
+    subject: row.subject,
+    body: row.body
+  };
+}
+
 export const load: PageServerLoad = async ({ locals, params }) => {
   if (!locals.user) throw redirect(303, '/login');
   const repo = getRepo(params.id);
   if (!repo || repo.user_id !== locals.user.id) throw error(404, 'Repo not found');
 
-  const project = repo.project_id ? getProject(repo.project_id) : null;
-  const defaultBranch = project?.default_branch ?? repo.default_branch ?? 'main';
   const remote: AgentRemote | null = parseRemoteUrl(repo.origin_url);
 
   const agents = listAgentCardsForRepo(locals.user.id, repo.id, ARCHIVED_STATUSES);
@@ -97,15 +121,19 @@ export const load: PageServerLoad = async ({ locals, params }) => {
         }
       }
 
-      const wt = getWorktree(a.worktree_id);
-      let commits: AgentCommit[] = [];
-      if (wt) {
-        try {
-          commits = await listAgentCommits(repo.path, wt.branch, defaultBranch);
-        } catch {
-          commits = [];
+      // Read persisted commits from agent_commits. Legacy agents that
+      // were never snapshotted get a one-shot back-fill on first visit;
+      // subsequent loads are DB-only. The `commits_snapshotted_at ==
+      // null` guard is load-bearing: without it, genuinely-empty-commit
+      // agents would re-run git on every archive load forever.
+      let rows = listPersistedAgentCommits(a.id);
+      if (rows.length === 0 && a.commits_snapshotted_at == null) {
+        const r = await snapshotAgentCommits(a.id);
+        if (!('error' in r)) {
+          rows = listPersistedAgentCommits(a.id);
         }
       }
+      const commits: AgentCommit[] = rows.map(rowToCommit);
 
       return { agent: a, run, stats, totalSec, tokens, commits };
     })

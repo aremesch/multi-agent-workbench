@@ -52,6 +52,18 @@ Two driving goals:
 - Full create flow in SvelteKit form actions: project → repo → role →
   spawn agent, reachable from the dashboard. Pre-generated `agentId`
   keeps worktree dir, branch (`maw/<agentId>`) and DB row in lock-step.
+- Per-agent git attribution is durable (migration 006). At spawn,
+  `WorktreeManager.create` resolves the default-branch SHA and stores
+  it as `agents.base_sha`; the supervisor injects
+  `GIT_COMMITTER_NAME=MAW-Agent-<id>` / `GIT_COMMITTER_EMAIL=<id>@maw.local`
+  into the tmux env so every commit the agent makes self-identifies.
+  `finishAsExited` / `kill` fire-and-forget a `snapshotAgentCommits`
+  call that writes rows to the new `agent_commits` table via a
+  three-tier fallback (committer → `<base_sha>..<branch>` range →
+  legacy merge-base). Archive page (`/repos/[id]/archive`) reads from
+  the table; legacy archived agents get a one-shot back-fill on first
+  visit. On-demand refresh is exposed as
+  `GET/POST /api/agents/[id]/commits`. Author identity is untouched.
 - Repo attach is self-healing: empty dirs get `git init -b <default>` +
   empty initial commit; unborn repos get HEAD re-pointed and seeded;
   legacy `master` is renamed to the project default (`main`);
@@ -170,3 +182,4 @@ Persisted roadmaps live in [`docs/plans/`](docs/plans/).
 - [`docs/plans/v0.2-adapter-create-worktree-flag.md`](docs/plans/v0.2-adapter-create-worktree-flag.md) — adapter JSONC `createWorktree` flag (default true); when false, spawn skips `git worktree add` and the agent's tmux cwd is the repo root. Flipped off in `shell.jsonc` (executed).
 - [`docs/plans/v0.2-terminal-autofocus.md`](docs/plans/v0.2-terminal-autofocus.md) — xterm `.focus()` at the tail of `Terminal.svelte`'s async init so modal-open lands keyboard focus inside the terminal instead of on the dialog's close button; removes the extra click after spawn/reopen (executed).
 - [`docs/plans/v0.2-terminal-output-alignment.md`](docs/plans/v0.2-terminal-output-alignment.md) — rstrip trailing blanks before dedup in `sendReconnectSnapshot`, append a CSI CUP escape pinned to `tmux display-message '#{cursor_x},#{cursor_y}'` so the xterm cursor lands on the real pane cursor regardless of adapter; adds an opt-in `forceRedrawOnReconnect` adapter flag (SIGWINCH nudge via 1-cell resize dance) as an escape hatch for TUI CLIs; bootstraps Playwright E2E with `terminal-bash-cursor` and `terminal-claude-reopen` regression specs.
+- [`docs/plans/v0.2-agent-git-attribution.md`](docs/plans/v0.2-agent-git-attribution.md) — durable per-agent git attribution: distinctive `GIT_COMMITTER_NAME/EMAIL` injected at spawn, `base_sha` anchor captured at worktree creation, new `agent_commits` table snapshotted at exit and on-demand (migration 006); archive reads from DB with one-shot legacy back-fill (executed).
