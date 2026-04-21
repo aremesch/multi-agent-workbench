@@ -158,7 +158,18 @@ export class AgentSupervisor {
     // closes; each per-agent `wait-for` resolves only on its own channel.
     // See `Tmux.ensureGlobalSessionClosedHook` for the why (the per-session
     // variant is fundamentally broken for `session-closed`).
+    //
+    // In dev the `-L maw` server usually isn't up yet at init() — it
+    // auto-spawns on the first `new-session`. `assertServerRunning()` has
+    // already printed the info hint in that case, and `startExitWatcher`
+    // re-asserts the hook (idempotent) once the server exists, so swallow
+    // those two stderr variants silently. Anything else is a real warn.
     await Tmux.ensureGlobalSessionClosedHook().catch((err) => {
+      const stderr =
+        typeof (err as { stderr?: unknown })?.stderr === 'string'
+          ? ((err as { stderr: string }).stderr)
+          : '';
+      if (/no server running/i.test(stderr) || /no such file or directory/i.test(stderr)) return;
       console.warn('[AgentSupervisor] ensure global session-closed hook failed:', err);
     });
 
