@@ -4,6 +4,7 @@
   import { onMount, setContext, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import RepoTreeSidebar from '$lib/client/components/RepoTreeSidebar.svelte';
+  import AboutModal from '$lib/client/components/AboutModal.svelte';
   import type { SidebarRepoNode } from '$lib/shared/types';
   import type { ThemeId } from '$lib/shared/dashboard';
   import { getMawWsClient } from '$lib/client/ws';
@@ -56,6 +57,7 @@
   // svelte-ignore state_referenced_locally
   let sidebarCollapsed = $state(data.sidebar?.collapsed ?? false);
   let menuOpen = $state(false);
+  let aboutOpen = $state(false);
 
   async function toggleSidebar(): Promise<void> {
     sidebarCollapsed = !sidebarCollapsed;
@@ -85,6 +87,11 @@
   function gotoAccount(): void {
     closeMenu();
     void goto('/account');
+  }
+
+  function openAbout(): void {
+    closeMenu();
+    aboutOpen = true;
   }
 
   function onDocClick(ev: MouseEvent): void {
@@ -178,6 +185,21 @@
               </svg>
               {tt('nav.account')}
             </button>
+            <hr class="my-1 border-outline-variant" />
+            <button
+              type="button"
+              class="menu-item flex h-10 items-center gap-3 px-4 text-left text-sm text-on-surface hover:bg-surface-container-highest"
+              role="menuitem"
+              onclick={openAbout}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 15h-2v-6h2Zm0-8h-2V7h2Z"
+                />
+              </svg>
+              {tt('nav.about')}
+            </button>
             <form method="POST" action="/login?/logout" class="m-0">
               <button
                 type="submit"
@@ -211,3 +233,5 @@
     </section>
   </div>
 </div>
+
+<AboutModal open={aboutOpen} onClose={() => (aboutOpen = false)} />
