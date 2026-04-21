@@ -21,3 +21,6 @@ tests/e2e/auth.storage.json
 
 # Vitest
 coverage/
+
+# Claude Code agent worktrees (ephemeral scratch space)
+.claude/worktrees/
