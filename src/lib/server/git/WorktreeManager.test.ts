@@ -82,7 +82,7 @@ describe('WorktreeManager.create', () => {
     existsSyncMock.mockReturnValue(false);
     execaMock.mockResolvedValueOnce({ stdout: '' });
     const wm = new WorktreeManager('/wts');
-    const path = await wm.create({
+    const { path } = await wm.create({
       repoPath: '/repo',
       agentId: '01ABC',
       branch: 'maw/01ABC',

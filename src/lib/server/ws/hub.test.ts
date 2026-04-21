@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => {
     // --- tmux shim ---
     capturePane: vi.fn(),
     sendKey: vi.fn(),
+    cursorPosition: vi.fn(),
+    resizeWindow: vi.fn(),
     // --- auth / config ---
     resolveSession: vi.fn(),
     logAuth: vi.fn(),
@@ -34,7 +36,9 @@ vi.mock('../bootstrap.js', () => ({
 vi.mock('../tmux/TmuxSession.js', () => ({
   Tmux: {
     capturePane: (...a: unknown[]) => mocks.capturePane(...a),
-    sendKey: (...a: unknown[]) => mocks.sendKey(...a)
+    sendKey: (...a: unknown[]) => mocks.sendKey(...a),
+    cursorPosition: (...a: unknown[]) => mocks.cursorPosition(...a),
+    resizeWindow: (...a: unknown[]) => mocks.resizeWindow(...a)
   }
 }));
 vi.mock('../auth/session.js', async () => {
@@ -154,6 +158,8 @@ beforeEach(() => {
   mocks.supervisor.kill.mockReset();
   mocks.capturePane.mockReset().mockResolvedValue('');
   mocks.sendKey.mockReset().mockResolvedValue(undefined);
+  mocks.cursorPosition.mockReset().mockResolvedValue(null);
+  mocks.resizeWindow.mockReset().mockResolvedValue(undefined);
   mocks.renderClaudeJsonlHistory.mockReset().mockResolvedValue(null);
   mocks.getWorktree.mockReset();
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
