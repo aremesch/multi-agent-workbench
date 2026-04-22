@@ -18,10 +18,8 @@ import type {
   AdapterRuntimeState,
   BuildSpawnSpecOpts,
   CliAdapter,
-  HistorySourceSpec,
   InputEncoding,
   MobileQuickKey,
-  ScrollbackMode,
   SpawnSpec
 } from '$shared/adapterTypes';
 import type { AdapterConfig, AdapterPatternConfig } from './adapter.config.schema.js';
@@ -36,9 +34,6 @@ interface CompiledPattern {
 export class ConfigDrivenAdapter implements CliAdapter {
   readonly kind: string;
   readonly displayName: string;
-  readonly scrollbackMode: ScrollbackMode;
-  readonly historySource: HistorySourceSpec | null;
-  readonly forceRedrawOnReconnect: boolean;
   readonly createWorktree: boolean;
   readonly mobileQuickKeys: MobileQuickKey[];
   readonly input: InputEncoding;
@@ -57,9 +52,6 @@ export class ConfigDrivenAdapter implements CliAdapter {
     this.cfg = cfg;
     this.kind = cfg.kind;
     this.displayName = cfg.displayName;
-    this.scrollbackMode = cfg.scrollbackMode;
-    this.historySource = cfg.historySource ?? null;
-    this.forceRedrawOnReconnect = cfg.forceRedrawOnReconnect;
     this.createWorktree = cfg.createWorktree;
     this.mobileQuickKeys = cfg.mobileQuickKeys;
     this.patterns = cfg.patterns.map((p) => ({
@@ -168,8 +160,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
       'role.toolConfig': JSON.stringify(opts.role.toolConfig ?? {}),
       'task.title': opts.task?.title ?? '',
       'task.body': opts.task?.body ?? '',
-      'agent.id': opts.agent.id,
-      'agent.cliSessionId': opts.agent.cliSessionId ?? ''
+      'agent.id': opts.agent.id
     };
     for (const [k, v] of Object.entries(opts.env)) {
       vars[`env.${k}`] = v;

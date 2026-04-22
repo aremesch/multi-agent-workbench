@@ -3,10 +3,6 @@
   "kind": "gemini",
   "displayName": "Gemini CLI",
 
-  // TUI CLI — full-UI repaints in the main buffer, same class as Claude
-  // Code. Keep reconnect snapshots to the visible pane only.
-  "scrollbackMode": "visible",
-
   // Mobile quick-keys for the phone PWA. Starter set — tune against a
   // real gemini session.
   "mobileQuickKeys": [

@@ -1,7 +1,6 @@
 {
   "kind": "fixture-two",
   "displayName": "Fixture Two",
-  "scrollbackMode": "history",
   "spawn": { "command": "sh" },
   "input": { "submitKey": "Enter" }
 }

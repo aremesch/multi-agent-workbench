@@ -3,10 +3,13 @@
  *
  * Wiring:
  *   - Every incoming ws connection is wrapped in a HubClient.
- *   - HubClient.subscribe(agentId, cols, rows) resizes the agent's tmux pane
- *     to the viewer's dims, captures the current pane state as a single
- *     `scrollback` snapshot, and starts forwarding live output/event/state
- *     fan-out. No byte-log replay — TUI repaints in the log confuse xterm.
+ *   - HubClient.subscribe(agentId, lastSeq?) replays persisted terminal_log
+ *     bytes since lastSeq as a single `scrollback` burst, then starts
+ *     forwarding live output/event/state fan-out. Byte-log replay is the
+ *     baseline reconnect mechanism; for TUI CLIs without an alt-screen
+ *     buffer (Claude Code in particular) it carries a known stacked-banner
+ *     bug on first connect — accepted as the simpler trade. See
+ *     docs/plans/v0.2-terminal-revert.md for the next-design handoff.
  *   - Inputs from the client go through AgentRuntime's serialized queue.
  *
  * The hub is a singleton (same bootstrap that owns the supervisor).
@@ -14,7 +17,6 @@
 
 import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
-import stripAnsi from 'strip-ansi';
 import type { ClientMessage, ServerMessage } from '$shared/protocol';
 import { PROTOCOL_VERSION } from '$shared/protocol';
 import { resolveSession, SESSION_COOKIE } from '../auth/session.js';
@@ -24,8 +26,7 @@ import { getConfig } from '../config.js';
 import { getSupervisor } from '../bootstrap.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import type { AgentRuntime } from '../agents/AgentRuntime.js';
-import { jsonlPathFor, renderClaudeJsonlHistory } from '../agents/history/ClaudeJsonlHistory.js';
-import { getWorktree } from '../db/queries.js';
+import { listTerminalChunksSince } from '../db/queries.js';
 import type { Cookies } from '@sveltejs/kit';
 
 interface Subscription {
@@ -75,7 +76,7 @@ class HubClient {
         this.send({ type: 'pong', ts: msg.ts });
         break;
       case 'subscribe_agent':
-        this.handleSubscribe(msg.agentId, msg.cols, msg.rows);
+        this.handleSubscribe(msg.agentId, msg.lastSeq);
         break;
       case 'unsubscribe_agent':
         this.handleUnsubscribe(msg.agentId);
@@ -105,7 +106,7 @@ class HubClient {
     }
   }
 
-  private handleSubscribe(agentId: string, cols?: number, rows?: number): void {
+  private handleSubscribe(agentId: string, lastSeq?: number): void {
     if (this.subs.has(agentId)) return;
     const runtime = getSupervisor().get(agentId);
     if (!runtime) {
@@ -117,12 +118,21 @@ class HubClient {
       return;
     }
 
-    // Reconnect = (optional) resize tmux to the viewer's xterm dims → tiny
-    // fence so the pane finishes repainting → capture-pane snapshot. The
-    // client will `term.reset()` before applying this, so we never need to
-    // replay the raw byte log (which for TUI agents contains every
-    // intermediate repaint pass and renders as garbage in a virgin xterm).
-    void this.sendReconnectSnapshot(runtime, agentId, cols, rows);
+    // Reconnect = byte-log replay from terminal_log since lastSeq (or from
+    // 0 on first subscribe). The client `term.reset()`s on `scrollback`, so
+    // the burst always lands on a clean grid. For TUI CLIs without an
+    // alt-screen buffer this stacks 3–4 redraw banners on first attach —
+    // documented baseline trade-off; the next-design plan will replace
+    // this with server-side virtual-screen replay.
+    const startSeq = typeof lastSeq === 'number' && Number.isFinite(lastSeq) && lastSeq >= 0 ? lastSeq : 0;
+    try {
+      const rows = listTerminalChunksSince(agentId, startSeq);
+      const chunks = rows.map((r) => ({ seq: r.seq, b64: r.chunk.toString('base64') }));
+      this.send({ type: 'scrollback', agentId, chunks });
+    } catch (err) {
+      console.warn(`[hub] byte-log replay failed for ${agentId}:`, err);
+      this.send({ type: 'scrollback', agentId, chunks: [] });
+    }
 
     const onOutput = (payload: { seq: number; chunk: Buffer }): void => {
       this.send({
@@ -170,145 +180,6 @@ class HubClient {
       offState: () => runtime.off('state', onState),
       offAlert: () => runtime.off('alert', onAlert)
     });
-  }
-
-  /**
-   * Resize-then-capture reconnect snapshot. Tmux's `resize-window` command
-   * returns synchronously but the pane's repaint is asynchronous, so we
-   * insert a tiny fence (~25ms) before capture; that's well under the
-   * round-trip latency the client already absorbs on reconnect and reliably
-   * lets Claude Code / Codex / Gemini finish their redraw. Failures are
-   * swallowed (agent may be dying) but we still try to capture so the
-   * viewer at least sees something.
-   *
-   * The capture strategy is adapter-driven (`runtime.scrollbackMode`):
-   *
-   *   - `'visible'` (TUI CLIs like Claude Code) → `capture-pane -S 0`,
-   *     i.e. only what's on screen right now. Tmux's scrollback for those
-   *     agents is a stack of redraw ghosts that no dedup can fully clean
-   *     up — in particular Claude Code's Ctrl-O expand/collapse widget
-   *     produces byte-unequal variants that slip past
-   *     `collapseRepeatingTailBlocks`. Dropping scrollback on reopen is
-   *     the right answer for them.
-   *
-   *   - `'history'` (line-based CLIs like the shell smoke adapter) →
-   *     `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`,
-   *     giving real session backlog on reopen.
-   */
-  private async sendReconnectSnapshot(
-    runtime: AgentRuntime,
-    agentId: string,
-    cols?: number,
-    rows?: number
-  ): Promise<void> {
-    if (
-      typeof cols === 'number' &&
-      typeof rows === 'number' &&
-      Number.isFinite(cols) &&
-      Number.isFinite(rows) &&
-      cols >= 1 &&
-      rows >= 1
-    ) {
-      try {
-        await runtime.resize(cols, rows);
-      } catch {
-        // Resize failed (session gone, tmux refused) — continue to capture
-        // anyway; capture itself is tolerant of missing sessions.
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 25));
-    }
-
-    // Out-of-band history first (if the adapter exposes one) — the client
-    // writes it into xterm scrollback before applying the live capture, so
-    // the user sees real conversation turns above the current screen render
-    // even when scrollbackMode='visible' threw away the tmux backlog.
-    await this.sendHistorySnapshot(runtime, agentId).catch((err) => {
-      console.warn(`[hub] history snapshot failed for ${agentId}:`, err);
-    });
-
-    const mode = runtime.scrollbackMode;
-    const startLine = mode === 'history' ? -500 : 0;
-    const raw = await Tmux.capturePane(runtime.tmuxSession, startLine).catch(() => '');
-    if (!raw) return;
-    // Strip trailing visually-empty lines *before* dedup. capture-pane emits
-    // one line per grid row, so a mostly-empty pane produces many trailing
-    // blanks. Without this step `collapseRepeatingTailBlocks` halves those
-    // blanks but can't collapse below k=2, leaving 2–3 empty lines tailing —
-    // which then push xterm's cursor two rows below the actual content
-    // (Bug #1 for the shell adapter). The visible mode skips dedup but
-    // still needs the trim, otherwise the same padding detaches xterm's
-    // cursor from Claude's TUI footer on reopen (Bug #2).
-    const trimmed = rstripVisuallyEmptyLines(raw);
-    const snapshot = mode === 'history' ? collapseRepeatingTailBlocks(trimmed) : trimmed;
-
-    // tmux capture-pane separates lines with bare `\n` (it reconstructs them
-    // from the grid), but the client xterm runs with `convertEol: false` so
-    // live PTY bytes — which already carry `\r\n` — aren't mangled. Feeding
-    // bare `\n` into that xterm produces stairstep output (each new line
-    // starts at the cursor's current column). Normalize to CRLF here so the
-    // snapshot renders the same way as the live stream.
-    const normalized = snapshot.replace(/\r?\n/g, '\r\n');
-
-    // Align xterm's cursor to tmux's cursor. capture-pane emits cell contents
-    // but not CUP escapes — without this step xterm's cursor ends wherever
-    // the last written glyph fell (usually bottom-right of the trimmed
-    // frame), detaching live output from the rendered screen. Fixes the
-    // residual alignment of both bugs.
-    let cursorEscape = '';
-    const pos = await Tmux.cursorPosition(runtime.tmuxSession);
-    if (pos) {
-      let { x, y } = pos;
-      if (typeof cols === 'number' && cols > 0) x = Math.min(x, cols - 1);
-      if (typeof rows === 'number' && rows > 0) y = Math.min(y, rows - 1);
-      // CSI CUP is 1-indexed on the wire.
-      cursorEscape = `\x1b[${y + 1};${x + 1}H`;
-    }
-
-    const payload = normalized + cursorEscape;
-    this.send({
-      type: 'scrollback',
-      agentId,
-      chunks: [{ seq: 0, b64: Buffer.from(payload).toString('base64') }]
-    });
-
-    // Optional second pass: some TUI CLIs only fully repaint on SIGWINCH. If
-    // the adapter opts in, nudge the pane width by 1 and back to force a
-    // redraw that overwrites the snapshot with a clean, self-consistent frame
-    // aligned to the cursor position we just emitted. Gated per-adapter so
-    // line-based CLIs (shell, codex when idle) don't get gratuitous redraws.
-    if (runtime.forceRedrawOnReconnect && typeof cols === 'number' && typeof rows === 'number' && cols > 1 && rows >= 1) {
-      const bump = cols - 1;
-      try {
-        await Tmux.resizeWindow(runtime.tmuxSession, bump, rows);
-        await Tmux.resizeWindow(runtime.tmuxSession, cols, rows);
-      } catch {
-        // Best-effort — if the session died mid-dance, drop it silently.
-      }
-    }
-  }
-
-  /**
-   * Read the CLI's structured transcript (currently only `claude-jsonl`),
-   * render it to plain text, and ship it as `history_snapshot`. No-op if
-   * the adapter has no historySource, the agent has no `cli_session_id`
-   * recorded, or the transcript file doesn't exist yet (fresh agent that
-   * hasn't written its first turn).
-   */
-  private async sendHistorySnapshot(runtime: AgentRuntime, agentId: string): Promise<void> {
-    const src = runtime.historySource;
-    if (!src) return;
-    if (src.kind !== 'claude-jsonl') return;
-    const sessionId = runtime.agent.cli_session_id;
-    if (!sessionId) return;
-    const wt = getWorktree(runtime.agent.worktree_id);
-    if (!wt) return;
-    const path = jsonlPathFor(wt.path, sessionId);
-    const body = await renderClaudeJsonlHistory(path);
-    if (!body) return;
-    // The renderer signals truncation by prepending a marker line; surface it
-    // on the wire too so a future client can render a UI affordance.
-    const truncated = body.startsWith('--- (history truncated');
-    this.send({ type: 'history_snapshot', agentId, body, truncated });
   }
 
   private handleUnsubscribe(agentId: string): void {
@@ -452,68 +323,5 @@ const G = globalThis as unknown as { __maw_ws_hub?: WsHub };
 export function getWsHub(): WsHub {
   if (!G.__maw_ws_hub) G.__maw_ws_hub = new WsHub();
   return G.__maw_ws_hub;
-}
-
-/**
- * Greedy tail-block dedup for `tmux capture-pane` output.
- *
- * Some CLIs (notably Claude Code, which doesn't use the alt-screen buffer)
- * redraw their whole UI on every streaming tick. Each redraw scrolls the
- * previous version up into tmux's scrollback history, so capturing ~500
- * lines back gives you N identical copies of the same conversation stacked
- * on top of each other. This collapses them back to a single copy without
- * needing to know anything about the specific CLI.
- *
- * Algorithm:
- *   1. Split on `\n`.
- *   2. Walk from the end, find the largest `k ≥ 2` where the last k lines
- *      equal the preceding k lines.
- *   3. If found, splice one copy out and go back to step 2.
- *   4. Stop when no such k exists.
- *
- * `k ≥ 2` is deliberate: a single repeated line is ambiguous (legitimate
- * duplicate shell output vs spinner tail), but any block of 2+ identical
- * consecutive lines repeating tail-to-tail is almost always redraw noise.
- *
- * Complexity is O(n²) in the number of lines (~500 here), which is fine.
- */
-/**
- * Drop trailing lines whose ANSI-stripped content is empty or whitespace.
- * capture-pane emits one entry per grid row including padded blanks; those
- * blanks push xterm's cursor past the actual content once we write the
- * snapshot. Lines carrying only ANSI style resets still count as empty.
- */
-export function rstripVisuallyEmptyLines(text: string): string {
-  const lines = text.split('\n');
-  let end = lines.length;
-  while (end > 0 && stripAnsi(lines[end - 1] ?? '').trim() === '') {
-    end--;
-  }
-  return lines.slice(0, end).join('\n');
-}
-
-export function collapseRepeatingTailBlocks(text: string): string {
-  const lines = text.split('\n');
-  let progressed = true;
-  while (progressed) {
-    progressed = false;
-    const n = lines.length;
-    const maxK = Math.floor(n / 2);
-    for (let k = maxK; k >= 2; k--) {
-      let match = true;
-      for (let i = 0; i < k; i++) {
-        if (lines[n - 2 * k + i] !== lines[n - k + i]) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        lines.splice(n - 2 * k, k);
-        progressed = true;
-        break;
-      }
-    }
-  }
-  return lines.join('\n');
 }
 

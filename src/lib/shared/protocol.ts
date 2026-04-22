@@ -10,7 +10,7 @@
 
 import type { AdapterEventKind } from './adapterTypes.js';
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 // ---------- client → server ----------
 
@@ -22,12 +22,12 @@ export interface CS_SubscribeAgent {
   type: 'subscribe_agent';
   agentId: string;
   /**
-   * Client's current xterm dimensions. When present, the server resizes the
-   * tmux pane to these dims *before* capturing the reconnect snapshot, so the
-   * snapshot's line widths match what the viewer will render them at.
+   * Highest `seq` the client has already painted. Server replays
+   * `terminal_log` chunks with `seq > lastSeq` as the initial `scrollback`
+   * burst, so a transient WS drop reattaches without retransmitting the
+   * tail the client already has. Omit/0 on first attach.
    */
-  cols?: number;
-  rows?: number;
+  lastSeq?: number;
 }
 export interface CS_UnsubscribeAgent {
   type: 'unsubscribe_agent';
@@ -99,30 +99,15 @@ export interface SC_Welcome {
   userId: string;
 }
 /**
- * Reconnect snapshot. Sent once in response to `subscribe_agent`, carrying a
- * single `tmux capture-pane -e` frame sized to the client's declared dims.
- * The `chunks` array is kept for protocol stability but in practice always
- * holds exactly one entry; clients should `term.reset()` before applying it.
+ * Reconnect snapshot. Sent once in response to `subscribe_agent`, carrying
+ * persisted `terminal_log` chunks with `seq > lastSeq` (or all of them on
+ * first attach). Clients should `term.reset()` before applying so the burst
+ * always lands on a clean grid. Empty `chunks` is valid (fresh agent).
  */
 export interface SC_Scrollback {
   type: 'scrollback';
   agentId: string;
   chunks: { seq: number; b64: string }[];
-}
-/**
- * Out-of-band conversation history rendered from the CLI's own transcript
- * (e.g. Claude Code's JSONL session log). Sent on subscribe *before* the
- * `scrollback` message so the client can write it into xterm scrollback;
- * the live `scrollback` snapshot then takes over the visible viewport.
- * Optional — only adapters with a `historySource` produce this.
- */
-export interface SC_HistorySnapshot {
-  type: 'history_snapshot';
-  agentId: string;
-  /** UTF-8 text body (already CRLF-normalized for xterm). */
-  body: string;
-  /** Server hit its size budget and elided the oldest entries. */
-  truncated: boolean;
 }
 export interface SC_Output {
   type: 'output';
@@ -177,7 +162,6 @@ export interface SC_Pong {
 export type ServerMessage =
   | SC_Welcome
   | SC_Scrollback
-  | SC_HistorySnapshot
   | SC_Output
   | SC_AgentEvent
   | SC_AgentState

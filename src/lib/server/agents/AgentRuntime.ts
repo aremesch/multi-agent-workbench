@@ -13,9 +13,7 @@ import { EventEmitter } from 'node:events';
 import { ulid } from 'ulid';
 import type {
   AdapterEvent,
-  CliAdapter,
-  HistorySourceSpec,
-  ScrollbackMode
+  CliAdapter
 } from '$shared/adapterTypes';
 import type { AgentRow } from '../db/types.js';
 import {
@@ -74,26 +72,6 @@ export class AgentRuntime extends EventEmitter {
 
   get tmuxSession(): string {
     return this.agent.tmux_session;
-  }
-
-  /**
-   * Adapter-declared reconnect snapshot strategy. Exposed here (rather than
-   * the hub reaching into `this.adapter` directly) so `adapter` can stay
-   * private and the only thing the hub depends on is AgentRuntime's own
-   * public surface.
-   */
-  get scrollbackMode(): ScrollbackMode {
-    return this.adapter.scrollbackMode;
-  }
-
-  /** Adapter-declared structured history reader, or null. See HistorySourceSpec. */
-  get historySource(): HistorySourceSpec | null {
-    return this.adapter.historySource;
-  }
-
-  /** Adapter-declared toggle for post-snapshot SIGWINCH nudge. */
-  get forceRedrawOnReconnect(): boolean {
-    return this.adapter.forceRedrawOnReconnect;
   }
 
   async start(): Promise<void> {

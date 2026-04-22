@@ -1,16 +1,17 @@
 /**
- * Reconnecting WebSocket client with snapshot-on-subscribe reconnect.
+ * Reconnecting WebSocket client with byte-log replay on subscribe.
  *
  * Single shared client per tab: the module-level `getMawWsClient()` lazily
  * creates one instance on first call and auto-connects. Consumers register
- * per-agent handlers via `subscribe(agentId, cols, rows, handlers)` — the
+ * per-agent handlers via `subscribe(agentId, handlers, lastSeq?)` — the
  * dispatch loop routes `output`/`event`/`agent_state`/`scrollback` by
  * `msg.agentId` to the right entry in the handler map.
  *
+ * Per-agent `maxSeenSeq` tracks the highest `output.seq` already painted.
  * On disconnect, exponential backoff up to 30s. On reconnect, every active
- * subscription is re-issued carrying its last known xterm dims so the
- * server can resize the tmux pane and ship back a fresh capture-pane
- * snapshot (subscribers `term.reset()` before applying it).
+ * subscription is re-issued carrying its `maxSeenSeq` as `lastSeq` so the
+ * server only ships chunks the client hasn't already seen. Incoming
+ * `output` messages whose `seq <= maxSeenSeq` are dropped.
  */
 
 import type {
@@ -18,15 +19,12 @@ import type {
   ServerMessage,
   SC_Output,
   SC_Scrollback,
-  SC_HistorySnapshot,
   SC_AgentEvent
 } from '$shared/protocol';
 
 export interface AgentHandlers {
   onOutput: (msg: SC_Output) => void;
   onScrollback: (msg: SC_Scrollback) => void;
-  /** Optional: out-of-band CLI transcript prepended before live scrollback. */
-  onHistorySnapshot?: (msg: SC_HistorySnapshot) => void;
   onEvent: (msg: SC_AgentEvent) => void;
   onState: (status: string) => void;
 }
@@ -36,9 +34,8 @@ export type ConnectionState = 'open' | 'closed' | 'reconnecting';
 interface Sub {
   agentId: string;
   handlers: AgentHandlers;
-  /** Last xterm dims reported for this subscription; re-sent on reconnect. */
-  cols?: number;
-  rows?: number;
+  /** Highest `output.seq` we've already painted; sent as `lastSeq` on reconnect. */
+  maxSeenSeq: number;
 }
 
 export class MawWsClient {
@@ -67,8 +64,7 @@ export class MawWsClient {
         this.send({
           type: 'subscribe_agent',
           agentId: sub.agentId,
-          ...(sub.cols !== undefined ? { cols: sub.cols } : {}),
-          ...(sub.rows !== undefined ? { rows: sub.rows } : {})
+          ...(sub.maxSeenSeq > 0 ? { lastSeq: sub.maxSeenSeq } : {})
         });
       }
       this.startHeartbeat();
@@ -108,22 +104,23 @@ export class MawWsClient {
 
   /**
    * Register per-agent handlers and send a subscribe message. Subsequent
-   * calls for the same agentId replace the stored cols/rows (handlers stay
-   * the same — the caller is the single owner of the entry). On reconnect
-   * the latest cols/rows are re-issued automatically.
+   * calls for the same agentId replace the handlers and preserve the
+   * existing `maxSeenSeq` so a re-subscribe doesn't refetch already-seen
+   * bytes. Pass `lastSeq` explicitly only when the caller wants to seed
+   * the dedup cursor (e.g. resuming from a persisted snapshot).
    */
-  subscribe(agentId: string, handlers: AgentHandlers, cols?: number, rows?: number): void {
+  subscribe(agentId: string, handlers: AgentHandlers, lastSeq?: number): void {
     const existing = this.subs.get(agentId);
-    const sub: Sub = existing ?? { agentId, handlers };
+    const sub: Sub = existing ?? { agentId, handlers, maxSeenSeq: 0 };
     sub.handlers = handlers;
-    if (cols !== undefined) sub.cols = cols;
-    if (rows !== undefined) sub.rows = rows;
+    if (typeof lastSeq === 'number' && Number.isFinite(lastSeq) && lastSeq > sub.maxSeenSeq) {
+      sub.maxSeenSeq = lastSeq;
+    }
     this.subs.set(agentId, sub);
     this.send({
       type: 'subscribe_agent',
       agentId,
-      ...(sub.cols !== undefined ? { cols: sub.cols } : {}),
-      ...(sub.rows !== undefined ? { rows: sub.rows } : {})
+      ...(sub.maxSeenSeq > 0 ? { lastSeq: sub.maxSeenSeq } : {})
     });
   }
 
@@ -159,11 +156,6 @@ export class MawWsClient {
 
   /** Inform the server of the current xterm.js viewer size so tmux resizes its pane to match. */
   sendResize(agentId: string, cols: number, rows: number): void {
-    const sub = this.subs.get(agentId);
-    if (sub) {
-      sub.cols = cols;
-      sub.rows = rows;
-    }
     this.send({ type: 'resize', agentId, cols, rows });
   }
 
@@ -206,15 +198,24 @@ export class MawWsClient {
       case 'welcome':
         break;
       case 'output': {
-        this.subs.get(msg.agentId)?.handlers.onOutput(msg);
+        const sub = this.subs.get(msg.agentId);
+        if (!sub) break;
+        // De-dup against the seq watermark — replay-on-reconnect can carry
+        // chunks the client already painted before the WS dropped.
+        if (msg.seq <= sub.maxSeenSeq) break;
+        sub.maxSeenSeq = msg.seq;
+        sub.handlers.onOutput(msg);
         break;
       }
       case 'scrollback': {
-        this.subs.get(msg.agentId)?.handlers.onScrollback(msg);
-        break;
-      }
-      case 'history_snapshot': {
-        this.subs.get(msg.agentId)?.handlers.onHistorySnapshot?.(msg);
+        const sub = this.subs.get(msg.agentId);
+        if (!sub) break;
+        // Bump the watermark to the highest seq in the burst so subsequent
+        // live `output` messages don't double-paint.
+        for (const c of msg.chunks) {
+          if (c.seq > sub.maxSeenSeq) sub.maxSeenSeq = c.seq;
+        }
+        sub.handlers.onScrollback(msg);
         break;
       }
       case 'event': {

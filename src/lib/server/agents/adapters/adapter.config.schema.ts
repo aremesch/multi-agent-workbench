@@ -24,38 +24,6 @@ const patternSchema = z.object({
 export type AdapterPatternConfig = z.infer<typeof patternSchema>;
 
 /**
- * How the hub should capture the reconnect snapshot for agents of this kind.
- *
- * - `'visible'` — capture only what's on the pane right now (`capture-pane -S 0`).
- *   Correct for TUI CLIs that repaint their whole UI in the main buffer (Claude
- *   Code, Codex, Gemini). Tmux scrollback for those CLIs is a stack of redraw
- *   ghosts — including byte-unequal variants produced by things like Claude
- *   Code's Ctrl-O expand/collapse widget — that no dedup heuristic can fully
- *   clean up, so we just drop it on reopen.
- *
- * - `'history'` — capture `-S -500` and pipe through `collapseRepeatingTailBlocks`.
- *   Correct for line-based CLIs (shells, REPLs) where real backlog is what the
- *   user wants to see when they reopen the modal, and where scrollback doesn't
- *   contain full-UI redraws.
- */
-export const scrollbackModeEnum = z.enum(['visible', 'history']);
-export type ScrollbackMode = z.infer<typeof scrollbackModeEnum>;
-
-/**
- * Out-of-band CLI transcript reader. `claude-jsonl` reads
- * `~/.claude/projects/<encoded-cwd>/<cli_session_id>.jsonl` — Claude Code's
- * own append-only session log — and renders it as ANSI text the client
- * loads into xterm scrollback before the live `capture-pane` snapshot.
- * Solves the TUI-CLI history-loss problem `scrollbackMode: "visible"` causes
- * (see CLAUDE.md / docs/plans/v0.1-jsonl-history.md). Optional; adapters
- * without it (shell, codex, gemini today) skip the history snapshot.
- */
-export const historySourceSchema = z.object({
-  kind: z.literal('claude-jsonl')
-});
-export type HistorySourceConfig = z.infer<typeof historySourceSchema>;
-
-/**
  * One on-screen key-chord button shown to mobile users under xterm. Phone soft
  * keyboards don't surface arrow keys / Esc / Shift+Tab / Ctrl+C, which most
  * coding-agent TUIs need constantly — `mobileQuickKeys` lets each adapter
@@ -78,12 +46,6 @@ export const adapterConfigSchema = z.object({
   $schema: z.string().optional(),
   kind: z.string().min(1),
   displayName: z.string().min(1),
-  /**
-   * Reconnect-snapshot capture mode. Defaults to `'visible'` because most
-   * agents in MAW are ink/react-style TUI CLIs; explicit `'history'` is only
-   * right for line-based CLIs like the shell smoke adapter.
-   */
-  scrollbackMode: scrollbackModeEnum.default('visible'),
 
   /**
    * Whether spawning an agent of this kind should create a dedicated git
@@ -93,17 +55,6 @@ export const adapterConfigSchema = z.object({
    * (e.g. the shell smoke adapter).
    */
   createWorktree: z.boolean().default(true),
-
-  historySource: historySourceSchema.optional(),
-
-  /**
-   * When true, the hub performs a 1-cell resize dance after shipping the
-   * reconnect snapshot. TUI CLIs (Claude Code specifically) only fully
-   * repaint on SIGWINCH; the dance forces a redraw that overwrites the
-   * frozen snapshot with a live, cursor-aligned frame. Off by default —
-   * line-based CLIs don't need it and the extra redraw is visible flicker.
-   */
-  forceRedrawOnReconnect: z.boolean().default(false),
 
   /**
    * On-screen key-chord buttons rendered under xterm on touch devices (or
