@@ -197,9 +197,16 @@ export async function catFileExists(repoPath: string, sha: string): Promise<bool
 }
 
 /**
- * Batch-check which of `shas` are reachable in the repo's object DB.
- * Runs a single `git cat-file --batch-check` feeding SHAs on stdin;
- * returns the subset that resolved.
+ * Determine which of `shas` are reachable from the remote, i.e. the
+ * upstream link `{webBase}/commit/{sha}` is expected to resolve. A SHA
+ * is treated as reachable iff at least one remote-tracking ref
+ * (`refs/remotes/**`) contains it. Repos with no remote refs fall back
+ * to local object-DB existence so offline repos don't paint every
+ * commit as stale.
+ *
+ * Note: reflects the local view of remote refs — if the user hasn't
+ * fetched since an upstream rewrite, a stale SHA may still look
+ * reachable until the next `git fetch --prune`.
  */
 export async function checkShaReachability(
   repoPath: string,
@@ -207,25 +214,65 @@ export async function checkShaReachability(
 ): Promise<Set<string>> {
   const unique = [...new Set(shas.filter((s) => s))];
   if (unique.length === 0) return new Set();
+
+  let hasRemote = false;
   try {
-    const { stdout } = await execa(
-      'git',
-      ['-C', repoPath, 'cat-file', '--batch-check=%(objectname) %(objecttype)'],
-      { input: unique.join('\n') + '\n' }
-    );
-    const reachable = new Set<string>();
-    const lines = stdout.split('\n');
-    for (let i = 0; i < lines.length && i < unique.length; i++) {
-      const line = lines[i] ?? '';
-      // "<sha> missing" → unreachable; "<sha> commit" → present.
-      if (!line.includes(' missing')) {
-        reachable.add(unique[i]!);
-      }
-    }
-    return reachable;
+    const { stdout } = await execa('git', [
+      '-C',
+      repoPath,
+      'for-each-ref',
+      '--count=1',
+      '--format=%(refname)',
+      'refs/remotes/'
+    ]);
+    hasRemote = stdout.trim().length > 0;
   } catch {
-    return new Set();
+    hasRemote = false;
   }
+
+  if (!hasRemote) {
+    // No remote configured → fall back to local object existence so
+    // pure-local repos don't paint every commit as stale.
+    try {
+      const { stdout } = await execa(
+        'git',
+        ['-C', repoPath, 'cat-file', '--batch-check=%(objectname) %(objecttype)'],
+        { input: unique.join('\n') + '\n' }
+      );
+      const reachable = new Set<string>();
+      const lines = stdout.split('\n');
+      for (let i = 0; i < lines.length && i < unique.length; i++) {
+        const line = lines[i] ?? '';
+        if (!line.includes(' missing')) reachable.add(unique[i]!);
+      }
+      return reachable;
+    } catch {
+      return new Set();
+    }
+  }
+
+  // Check each SHA against the remote-tracking refs in parallel. A SHA
+  // is reachable iff at least one ref under refs/remotes/ contains it.
+  const results = await Promise.all(
+    unique.map(async (sha) => {
+      try {
+        const { stdout } = await execa('git', [
+          '-C',
+          repoPath,
+          'for-each-ref',
+          '--count=1',
+          '--format=%(refname)',
+          '--contains',
+          sha,
+          'refs/remotes/'
+        ]);
+        return [sha, stdout.trim().length > 0] as const;
+      } catch {
+        return [sha, false] as const;
+      }
+    })
+  );
+  return new Set(results.filter(([, ok]) => ok).map(([sha]) => sha));
 }
 
 function escapeRegex(s: string): string {
