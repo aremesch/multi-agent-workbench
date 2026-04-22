@@ -17,6 +17,18 @@ const de: Partial<Record<TranslationKey, string>> = {
   'sidebar.noArchived': 'Keine archivierten Agenten.',
   'sidebar.collapse': 'Einklappen',
   'sidebar.expand': 'Ausklappen',
+  'sidebar.editRepo': 'Repository bearbeiten',
+
+  // ── Edit repo dialog ─────────────────────────────────────────────
+  'repoEdit.title': 'Repository bearbeiten',
+  'repoEdit.path': 'Pfad',
+  'repoEdit.pathReadOnlyHint':
+    'schreibgesch\u00fctzt \u2014 den Pfad zu \u00e4ndern w\u00fcrde bestehende Worktrees zerst\u00f6ren',
+  'repoEdit.save': 'Speichern',
+  'repoEdit.saving': 'Speichern\u2026',
+  'repoEdit.loading': 'Laden\u2026',
+  'repoEdit.failedLoad': 'Repository konnte nicht geladen werden',
+  'repoEdit.failedSave': 'Repository konnte nicht gespeichert werden',
 
   // ── Login ────────────────────────────────────────────────────────
   'login.title': 'Anmelden',
@@ -221,6 +233,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   'common.error.pathNotExist': 'Pfad existiert nicht auf der Festplatte',
   'common.error.pathNotDir': 'Pfad ist kein Verzeichnis',
   'common.error.agentNotFound': 'Agent nicht gefunden',
+  'common.error.repoNotFound': 'Repository nicht gefunden',
   'common.error.gitInitFailed':
     'Leeres Verzeichnis konnte nicht als Git-Repo initialisiert werden: {message}',
   'common.error.notGitNotEmpty':

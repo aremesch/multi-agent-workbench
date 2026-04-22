@@ -24,6 +24,7 @@ import {
   closeAgentRun,
   countUsers,
   deleteAgent,
+  updateRepo,
   deletePushSubByEndpoint,
   deleteSession,
   deleteSessionsForUserExcept,
@@ -355,6 +356,50 @@ describe('repos', () => {
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
     expect(byId['r1']?.project_name).toBe('Proj');
     expect(byId['r2']?.project_name).toBeNull();
+  });
+
+  it('updateRepo sets origin_url for the owner and bumps updated_at', async () => {
+    seedRepo('r1');
+    const before = getRepo('r1')!;
+    await new Promise((r) => setTimeout(r, 1100));
+    const ok = updateRepo({ id: 'r1', user_id: 'user-1', origin_url: 'https://example.com/x.git' });
+    expect(ok).toBe(true);
+    const after = getRepo('r1')!;
+    expect(after.origin_url).toBe('https://example.com/x.git');
+    expect(after.updated_at).toBeGreaterThan(before.updated_at);
+  });
+
+  it('updateRepo clears origin_url when passed null', () => {
+    insertRepo({
+      id: 'r1',
+      user_id: 'user-1',
+      project_id: 'proj-1',
+      path: '/tmp/repo',
+      origin_url: 'https://example.com/x.git',
+      default_branch: 'main'
+    });
+    expect(updateRepo({ id: 'r1', user_id: 'user-1', origin_url: null })).toBe(true);
+    expect(getRepo('r1')?.origin_url).toBeNull();
+  });
+
+  it('updateRepo returns false for a foreign user and leaves the row unchanged', () => {
+    insertRepo({
+      id: 'r1',
+      user_id: 'user-1',
+      project_id: 'proj-1',
+      path: '/tmp/repo',
+      origin_url: 'https://original.example/x.git',
+      default_branch: 'main'
+    });
+    const ok = updateRepo({ id: 'r1', user_id: 'attacker', origin_url: 'https://evil.example' });
+    expect(ok).toBe(false);
+    expect(getRepo('r1')?.origin_url).toBe('https://original.example/x.git');
+  });
+
+  it('updateRepo returns false when the repo does not exist', () => {
+    expect(
+      updateRepo({ id: 'nope', user_id: 'user-1', origin_url: 'https://example.com' })
+    ).toBe(false);
   });
 });
 

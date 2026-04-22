@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
   import { useT } from '$lib/client/i18n.svelte';
+  import RepoEditDialog from './RepoEditDialog.svelte';
 
   const t = useT();
 
@@ -16,6 +17,18 @@
   } = $props();
 
   let openRepos = $state<Record<string, boolean>>({});
+  let editRepoId = $state<string | null>(null);
+  let editOpen = $state(false);
+
+  function openEdit(repoId: string, e: MouseEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    editRepoId = repoId;
+    editOpen = true;
+  }
+  function closeEdit(): void {
+    editOpen = false;
+  }
 
   $effect(() => {
     const m = page.url.pathname.match(/^\/repos\/([^/]+)/);
@@ -94,6 +107,20 @@
                     <span class="count">{repo.agents.length}</span>
                   {/if}
                 </a>
+                <button
+                  type="button"
+                  class="edit-btn"
+                  aria-label={t('sidebar.editRepo')}
+                  title={t('sidebar.editRepo')}
+                  onclick={(e) => openEdit(repo.repoId, e)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Zm17.71-10.21a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"
+                    />
+                  </svg>
+                </button>
               </div>
               {#if openRepos[repo.repoId] && repo.agents.length > 0}
                 <ul class="agents">
@@ -151,6 +178,8 @@
     </nav>
   {/if}
 </aside>
+
+<RepoEditDialog open={editOpen} repoId={editRepoId} onClose={closeEdit} />
 
 <style>
   .sidebar {
@@ -275,6 +304,32 @@
     background: var(--md-sys-color-surface-container-high);
     padding: 0.05rem 0.45rem;
     border-radius: var(--md-sys-shape-corner-full);
+  }
+  .edit-btn {
+    opacity: 0;
+    background: transparent;
+    border: none;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    padding: 0 0.35rem;
+    height: 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    transition:
+      opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+      background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+      color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+  }
+  .row:hover .edit-btn,
+  .edit-btn:focus-visible {
+    opacity: 1;
+  }
+  .edit-btn:hover {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
   }
   .dot {
     width: 0.5rem;

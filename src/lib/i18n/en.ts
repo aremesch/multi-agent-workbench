@@ -28,6 +28,17 @@ const en = {
   'sidebar.noArchived': 'No archived agents.',
   'sidebar.collapse': 'Collapse',
   'sidebar.expand': 'Expand',
+  'sidebar.editRepo': 'Edit repository',
+
+  // ── Edit repo dialog ─────────────────────────────────────────────
+  'repoEdit.title': 'Edit repository',
+  'repoEdit.path': 'Path',
+  'repoEdit.pathReadOnlyHint': 'read-only — changing the path would break existing worktrees',
+  'repoEdit.save': 'Save',
+  'repoEdit.saving': 'Saving\u2026',
+  'repoEdit.loading': 'Loading\u2026',
+  'repoEdit.failedLoad': 'Failed to load repository',
+  'repoEdit.failedSave': 'Failed to save repository',
 
   // ── Login ────────────────────────────────────────────────────────
   'login.title': 'Sign in',
@@ -261,6 +272,7 @@ const en = {
   'common.error.pathNotExist': 'Path does not exist on disk',
   'common.error.pathNotDir': 'Path is not a directory',
   'common.error.agentNotFound': 'Agent not found',
+  'common.error.repoNotFound': 'Repository not found',
   'common.error.gitInitFailed': 'Failed to initialize empty directory as git repo: {message}',
   'common.error.notGitNotEmpty':
     'Path is not a git repository and is not empty. Either clear the directory or run `git init` yourself.',

@@ -255,6 +255,17 @@ export function insertRepo(row: {
   );
 }
 
+export function updateRepo(row: {
+  id: string;
+  user_id: string;
+  origin_url: string | null;
+}): boolean {
+  const res = prep<[string | null, number, string, string]>(
+    'UPDATE repos SET origin_url = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+  ).run(row.origin_url, now(), row.id, row.user_id);
+  return res.changes > 0;
+}
+
 // --------------- worktrees ---------------
 
 export function getWorktree(id: string): WorktreeRow | undefined {

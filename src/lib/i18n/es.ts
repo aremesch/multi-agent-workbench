@@ -17,6 +17,18 @@ const es: Partial<Record<TranslationKey, string>> = {
   'sidebar.noArchived': 'No hay agentes archivados.',
   'sidebar.collapse': 'Contraer',
   'sidebar.expand': 'Expandir',
+  'sidebar.editRepo': 'Editar repositorio',
+
+  // ── Edit repo dialog ─────────────────────────────────────────────
+  'repoEdit.title': 'Editar repositorio',
+  'repoEdit.path': 'Ruta',
+  'repoEdit.pathReadOnlyHint':
+    's\u00f3lo lectura \u2014 cambiar la ruta romper\u00eda los worktrees existentes',
+  'repoEdit.save': 'Guardar',
+  'repoEdit.saving': 'Guardando\u2026',
+  'repoEdit.loading': 'Cargando\u2026',
+  'repoEdit.failedLoad': 'No se pudo cargar el repositorio',
+  'repoEdit.failedSave': 'No se pudo guardar el repositorio',
 
   // ── Login ────────────────────────────────────────────────────────
   'login.title': 'Iniciar sesi\u00f3n',
@@ -221,6 +233,7 @@ const es: Partial<Record<TranslationKey, string>> = {
   'common.error.pathNotExist': 'La ruta no existe en el disco',
   'common.error.pathNotDir': 'La ruta no es un directorio',
   'common.error.agentNotFound': 'Agente no encontrado',
+  'common.error.repoNotFound': 'Repositorio no encontrado',
   'common.error.gitInitFailed':
     'Error al inicializar el directorio vac\u00edo como repositorio Git: {message}',
   'common.error.notGitNotEmpty':

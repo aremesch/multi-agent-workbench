@@ -17,6 +17,18 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'sidebar.noArchived': 'Aucun agent archiv\u00e9.',
   'sidebar.collapse': 'R\u00e9duire',
   'sidebar.expand': 'D\u00e9velopper',
+  'sidebar.editRepo': 'Modifier le d\u00e9p\u00f4t',
+
+  // ── Edit repo dialog ─────────────────────────────────────────────
+  'repoEdit.title': 'Modifier le d\u00e9p\u00f4t',
+  'repoEdit.path': 'Chemin',
+  'repoEdit.pathReadOnlyHint':
+    'lecture seule \u2014 modifier le chemin casserait les worktrees existants',
+  'repoEdit.save': 'Enregistrer',
+  'repoEdit.saving': 'Enregistrement\u2026',
+  'repoEdit.loading': 'Chargement\u2026',
+  'repoEdit.failedLoad': '\u00c9chec du chargement du d\u00e9p\u00f4t',
+  'repoEdit.failedSave': '\u00c9chec de l\u2019enregistrement du d\u00e9p\u00f4t',
 
   // ── Login ────────────────────────────────────────────────────────
   'login.title': 'Connexion',
@@ -221,6 +233,7 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'common.error.pathNotExist': 'Le chemin n\u2019existe pas sur le disque',
   'common.error.pathNotDir': 'Le chemin n\u2019est pas un r\u00e9pertoire',
   'common.error.agentNotFound': 'Agent introuvable',
+  'common.error.repoNotFound': 'D\u00e9p\u00f4t introuvable',
   'common.error.gitInitFailed':
     "\u00c9chec de l'initialisation du r\u00e9pertoire vide en d\u00e9p\u00f4t Git\u00a0: {message}",
   'common.error.notGitNotEmpty':
