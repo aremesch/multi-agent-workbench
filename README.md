@@ -14,6 +14,48 @@ Two driving goals:
 2. **Daily browser workbench** — log in once, resume seamlessly, see
    every agent's live terminal side by side.
 
+## Security — read this before deploying
+
+> **⚠️ MAW exposes a shell to every authenticated session.** Anyone who
+> logs in can spawn agents that run arbitrary commands on the host — the
+> `shell` adapter is literally a bare `bash`, and Claude Code / Codex /
+> Gemini agents can read and write any file the host user can, make
+> outbound network requests, and invoke any installed CLI. Treat an
+> authenticated session as equivalent to SSH access to the MAW user
+> account.
+
+The non-negotiables:
+
+- **Never run MAW as `root` or under any account with `sudo` rights.**
+  Create a dedicated unprivileged system user (`maw` is the convention
+  used throughout these docs). Everything MAW spawns inherits that
+  user's permissions — that isolation *is* the sandbox.
+- **Use a strong password** for every MAW account, and rotate the
+  `MAW_BOOTSTRAP_PASSWORD` seeded on first boot.
+- **Enable [fail2ban](#fail2ban-prod)** before exposing MAW to any
+  untrusted network. The shipped jail bans repeat `login_fail`,
+  `pwchange_fail`, `rate_limited`, and `ws_origin_reject` offenders.
+- **Always terminate TLS in front of MAW.** Session cookies, WebSocket
+  traffic, and Web Push subscriptions must not travel over plain HTTP.
+  HTTPS is also required for PWA install and Web Push to function at
+  all (except on `localhost` for dev).
+- **Set `MAW_PUBLIC_ORIGIN` in production** so the WebSocket upgrade
+  rejects cross-origin handshakes. Without it MAW falls back to dev
+  behavior and accepts any `Origin`.
+- **Set `MAW_TRUST_PROXY=1` when behind a reverse proxy** so the auth
+  log records the real client IP, not the proxy's. The fail2ban jail
+  is useless without this.
+- **Rotate `MAW_SESSION_SECRET` if you suspect compromise** — it signs
+  every session cookie, and changing it invalidates all active logins.
+- **Only grant MAW accounts to people you would give SSH to.** There
+  is no per-agent sandbox, no per-user filesystem isolation, no rate
+  limit on command execution. Permission boundaries end at the host
+  user.
+
+For extra paranoia: disable `cli-adapters/shell.jsonc` in production
+(move or rename the file; the registry hot-reloads) so users can only
+spawn adapter-vetted CLIs rather than a free-form bash.
+
 ## PWA & push notifications
 
 MAW's headline feature: install it on your phone, get push notifications
@@ -378,3 +420,9 @@ survives a Node crash naturally because it is not in any cgroup.
 
 Persisted plans live in [`docs/plans/`](docs/plans/). Git history is the
 activity log; plan files are the design record.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Copyright (c) 2026 Alexander Remesch.

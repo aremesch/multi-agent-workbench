@@ -2,6 +2,8 @@
   "name": "multi-agent-workbench",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "Alexander Remesch <alexander.remesch@gmail.com>",
   "type": "module",
   "scripts": {
     "dev": "UV_THREADPOOL_SIZE=64 vite dev",
