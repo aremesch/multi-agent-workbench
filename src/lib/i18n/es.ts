@@ -216,6 +216,11 @@ const es: Partial<Record<TranslationKey, string>> = {
   'archive.th.cacheR': 'Cach\u00e9 L',
   'archive.note':
     'Activo/inactivo se basa en una heur\u00edstica de 30s sobre el log del terminal. Los conteos de tokens provienen del transcript JSONL de Claude Code (disponible solo para agentes claude-code).',
+  'archive.refresh.btn': 'Actualizar commits',
+  'archive.refresh.preserved':
+    'Se conservaron los commits existentes; la rama o base ha desaparecido.',
+  'archive.refresh.error': 'Actualizaci\u00f3n fallida: {message}',
+  'archive.commit.stale': 'Falta el objeto local; el enlace podr\u00eda estar obsoleto.',
 
   // ── Common / API errors ──────────────────────────────────────────
   'common.close': 'Cerrar',

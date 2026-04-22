@@ -4,10 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // argv; the mock looks up the right response or calls the router fn.
 const execaMock = vi.fn();
 vi.mock('execa', () => ({
-  execa: (cmd: string, args: string[]) => execaMock(cmd, args)
+  execa: (cmd: string, args: string[], opts?: unknown) => execaMock(cmd, args, opts)
 }));
 
-import { listAgentCommitsViaMergeBase } from './agentCommits.js';
+import {
+  catFileExists,
+  checkShaReachability,
+  listAgentCommitsViaMergeBase,
+  revParseQuiet
+} from './agentCommits.js';
 
 beforeEach(() => {
   execaMock.mockReset();
@@ -139,5 +144,63 @@ describe('listAgentCommitsViaMergeBase', () => {
     });
     const out = await listAgentCommitsViaMergeBase('/repo', 'f', 'main');
     expect(out[0]!.shortSha).toBe('deadbee');
+  });
+});
+
+describe('revParseQuiet', () => {
+  it('returns true when rev-parse exits 0', async () => {
+    routeExeca({ 'rev-parse --verify refs/heads/main': { stdout: 'abc' } });
+    await expect(revParseQuiet('/repo', 'refs/heads/main')).resolves.toBe(true);
+  });
+  it('returns false when rev-parse throws', async () => {
+    routeExeca({ 'rev-parse --verify refs/heads/gone': { throws: true } });
+    await expect(revParseQuiet('/repo', 'refs/heads/gone')).resolves.toBe(false);
+  });
+});
+
+describe('catFileExists', () => {
+  it('returns true when cat-file -e exits 0', async () => {
+    routeExeca({ 'cat-file -e deadbeef': { stdout: '' } });
+    await expect(catFileExists('/repo', 'deadbeef')).resolves.toBe(true);
+  });
+  it('returns false when cat-file -e throws', async () => {
+    routeExeca({ 'cat-file -e deadbeef': { throws: true } });
+    await expect(catFileExists('/repo', 'deadbeef')).resolves.toBe(false);
+  });
+});
+
+describe('checkShaReachability', () => {
+  it('returns empty set for empty input', async () => {
+    const out = await checkShaReachability('/repo', []);
+    expect(out.size).toBe(0);
+    expect(execaMock).not.toHaveBeenCalled();
+  });
+
+  it('returns the subset present in the object DB', async () => {
+    execaMock.mockImplementation((_cmd, args) => {
+      expect(args.slice(2)).toEqual([
+        'cat-file',
+        '--batch-check=%(objectname) %(objecttype)'
+      ]);
+      return Promise.resolve({
+        stdout: 'aaa1111 commit\nbbb2222 missing\nccc3333 commit',
+        stderr: ''
+      });
+    });
+    const out = await checkShaReachability('/repo', ['aaa1111', 'bbb2222', 'ccc3333']);
+    expect([...out].sort()).toEqual(['aaa1111', 'ccc3333']);
+  });
+
+  it('deduplicates input shas before the batch call', async () => {
+    execaMock.mockResolvedValue({ stdout: 'aaa commit', stderr: '' });
+    const out = await checkShaReachability('/repo', ['aaa', 'aaa', 'aaa']);
+    expect(out.has('aaa')).toBe(true);
+    expect(execaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns empty set when execa throws', async () => {
+    execaMock.mockRejectedValue(Object.assign(new Error('git fail'), { stderr: '' }));
+    const out = await checkShaReachability('/repo', ['aaa', 'bbb']);
+    expect(out.size).toBe(0);
   });
 });

@@ -216,6 +216,10 @@ const de: Partial<Record<TranslationKey, string>> = {
   'archive.th.cacheR': 'Cache L',
   'archive.note':
     'Aktiv/Leerlauf basiert auf einer 30s-L\u00fccken-Heuristik \u00fcber das Terminal-Log. Token-Zahlen stammen aus Claude Codes JSONL-Transkript (nur f\u00fcr claude-code Agenten verf\u00fcgbar).',
+  'archive.refresh.btn': 'Commits neu laden',
+  'archive.refresh.preserved': 'Bestehende Commits behalten; Branch oder Basis nicht mehr vorhanden.',
+  'archive.refresh.error': 'Aktualisierung fehlgeschlagen: {message}',
+  'archive.commit.stale': 'Lokales Objekt fehlt; Link k\u00f6nnte veraltet sein.',
 
   // ── Common / API errors ──────────────────────────────────────────
   'common.close': 'Schlie\u00dfen',

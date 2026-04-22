@@ -246,6 +246,10 @@ const en = {
   'archive.delete.confirmBtn': 'Delete',
   'archive.delete.forceBtn': 'Delete anyway',
   'archive.delete.error': 'Delete failed: {message}',
+  'archive.refresh.btn': 'Refresh commits',
+  'archive.refresh.preserved': 'Kept existing commits; branch or base is gone.',
+  'archive.refresh.error': 'Refresh failed: {message}',
+  'archive.commit.stale': 'Local object missing; link may be stale.',
 
   // ── Archive overview (cross-repo) ────────────────────────────────
   'archive.overview.title': 'Archive overview',

@@ -17,6 +17,7 @@ import {
   type TokenUsageSummary
 } from '$lib/server/agents/history/ClaudeJsonlTokens';
 import { snapshotAgentCommits } from '$lib/server/git/commitSnapshot';
+import { checkShaReachability } from '$lib/server/git/agentCommits';
 import { parseRemoteUrl } from '$lib/server/git/remoteUrl';
 import type { AgentCommit, AgentRemote } from '$lib/shared/types';
 
@@ -69,7 +70,7 @@ function sumTotals(entries: ArchivedAgentEntry[]): ArchiveTotals {
   return totals;
 }
 
-function rowToCommit(row: AgentCommitRow): AgentCommit {
+function rowToCommit(row: AgentCommitRow, reachable: boolean): AgentCommit {
   let parents: string[] = [];
   try {
     parents = JSON.parse(row.parent_shas) as string[];
@@ -91,7 +92,8 @@ function rowToCommit(row: AgentCommitRow): AgentCommit {
     committedAt: row.committed_at,
     date: new Date(row.authored_at * 1000).toISOString(),
     subject: row.subject,
-    body: row.body
+    body: row.body,
+    reachable
   };
 }
 
@@ -104,7 +106,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
   const agents = listAgentCardsForRepo(locals.user.id, repo.id, ARCHIVED_STATUSES);
 
-  const entries: ArchivedAgentEntry[] = await Promise.all(
+  const preCommit = await Promise.all(
     agents.map(async (a) => {
       const run = getLatestRunForAgent(a.id) ?? null;
       const stats = summarizeTerminalActivity(a.id);
@@ -133,11 +135,24 @@ export const load: PageServerLoad = async ({ locals, params }) => {
           rows = listPersistedAgentCommits(a.id);
         }
       }
-      const commits: AgentCommit[] = rows.map(rowToCommit);
-
-      return { agent: a, run, stats, totalSec, tokens, commits };
+      return { agent: a, run, stats, totalSec, tokens, rows };
     })
   );
+
+  // One cat-file --batch-check pass across every stored SHA in the repo,
+  // instead of N git invocations. Gives each commit a `reachable` flag
+  // the UI uses to render stale links with a muted/strikethrough style.
+  const allShas = preCommit.flatMap((p) => p.rows.map((r) => r.sha));
+  const reachable = await checkShaReachability(repo.path, allShas);
+
+  const entries: ArchivedAgentEntry[] = preCommit.map((p) => ({
+    agent: p.agent,
+    run: p.run,
+    stats: p.stats,
+    totalSec: p.totalSec,
+    tokens: p.tokens,
+    commits: p.rows.map((r) => rowToCommit(r, reachable.has(r.sha)))
+  }));
 
   return {
     repo: { id: repo.id, path: repo.path },

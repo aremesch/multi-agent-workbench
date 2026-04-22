@@ -58,6 +58,13 @@ export interface AgentCommit {
   date: string;
   subject: string;
   body: string;
+  /**
+   * True when the commit's object is reachable in the local repo at render
+   * time. Stale after an upstream rebase/recommit that discarded the local
+   * object. Links stay clickable regardless — the remote may still have
+   * the SHA under the same hash.
+   */
+  reachable: boolean;
 }
 
 export type AgentCommitSource = 'committer' | 'range' | 'merge_base';

@@ -18,19 +18,25 @@ import {
   getRepo,
   getWorktree,
   getProject,
+  listPersistedAgentCommits,
   replaceAgentCommits,
   updateAgentCommitSnapshot
 } from '../db/queries.js';
 import type { AgentCommitSource } from '../db/types.js';
 import {
+  catFileExists,
   listCommitsByCommitter,
   listCommitsInRange,
   listAgentCommitsViaMergeBase,
-  resolveSha
+  resolveSha,
+  revParseQuiet
 } from './agentCommits.js';
+
+export type PreservedReason = 'branch-missing' | 'base-missing' | 'empty-unreachable';
 
 export type SnapshotResult =
   | { captured: number; source: AgentCommitSource }
+  | { preserved: number; reason: PreservedReason }
   | { error: string };
 
 export async function snapshotAgentCommits(agentId: string): Promise<SnapshotResult> {
@@ -81,9 +87,27 @@ export async function snapshotAgentCommits(agentId: string): Promise<SnapshotRes
       source = 'merge_base';
     }
 
-    const headSha = await resolveSha(repo.path, `refs/heads/${wt.branch}`);
     const snapshottedAt = Math.floor(Date.now() / 1000);
 
+    // Don't wipe historical rows when the live refs are gone (branch
+    // deleted post-merge AND base_sha GC'd) — otherwise rewritten-upstream
+    // SHAs still link, and the archive view keeps its attribution.
+    if (commits.length === 0) {
+      const existing = listPersistedAgentCommits(agent.id);
+      if (existing.length > 0) {
+        const branchExists = await revParseQuiet(repo.path, `refs/heads/${wt.branch}`);
+        const baseExists = agent.base_sha
+          ? await catFileExists(repo.path, agent.base_sha)
+          : false;
+        const anchorsGone = !branchExists && (!agent.base_sha || !baseExists);
+        if (anchorsGone) {
+          updateAgentCommitSnapshot(agent.id, null, snapshottedAt);
+          return { preserved: existing.length, reason: 'empty-unreachable' };
+        }
+      }
+    }
+
+    const headSha = await resolveSha(repo.path, `refs/heads/${wt.branch}`);
     replaceAgentCommits(agent.id, agent.user_id, agent.repo_id, commits, source, () => ulid());
     updateAgentCommitSnapshot(agent.id, headSha, snapshottedAt);
 
