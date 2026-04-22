@@ -62,21 +62,21 @@ class FakeWebSocket {
 
 function handlers(): AgentHandlers & {
   outputs: unknown[];
-  scrollbacks: unknown[];
+  snapshots: unknown[];
   events: unknown[];
   states: string[];
 } {
   const outputs: unknown[] = [];
-  const scrollbacks: unknown[] = [];
+  const snapshots: unknown[] = [];
   const events: unknown[] = [];
   const states: string[] = [];
   return {
     onOutput: (m) => outputs.push(m),
-    onScrollback: (m) => scrollbacks.push(m),
+    onPaneSnapshot: (m) => snapshots.push(m),
     onEvent: (m) => events.push(m),
     onState: (s) => states.push(s),
     outputs,
-    scrollbacks,
+    snapshots,
     events,
     states
   };
@@ -146,7 +146,7 @@ describe('MawWsClient.connect', () => {
 // -----------------------------------------------------------------------------
 
 describe('MawWsClient.subscribe / dispatch', () => {
-  it('sends `subscribe_agent` immediately once the socket is open (no lastSeq on first attach)', () => {
+  it('sends `subscribe_agent` immediately once the socket is open', () => {
     const client = new MawWsClient();
     client.connect();
     lastFake!.open();
@@ -158,17 +158,23 @@ describe('MawWsClient.subscribe / dispatch', () => {
     });
   });
 
-  it('forwards an explicit lastSeq seed when the caller passes one', () => {
+  it('seeds the dedup cursor from an explicit lastSeq but does not put it on the wire (v5)', () => {
     const client = new MawWsClient();
     client.connect();
     lastFake!.open();
     lastFake!.sent.length = 0;
-    client.subscribe('a1', handlers(), 17);
+    const h = handlers();
+    client.subscribe('a1', h, 17);
+    // Wire frame carries no lastSeq — the server's pane_snapshot is
+    // authoritative over the dedup cursor.
     expect(lastFake!.sentMessages()[0]).toEqual({
       type: 'subscribe_agent',
-      agentId: 'a1',
-      lastSeq: 17
+      agentId: 'a1'
     });
+    // The seeded watermark is still effective: an output with seq <= 17
+    // gets dropped as a duplicate.
+    lastFake!.deliver({ type: 'output', agentId: 'a1', seq: 17, b64: 'x' });
+    expect(h.outputs).toHaveLength(0);
   });
 
   it('defers subscribe_agent send until the socket is open (queued by design — no throw)', () => {
@@ -179,7 +185,7 @@ describe('MawWsClient.subscribe / dispatch', () => {
     expect(lastFake!.sent).toHaveLength(0);
   });
 
-  it('routes output / scrollback / event to the correct handlers', () => {
+  it('routes output / pane_snapshot / event to the correct handlers', () => {
     const client = new MawWsClient();
     client.connect();
     lastFake!.open();
@@ -187,12 +193,12 @@ describe('MawWsClient.subscribe / dispatch', () => {
     client.subscribe('a1', h);
 
     lastFake!.deliver({ type: 'output', agentId: 'a1', seq: 1, b64: 'x' });
-    lastFake!.deliver({ type: 'scrollback', agentId: 'a1', chunks: [{ seq: 0, b64: 'y' }] });
+    lastFake!.deliver({ type: 'pane_snapshot', agentId: 'a1', ansi: 'hello', seq: 0 });
     lastFake!.deliver({ type: 'event', agentId: 'a1', kind: 'idle' });
     lastFake!.deliver({ type: 'agent_state', agentId: 'a1', status: 'READY' });
 
     expect(h.outputs).toHaveLength(1);
-    expect(h.scrollbacks).toHaveLength(1);
+    expect(h.snapshots).toHaveLength(1);
     expect(h.events).toHaveLength(1);
     expect(h.states).toEqual(['READY']);
   });
@@ -211,29 +217,34 @@ describe('MawWsClient.subscribe / dispatch', () => {
     expect(h.outputs).toHaveLength(2);
   });
 
-  it('bumps the watermark from a `scrollback` burst so subsequent in-burst seqs do not double-paint', () => {
+  it('SETs the watermark to the snapshot seq so catch-up bytes above it still paint', () => {
     const client = new MawWsClient();
     client.connect();
     lastFake!.open();
     const h = handlers();
     client.subscribe('a1', h);
 
-    lastFake!.deliver({
-      type: 'scrollback',
-      agentId: 'a1',
-      chunks: [
-        { seq: 1, b64: 'a' },
-        { seq: 2, b64: 'b' }
-      ]
-    });
-    expect(h.scrollbacks).toHaveLength(1);
-
-    // Live `output` with a seq the burst already covered — should be dropped.
-    lastFake!.deliver({ type: 'output', agentId: 'a1', seq: 2, b64: 'c' });
-    expect(h.outputs).toHaveLength(0);
-    // …but a fresh seq above the burst still lands.
-    lastFake!.deliver({ type: 'output', agentId: 'a1', seq: 3, b64: 'd' });
+    // Live byte arrives BEFORE the snapshot (race: capture-pane still in
+    // flight on the server). Client paints it and bumps watermark to 5.
+    lastFake!.deliver({ type: 'output', agentId: 'a1', seq: 5, b64: 'a' });
     expect(h.outputs).toHaveLength(1);
+
+    // Snapshot arrives next with seq=3 (taken before that live byte's seq
+    // was written to terminal_log). Watermark must be SET to 3 — not max()'d
+    // against the existing 5 — so the server's catch-up re-emit of seq=5
+    // below paints onto the reset xterm instead of being wrongly dedup'd.
+    lastFake!.deliver({ type: 'pane_snapshot', agentId: 'a1', ansi: 'hello', seq: 3 });
+    expect(h.snapshots).toHaveLength(1);
+
+    // Catch-up output at seq=5 arrives — MUST paint (snapshot wiped the
+    // prior byte from xterm, so we need this re-emit to land).
+    lastFake!.deliver({ type: 'output', agentId: 'a1', seq: 5, b64: 'b' });
+    expect(h.outputs).toHaveLength(2);
+
+    // But a seq at or below the snapshot is still a duplicate (already
+    // reflected in the snapshot's rendered grid).
+    lastFake!.deliver({ type: 'output', agentId: 'a1', seq: 3, b64: 'c' });
+    expect(h.outputs).toHaveLength(2);
   });
 
   it('ignores messages whose agentId has no matching subscription', () => {
@@ -368,14 +379,15 @@ describe('MawWsClient — input helpers', () => {
 // -----------------------------------------------------------------------------
 
 describe('MawWsClient — reconnect + backoff', () => {
-  it('re-issues every active subscription on reconnect, carrying the latest seen seq as lastSeq', async () => {
+  it('re-issues every active subscription on reconnect (no lastSeq on the wire — v5)', async () => {
     vi.useFakeTimers();
     const client = new MawWsClient();
     client.connect();
     lastFake!.open();
     client.subscribe('a1', handlers());
     client.subscribe('a2', handlers());
-    // Push some output so a1's watermark advances past 0.
+    // Push some output so a1's watermark advances past 0 — this stays
+    // effective for live dedup but is no longer transmitted on subscribe.
     lastFake!.deliver({ type: 'output', agentId: 'a1', seq: 7, b64: 'x' });
 
     // Drop the socket.
@@ -394,12 +406,16 @@ describe('MawWsClient — reconnect + backoff', () => {
       lastSeq?: number;
     }>;
     expect(subs).toHaveLength(2);
-    const a1 = subs.find((s) => s.agentId === 'a1');
-    const a2 = subs.find((s) => s.agentId === 'a2');
-    // a1 saw seq=7, so it must re-subscribe with lastSeq=7 to skip already-painted bytes.
-    expect(a1?.lastSeq).toBe(7);
-    // a2 saw nothing, so lastSeq is omitted.
-    expect(a2).toEqual({ type: 'subscribe_agent', agentId: 'a2' });
+    // Both subscribes carry just { type, agentId } — server's pane_snapshot
+    // is now the authoritative cursor seed.
+    expect(subs.find((s) => s.agentId === 'a1')).toEqual({
+      type: 'subscribe_agent',
+      agentId: 'a1'
+    });
+    expect(subs.find((s) => s.agentId === 'a2')).toEqual({
+      type: 'subscribe_agent',
+      agentId: 'a2'
+    });
   });
 
   it('uses exponential backoff: 500ms → 1s → 2s, capped at 30s', async () => {

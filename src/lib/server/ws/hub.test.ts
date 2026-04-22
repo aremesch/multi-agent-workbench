@@ -17,11 +17,13 @@ const mocks = vi.hoisted(() => {
     },
     // --- tmux shim ---
     sendKey: vi.fn(),
+    capturePane: vi.fn(),
     // --- auth / config ---
     resolveSession: vi.fn(),
     logAuth: vi.fn(),
     config: { publicOrigin: null as string | null },
     // --- db ---
+    getLatestTerminalSeq: vi.fn(),
     listTerminalChunksSince: vi.fn()
   };
 });
@@ -31,7 +33,8 @@ vi.mock('../bootstrap.js', () => ({
 }));
 vi.mock('../tmux/TmuxSession.js', () => ({
   Tmux: {
-    sendKey: (...a: unknown[]) => mocks.sendKey(...a)
+    sendKey: (...a: unknown[]) => mocks.sendKey(...a),
+    capturePane: (...a: unknown[]) => mocks.capturePane(...a)
   }
 }));
 vi.mock('../auth/session.js', async () => {
@@ -48,6 +51,7 @@ vi.mock('../config.js', () => ({
   getConfig: () => mocks.config
 }));
 vi.mock('../db/queries.js', () => ({
+  getLatestTerminalSeq: (...a: unknown[]) => mocks.getLatestTerminalSeq(...a),
   listTerminalChunksSince: (...a: unknown[]) => mocks.listTerminalChunksSince(...a)
 }));
 
@@ -127,6 +131,8 @@ beforeEach(() => {
   mocks.supervisor.get.mockReset();
   mocks.supervisor.kill.mockReset();
   mocks.sendKey.mockReset().mockResolvedValue(undefined);
+  mocks.capturePane.mockReset().mockResolvedValue('');
+  mocks.getLatestTerminalSeq.mockReset().mockReturnValue(0);
   mocks.listTerminalChunksSince.mockReset().mockReturnValue([]);
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -261,7 +267,7 @@ describe('HubClient — defensive parsing', () => {
 });
 
 // -----------------------------------------------------------------------------
-// subscribe_agent — byte-log replay
+// subscribe_agent — pane snapshot + catch-up (protocol v5)
 // -----------------------------------------------------------------------------
 
 describe('HubClient — subscribe_agent', () => {
@@ -284,65 +290,93 @@ describe('HubClient — subscribe_agent', () => {
     expect(err.code).toBe('forbidden');
   });
 
-  it('ships persisted terminal_log chunks (since lastSeq=0) as a single scrollback burst', () => {
+  it('ships the tmux pane state as a `pane_snapshot` with the current seq watermark', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getLatestTerminalSeq.mockReturnValue(42);
+    mocks.capturePane.mockResolvedValue('\x1b[2J\x1b[H$ ready\r\n');
+    const { ws } = attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
+    );
+    expect(mocks.capturePane).toHaveBeenCalledWith('maw-agent-a1', 0);
+    expect(mocks.getLatestTerminalSeq).toHaveBeenCalledWith('a1');
+    const snap = ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot') as {
+      ansi: string;
+      seq: number;
+    };
+    expect(snap.ansi).toBe('\x1b[2J\x1b[H$ ready\r\n');
+    expect(snap.seq).toBe(42);
+  });
+
+  it('follows the snapshot with a catch-up of terminal_log chunks newer than the snapshot seq', async () => {
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getLatestTerminalSeq.mockReturnValue(5);
+    mocks.capturePane.mockResolvedValue('');
     mocks.listTerminalChunksSince.mockReturnValue([
-      { seq: 1, chunk: Buffer.from('alpha', 'utf8') },
-      { seq: 2, chunk: Buffer.from('beta', 'utf8') }
+      { seq: 6, chunk: Buffer.from('x', 'utf8') },
+      { seq: 7, chunk: Buffer.from('y', 'utf8') }
     ]);
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
 
-    expect(mocks.listTerminalChunksSince).toHaveBeenCalledWith('a1', 0);
-    const scrollback = ws.sentMessages().find((m) => (m as { type?: string }).type === 'scrollback') as {
-      chunks: { seq: number; b64: string }[];
-    };
-    expect(scrollback).toBeDefined();
-    expect(scrollback.chunks).toHaveLength(2);
-    expect(scrollback.chunks[0]!.seq).toBe(1);
-    expect(Buffer.from(scrollback.chunks[0]!.b64, 'base64').toString('utf8')).toBe('alpha');
-    expect(scrollback.chunks[1]!.seq).toBe(2);
-    expect(Buffer.from(scrollback.chunks[1]!.b64, 'base64').toString('utf8')).toBe('beta');
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().filter((m) => (m as { type?: string }).type === 'output').length
+      ).toBe(2)
+    );
+    expect(mocks.listTerminalChunksSince).toHaveBeenCalledWith('a1', 5);
+    const outs = ws
+      .sentMessages()
+      .filter((m) => (m as { type?: string }).type === 'output') as Array<{
+      seq: number;
+      b64: string;
+    }>;
+    expect(outs.map((o) => o.seq)).toEqual([6, 7]);
+    expect(Buffer.from(outs[0]!.b64, 'base64').toString('utf8')).toBe('x');
+    expect(Buffer.from(outs[1]!.b64, 'base64').toString('utf8')).toBe('y');
+    // Wire order: snapshot before catch-up.
+    const frames = ws.sentMessages() as Array<{ type: string }>;
+    const snapIdx = frames.findIndex((f) => f.type === 'pane_snapshot');
+    const firstOutIdx = frames.findIndex((f) => f.type === 'output');
+    expect(snapIdx).toBeGreaterThanOrEqual(0);
+    expect(firstOutIdx).toBeGreaterThan(snapIdx);
   });
 
-  it('honors lastSeq from the client so re-subscribe only ships unseen chunks', () => {
+  it('emits an empty-ansi snapshot (with console.warn) when capture-pane fails', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    mocks.listTerminalChunksSince.mockReturnValue([]);
-    const { ws } = attachAuthedClient();
-    ws.deliver({ type: 'subscribe_agent', agentId: 'a1', lastSeq: 42 });
-
-    expect(mocks.listTerminalChunksSince).toHaveBeenCalledWith('a1', 42);
-    // Empty replay still emits an empty scrollback so the client's
-    // term.reset() runs and the grid stays consistent.
-    const scrollback = ws.sentMessages().find((m) => (m as { type?: string }).type === 'scrollback') as {
-      chunks: unknown[];
-    };
-    expect(scrollback).toBeDefined();
-    expect(scrollback.chunks).toEqual([]);
-  });
-
-  it('emits an empty scrollback (with a console.warn) when the db query throws', () => {
-    const rt = makeRuntime();
-    mocks.supervisor.get.mockReturnValue(rt);
-    mocks.listTerminalChunksSince.mockImplementation(() => {
-      throw new Error('db kaboom');
-    });
+    mocks.getLatestTerminalSeq.mockReturnValue(3);
+    mocks.capturePane.mockRejectedValue(new Error('tmux kaboom'));
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
 
-    const scrollback = ws.sentMessages().find((m) => (m as { type?: string }).type === 'scrollback') as
-      | { chunks: unknown[] }
-      | undefined;
-    expect(scrollback?.chunks).toEqual([]);
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
+    );
+    const snap = ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot') as {
+      ansi: string;
+      seq: number;
+    };
+    expect(snap.ansi).toBe('');
+    expect(snap.seq).toBe(3);
   });
 
-  it('fans out runtime `output` events as output frames', () => {
+  it('fans out runtime `output` events as output frames (live stream)', () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+    // Listener registration is synchronous within handleSubscribe, so a
+    // live output event landing BEFORE the async snapshot resolves still
+    // reaches the client (client dedup handles overlap with catch-up).
     rt.emit('output', { seq: 42, chunk: Buffer.from('hello', 'utf8') });
     const out = ws.sentMessages().find((m) => (m as { type?: string }).type === 'output') as {
       seq: number;
@@ -373,6 +407,29 @@ describe('HubClient — subscribe_agent', () => {
     rt.emit('output', { seq: 1, chunk: Buffer.from('x') });
     const outputs = ws.sentMessages().filter((m) => (m as { type?: string }).type === 'output');
     expect(outputs.length).toBe(1);
+  });
+
+  it('drops the snapshot tail if the client unsubscribes before capture-pane resolves', async () => {
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getLatestTerminalSeq.mockReturnValue(0);
+    // Capture-pane never resolves until we let it.
+    let releaseCapture: (v: string) => void = () => {};
+    mocks.capturePane.mockReturnValue(
+      new Promise<string>((r) => {
+        releaseCapture = r;
+      })
+    );
+    const { ws } = attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+    // Unsubscribe while the snapshot is still pending.
+    ws.deliver({ type: 'unsubscribe_agent', agentId: 'a1' });
+    // Now release capture-pane — the tail should bail out.
+    releaseCapture('ignored-by-client');
+    await new Promise((r) => setImmediate(r));
+    expect(
+      ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+    ).toBeUndefined();
   });
 });
 

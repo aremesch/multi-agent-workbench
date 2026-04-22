@@ -1,30 +1,33 @@
 /**
- * Reconnecting WebSocket client with byte-log replay on subscribe.
+ * Reconnecting WebSocket client with pane-snapshot replay on subscribe.
  *
  * Single shared client per tab: the module-level `getMawWsClient()` lazily
  * creates one instance on first call and auto-connects. Consumers register
  * per-agent handlers via `subscribe(agentId, handlers, lastSeq?)` — the
- * dispatch loop routes `output`/`event`/`agent_state`/`scrollback` by
+ * dispatch loop routes `output`/`event`/`agent_state`/`pane_snapshot` by
  * `msg.agentId` to the right entry in the handler map.
  *
- * Per-agent `maxSeenSeq` tracks the highest `output.seq` already painted.
- * On disconnect, exponential backoff up to 30s. On reconnect, every active
- * subscription is re-issued carrying its `maxSeenSeq` as `lastSeq` so the
- * server only ships chunks the client hasn't already seen. Incoming
- * `output` messages whose `seq <= maxSeenSeq` are dropped.
+ * Per-agent `maxSeenSeq` tracks the highest `output.seq` already painted
+ * (dedup guard). Protocol v5: `subscribe_agent` carries no `lastSeq` — the
+ * server always ships a `pane_snapshot` of the tmux pane's current rendered
+ * grid, and any live `output` frames with `seq > snapshot.seq` paint on
+ * top. The snapshot sets `maxSeenSeq = snapshot.seq` unconditionally so
+ * catch-up re-emits (bytes that slipped past the capture-pane await) are
+ * re-applied once even if a live frame beat the snapshot to the wire.
+ * On disconnect, exponential backoff up to 30s; active subs auto-resubscribe.
  */
 
 import type {
   ClientMessage,
   ServerMessage,
   SC_Output,
-  SC_Scrollback,
+  SC_PaneSnapshot,
   SC_AgentEvent
 } from '$shared/protocol';
 
 export interface AgentHandlers {
   onOutput: (msg: SC_Output) => void;
-  onScrollback: (msg: SC_Scrollback) => void;
+  onPaneSnapshot: (msg: SC_PaneSnapshot) => void;
   onEvent: (msg: SC_AgentEvent) => void;
   onState: (status: string) => void;
 }
@@ -60,12 +63,11 @@ export class MawWsClient {
       this.backoff = 500;
       this.setConnectionState('open');
       this.send({ type: 'hello', clientVersion: 1 });
+      // Protocol v5: subscribe_agent carries no lastSeq. The server always
+      // responds with a pane_snapshot, which resets the xterm grid and
+      // re-seeds the dedup watermark.
       for (const sub of this.subs.values()) {
-        this.send({
-          type: 'subscribe_agent',
-          agentId: sub.agentId,
-          ...(sub.maxSeenSeq > 0 ? { lastSeq: sub.maxSeenSeq } : {})
-        });
+        this.send({ type: 'subscribe_agent', agentId: sub.agentId });
       }
       this.startHeartbeat();
     };
@@ -105,9 +107,9 @@ export class MawWsClient {
   /**
    * Register per-agent handlers and send a subscribe message. Subsequent
    * calls for the same agentId replace the handlers and preserve the
-   * existing `maxSeenSeq` so a re-subscribe doesn't refetch already-seen
-   * bytes. Pass `lastSeq` explicitly only when the caller wants to seed
-   * the dedup cursor (e.g. resuming from a persisted snapshot).
+   * existing `maxSeenSeq`. Pass `lastSeq` explicitly only to seed the
+   * dedup cursor in tests; it does not travel on the wire (protocol v5
+   * drops `lastSeq` — the server's `pane_snapshot` reseats the cursor).
    */
   subscribe(agentId: string, handlers: AgentHandlers, lastSeq?: number): void {
     const existing = this.subs.get(agentId);
@@ -117,11 +119,7 @@ export class MawWsClient {
       sub.maxSeenSeq = lastSeq;
     }
     this.subs.set(agentId, sub);
-    this.send({
-      type: 'subscribe_agent',
-      agentId,
-      ...(sub.maxSeenSeq > 0 ? { lastSeq: sub.maxSeenSeq } : {})
-    });
+    this.send({ type: 'subscribe_agent', agentId });
   }
 
   unsubscribe(agentId: string): void {
@@ -207,15 +205,17 @@ export class MawWsClient {
         sub.handlers.onOutput(msg);
         break;
       }
-      case 'scrollback': {
+      case 'pane_snapshot': {
         const sub = this.subs.get(msg.agentId);
         if (!sub) break;
-        // Bump the watermark to the highest seq in the burst so subsequent
-        // live `output` messages don't double-paint.
-        for (const c of msg.chunks) {
-          if (c.seq > sub.maxSeenSeq) sub.maxSeenSeq = c.seq;
-        }
-        sub.handlers.onScrollback(msg);
+        // SET (not max) the watermark to the snapshot's seq. The snapshot
+        // represents the pane state at that exact seq; any bytes after it
+        // must be re-applied on top, even if a live `output` frame beat
+        // the snapshot to the wire during the capture-pane await. The
+        // server's catch-up loop resends those bytes and the client dedup
+        // (seq > maxSeenSeq) paints them once.
+        sub.maxSeenSeq = msg.seq;
+        sub.handlers.onPaneSnapshot(msg);
         break;
       }
       case 'event': {

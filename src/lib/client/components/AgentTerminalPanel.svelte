@@ -54,13 +54,15 @@
     onOutput: ({ b64 }) => {
       term?.write(b64ToBytes(b64));
     },
-    onScrollback: ({ chunks }) => {
-      // Reconnect = byte-log replay. Wipe parser state so nothing carries
-      // over from a previous frame, then write each persisted chunk in seq
-      // order. Empty `chunks` (fresh agent, or no new bytes since lastSeq)
-      // still triggers the reset — keeps the screen consistent on reattach.
+    onPaneSnapshot: ({ ansi }) => {
+      // Reconnect = current-pane snapshot. Wipe parser state so nothing
+      // from a previous frame (or a stray pre-snapshot live byte that
+      // raced the capture-pane await) leaks into how the ANSI is parsed,
+      // then paint the captured grid. Empty `ansi` (fresh pane, or
+      // capture-pane failed) still triggers the reset so the screen
+      // stays consistent on reattach.
       term?.reset();
-      for (const c of chunks) term?.write(b64ToBytes(c.b64));
+      if (ansi.length > 0) term?.write(ansi);
     },
     onEvent: ({ kind, choices, detail }) => {
       if (kind === 'prompt_detected') {
@@ -98,9 +100,9 @@
   }
 
   onMount(() => {
-    // Subscribe immediately — protocol v4 dropped dims from `subscribe_agent`,
-    // so we no longer need to wait for the first xterm resize before kicking
-    // off the byte-log replay. Resize messages still flow separately through
+    // Subscribe immediately — protocol v5 ships a `pane_snapshot` in reply,
+    // so the terminal paints the current tmux grid without waiting for any
+    // resize handshake. Resize messages still flow separately through
     // `CS_Resize` once xterm reports its dimensions.
     getMawWsClient().subscribe(agent.id, handlers);
     // `(pointer: coarse)` == primary pointer is a finger. Good enough for

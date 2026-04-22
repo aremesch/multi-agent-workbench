@@ -3,16 +3,18 @@ import { mkdirSync } from 'node:fs';
 import { test, expect } from './fixtures';
 
 /**
- * Minimal "subscribe renders output" smoke for the byte-log replay
- * reconnect path (protocol v4). Replaces the deleted snapshot-era
- * terminal-bash-cursor / terminal-claude-reopen specs.
+ * Minimal "subscribe renders output" smoke for the pane-snapshot
+ * reconnect path (protocol v5).
  *
  * Spawns a shell agent, types a unique marker into its tmux pane via
  * `tmux send-keys`, then opens the per-repo dashboard modal with the
  * agent pre-selected and asserts the marker appears in the xterm DOM.
  * That's the smallest assertion that proves the full chain still works:
- * CS_SubscribeAgent → server reads `terminal_log` → ships
- * `SC_Scrollback` → client `term.reset()` + writes chunks → DOM paints.
+ * CS_SubscribeAgent → server runs `tmux capture-pane -p -e -S 0` →
+ * ships `SC_PaneSnapshot` → client `term.reset()` + writes ansi → DOM
+ * paints. A second assertion closes the modal and reopens it to prove
+ * the reattach path paints the same marker from the current tmux grid,
+ * not a stale replay.
  */
 
 const TMUX_SOCKET = 'maw';
@@ -95,7 +97,9 @@ test.describe('terminal subscribe', () => {
     }
   });
 
-  test('byte-log replay paints prior pane output into xterm on subscribe', async ({ page }) => {
+  test('pane snapshot paints current tmux grid into xterm on subscribe and reopen', async ({
+    page
+  }) => {
     const agentId = await spawnAgent(page, roleId, repoId, 'e2e-subscribe-marker');
     spawned.push(agentId);
 
@@ -112,21 +116,31 @@ test.describe('terminal subscribe', () => {
     // Type the marker into bash. -l = literal so the string is sent
     // verbatim, not interpreted as a tmux key name. Follow with Enter so
     // bash actually executes echo and the result lands in the pane (and
-    // therefore in the persisted terminal_log) before we navigate.
+    // therefore in tmux's visible grid) before we navigate.
     await tmux('send-keys', '-t', `maw-agent-${agentId}`, '-l', 'echo maw-subscribe-marker');
     await tmux('send-keys', '-t', `maw-agent-${agentId}`, 'Enter');
 
-    // Give the FIFO → AgentRuntime → terminal_log INSERT path a moment to
-    // settle so the subscribe handler sees the marker in its query.
+    // Give the pane a moment so capture-pane sees the echo output.
     await new Promise((r) => setTimeout(r, 500));
 
     // Open the per-repo dashboard with the agent pre-selected — the modal
     // mounts, AgentTerminalPanel calls subscribe(), and the server replies
-    // with a SC_Scrollback containing every persisted chunk.
+    // with a SC_PaneSnapshot carrying the current visible pane as ANSI.
     await page.goto(`/repos/${repoId}?agent=${agentId}`);
 
     // Poll the xterm DOM for the marker. Generous timeout because xterm's
     // dynamic import + first paint after subscribe takes a moment in CI.
+    await expect(page.locator('.xterm-rows')).toContainText('maw-subscribe-marker', {
+      timeout: 15_000
+    });
+
+    // Close the modal (drop the ?agent= param) and reopen it. The panel
+    // remounts with a fresh xterm; the server sends a new pane_snapshot
+    // built from the same live tmux grid. Proves the reattach path does
+    // not stack or lose content.
+    await page.goto(`/repos/${repoId}`);
+    await expect(page.locator('.xterm-rows')).toHaveCount(0);
+    await page.goto(`/repos/${repoId}?agent=${agentId}`);
     await expect(page.locator('.xterm-rows')).toContainText('maw-subscribe-marker', {
       timeout: 15_000
     });

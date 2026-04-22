@@ -10,7 +10,7 @@
 
 import type { AdapterEventKind } from './adapterTypes.js';
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 // ---------- client → server ----------
 
@@ -21,13 +21,6 @@ export interface CS_Hello {
 export interface CS_SubscribeAgent {
   type: 'subscribe_agent';
   agentId: string;
-  /**
-   * Highest `seq` the client has already painted. Server replays
-   * `terminal_log` chunks with `seq > lastSeq` as the initial `scrollback`
-   * burst, so a transient WS drop reattaches without retransmitting the
-   * tail the client already has. Omit/0 on first attach.
-   */
-  lastSeq?: number;
 }
 export interface CS_UnsubscribeAgent {
   type: 'unsubscribe_agent';
@@ -100,14 +93,20 @@ export interface SC_Welcome {
 }
 /**
  * Reconnect snapshot. Sent once in response to `subscribe_agent`, carrying
- * persisted `terminal_log` chunks with `seq > lastSeq` (or all of them on
- * first attach). Clients should `term.reset()` before applying so the burst
- * always lands on a clean grid. Empty `chunks` is valid (fresh agent).
+ * the tmux pane's currently rendered grid as ANSI (from `capture-pane -p
+ * -e -S 0`). Clients `term.reset()` before writing `ansi` so the paint
+ * always lands on a clean grid — no redraw-bursting replay. `seq` is the
+ * `terminal_log.seq` watermark at capture time; after applying the
+ * snapshot the client sets its dedup cursor to this value so live `output`
+ * frames with `seq > snapshotSeq` paint on top without duplication and
+ * any catch-up re-emits (bytes that slipped past during the capture-pane
+ * await) are re-applied once.
  */
-export interface SC_Scrollback {
-  type: 'scrollback';
+export interface SC_PaneSnapshot {
+  type: 'pane_snapshot';
   agentId: string;
-  chunks: { seq: number; b64: string }[];
+  ansi: string;
+  seq: number;
 }
 export interface SC_Output {
   type: 'output';
@@ -161,7 +160,7 @@ export interface SC_Pong {
 
 export type ServerMessage =
   | SC_Welcome
-  | SC_Scrollback
+  | SC_PaneSnapshot
   | SC_Output
   | SC_AgentEvent
   | SC_AgentState

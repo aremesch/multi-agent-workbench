@@ -3,13 +3,15 @@
  *
  * Wiring:
  *   - Every incoming ws connection is wrapped in a HubClient.
- *   - HubClient.subscribe(agentId, lastSeq?) replays persisted terminal_log
- *     bytes since lastSeq as a single `scrollback` burst, then starts
- *     forwarding live output/event/state fan-out. Byte-log replay is the
- *     baseline reconnect mechanism; for TUI CLIs without an alt-screen
- *     buffer (Claude Code in particular) it carries a known stacked-banner
- *     bug on first connect — accepted as the simpler trade. See
- *     docs/plans/v0.2-terminal-revert.md for the next-design handoff.
+ *   - HubClient.subscribe(agentId) captures the tmux pane's currently
+ *     rendered grid via `tmux capture-pane -p -e -S 0`, ships it as a
+ *     `pane_snapshot`, then forwards live output/event/state fan-out.
+ *     A catch-up pass queries `terminal_log` for any bytes written after
+ *     the snapshot seq so the (rare) window between reading the watermark
+ *     and the listener going live is covered; client dedup handles
+ *     overlap. This replaces the pre-v5 byte-log replay, which stacked
+ *     redraw banners on TUI CLIs without alt-screen. See
+ *     docs/plans/v0.2-terminal-pane-snapshot.md.
  *   - Inputs from the client go through AgentRuntime's serialized queue.
  *
  * The hub is a singleton (same bootstrap that owns the supervisor).
@@ -26,7 +28,7 @@ import { getConfig } from '../config.js';
 import { getSupervisor } from '../bootstrap.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import type { AgentRuntime } from '../agents/AgentRuntime.js';
-import { listTerminalChunksSince } from '../db/queries.js';
+import { getLatestTerminalSeq, listTerminalChunksSince } from '../db/queries.js';
 import type { Cookies } from '@sveltejs/kit';
 
 interface Subscription {
@@ -76,7 +78,7 @@ class HubClient {
         this.send({ type: 'pong', ts: msg.ts });
         break;
       case 'subscribe_agent':
-        this.handleSubscribe(msg.agentId, msg.lastSeq);
+        this.handleSubscribe(msg.agentId);
         break;
       case 'unsubscribe_agent':
         this.handleUnsubscribe(msg.agentId);
@@ -106,7 +108,7 @@ class HubClient {
     }
   }
 
-  private handleSubscribe(agentId: string, lastSeq?: number): void {
+  private handleSubscribe(agentId: string): void {
     if (this.subs.has(agentId)) return;
     const runtime = getSupervisor().get(agentId);
     if (!runtime) {
@@ -118,21 +120,13 @@ class HubClient {
       return;
     }
 
-    // Reconnect = byte-log replay from terminal_log since lastSeq (or from
-    // 0 on first subscribe). The client `term.reset()`s on `scrollback`, so
-    // the burst always lands on a clean grid. For TUI CLIs without an
-    // alt-screen buffer this stacks 3–4 redraw banners on first attach —
-    // documented baseline trade-off; the next-design plan will replace
-    // this with server-side virtual-screen replay.
-    const startSeq = typeof lastSeq === 'number' && Number.isFinite(lastSeq) && lastSeq >= 0 ? lastSeq : 0;
-    try {
-      const rows = listTerminalChunksSince(agentId, startSeq);
-      const chunks = rows.map((r) => ({ seq: r.seq, b64: r.chunk.toString('base64') }));
-      this.send({ type: 'scrollback', agentId, chunks });
-    } catch (err) {
-      console.warn(`[hub] byte-log replay failed for ${agentId}:`, err);
-      this.send({ type: 'scrollback', agentId, chunks: [] });
-    }
+    // Register the fan-out listeners SYNCHRONOUSLY and capture the
+    // terminal_log watermark before awaiting anything. That way any output
+    // bytes emitted during the capture-pane await are forwarded live (client
+    // dedup via seq handles overlap with the catch-up replay below) and
+    // never lost to a race between reading the watermark and the listener
+    // going live.
+    const snapshotSeq = getLatestTerminalSeq(agentId);
 
     const onOutput = (payload: { seq: number; chunk: Buffer }): void => {
       this.send({
@@ -172,14 +166,54 @@ class HubClient {
     runtime.on('state', onState);
     runtime.on('alert', onAlert);
 
-    this.subs.set(agentId, {
+    const sub: Subscription = {
       agentId,
       runtime,
       offOutput: () => runtime.off('output', onOutput),
       offEvent: () => runtime.off('event', onEvent),
       offState: () => runtime.off('state', onState),
       offAlert: () => runtime.off('alert', onAlert)
-    });
+    };
+    this.subs.set(agentId, sub);
+
+    // Async tail: capture the current pane grid, ship it, then re-emit any
+    // chunks that landed in terminal_log after snapshotSeq (covers bytes
+    // persisted while capture-pane was in flight — client dedup makes the
+    // overlap harmless).
+    void (async () => {
+      let ansi = '';
+      try {
+        ansi = await Tmux.capturePane(runtime.tmuxSession, 0);
+      } catch (err) {
+        console.warn(`[hub] capture-pane failed for ${agentId}:`, err);
+      }
+      // capture-pane emits bare LF between rows. xterm runs with
+      // convertEol: false (so live PTY bytes keep their CR exactly where
+      // the child emitted them), which means a bare LF just moves the
+      // cursor down one row without returning to column 0 — the snapshot
+      // would paint a staircase instead of a grid. Normalize to CRLF here
+      // so the snapshot lands aligned; the pattern `\r?\n` makes the
+      // rewrite idempotent if a future tmux build ever adds CRs.
+      if (ansi.length > 0) ansi = ansi.replace(/\r?\n/g, '\r\n');
+      // Short-circuit if the client unsubscribed (or the ws closed) while
+      // capture-pane was resolving — no need to ship stale snapshots.
+      if (this.subs.get(agentId) !== sub) return;
+      this.send({ type: 'pane_snapshot', agentId, ansi, seq: snapshotSeq });
+      try {
+        const rows = listTerminalChunksSince(agentId, snapshotSeq);
+        for (const r of rows) {
+          if (this.subs.get(agentId) !== sub) return;
+          this.send({
+            type: 'output',
+            agentId,
+            seq: r.seq,
+            b64: r.chunk.toString('base64')
+          });
+        }
+      } catch (err) {
+        console.warn(`[hub] catch-up replay failed for ${agentId}:`, err);
+      }
+    })();
   }
 
   private handleUnsubscribe(agentId: string): void {

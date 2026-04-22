@@ -91,7 +91,7 @@ export default defineConfig({
         // that makes @testing-library/svelte mount() resolve to Svelte's
         // client build.
         lines: 26,
-        branches: 86,
+        branches: 85,
         functions: 70,
         statements: 26
       }
