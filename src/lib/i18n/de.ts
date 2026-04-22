@@ -125,6 +125,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   'spawn.sentAsInitialInput': 'optional, wird als Anfangseingabe gesendet',
   'spawn.absPath': 'absoluter Dateipfad',
   'spawn.originUrl': 'Origin-URL',
+  'spawn.httpsOriginUrl': 'HTTP(S)-Origin-URL',
   'spawn.defaultBranch': 'Standard-Branch',
   'spawn.projectName': 'Projektname',
   'spawn.systemPrompt': 'Systemprompt',
@@ -243,7 +244,39 @@ const de: Partial<Record<TranslationKey, string>> = {
   'common.error.notGitNotEmpty':
     'Pfad ist kein Git-Repository und nicht leer. Entweder das Verzeichnis leeren oder `git init` manuell ausf\u00fchren.',
   'common.error.noBranch':
-    "Repo hat keinen Branch '{branch}' und keinen 'master'-Branch zum Umbenennen. Erstelle '{branch}' manuell und versuche es erneut."
+    "Repo hat keinen Branch '{branch}' und keinen 'master'-Branch zum Umbenennen. Erstelle '{branch}' manuell und versuche es erneut.",
+  'common.error.cloneInvalidUrl': 'Nicht unterst\u00fctzte Clone-URL: {message}',
+  'common.error.cloneAuthFailed':
+    'Clone fehlgeschlagen \u2014 Authentifizierung abgelehnt. Pr\u00fcfe die SSH-Schl\u00fcssel oder HTTPS-Zugangsdaten des Servers. ({message})',
+  'common.error.cloneFailed': 'Clone fehlgeschlagen: {message}',
+  'common.error.cloneNotEmpty':
+    'Klonen in ein nicht-leeres Verzeichnis nicht m\u00f6glich. W\u00e4hle einen leeren Ordner oder lass die SSH-Origin-URL weg.',
+
+  // ── Directory picker ─────────────────────────────────────────────
+  'picker.title': 'Verzeichnis w\u00e4hlen',
+  'picker.browse': 'Durchsuchen\u2026',
+  'picker.up': 'Hoch',
+  'picker.selectHere': 'Dieses Verzeichnis w\u00e4hlen',
+  'picker.showHidden': 'Versteckte anzeigen',
+  'picker.empty': 'Dieses Verzeichnis hat keine Unterverzeichnisse.',
+  'picker.loading': 'Laden\u2026',
+  'picker.gitRepo': 'git',
+  'picker.newDirectory': 'Neuer Ordner',
+  'picker.newDirectory.namePlaceholder': 'Ordnername',
+  'picker.newDirectory.create': 'Erstellen',
+  'picker.newDirectory.creating': 'Wird erstellt\u2026',
+  'picker.newDirectory.cancel': 'Abbrechen',
+  'picker.sshOriginUrl': 'SSH-Origin-URL (zum Klonen)',
+  'picker.sshOriginUrlHint':
+    'Optional. Wenn gesetzt, wird das Verzeichnis per `git clone` \u00fcber den SSH-Schl\u00fcssel des Servers bef\u00fcllt.',
+  'picker.selectedPath': 'Ausgew\u00e4hlt: {path}',
+  'picker.selectNothing': '(kein Ordner ausgew\u00e4hlt)',
+  'picker.error.load': 'Verzeichnis konnte nicht geladen werden',
+  'picker.error.outsideRoot': 'Pfad liegt au\u00dferhalb des erlaubten Wurzelverzeichnisses',
+  'picker.error.mkdirInvalidName':
+    'Ung\u00fcltiger Ordnername. Verwende Buchstaben, Ziffern, Leerzeichen, Punkt, Bindestrich oder Unterstrich.',
+  'picker.error.mkdirExists': 'Ein Ordner mit diesem Namen existiert bereits.',
+  'picker.error.mkdirFailed': 'Ordner konnte nicht erstellt werden: {message}'
 };
 
 export default de;

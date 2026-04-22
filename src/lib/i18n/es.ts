@@ -125,6 +125,7 @@ const es: Partial<Record<TranslationKey, string>> = {
   'spawn.sentAsInitialInput': 'opcional, enviado como entrada inicial',
   'spawn.absPath': 'ruta absoluta del sistema de archivos',
   'spawn.originUrl': 'URL de origen',
+  'spawn.httpsOriginUrl': 'URL de origen HTTP(S)',
   'spawn.defaultBranch': 'Rama por defecto',
   'spawn.projectName': 'Nombre del proyecto',
   'spawn.systemPrompt': 'Prompt del sistema',
@@ -244,7 +245,39 @@ const es: Partial<Record<TranslationKey, string>> = {
   'common.error.notGitNotEmpty':
     'La ruta no es un repositorio Git y no est\u00e1 vac\u00eda. Vac\u00ede el directorio o ejecute `git init` manualmente.',
   'common.error.noBranch':
-    "El repositorio no tiene la rama '{branch}' ni una rama 'master' para renombrar. Cree '{branch}' manualmente e int\u00e9ntelo de nuevo."
+    "El repositorio no tiene la rama '{branch}' ni una rama 'master' para renombrar. Cree '{branch}' manualmente e int\u00e9ntelo de nuevo.",
+  'common.error.cloneInvalidUrl': 'URL de clone no soportada: {message}',
+  'common.error.cloneAuthFailed':
+    'Clone fallido \u2014 autenticaci\u00f3n rechazada. Revise las claves SSH o las credenciales HTTPS del servidor. ({message})',
+  'common.error.cloneFailed': 'Clone fallido: {message}',
+  'common.error.cloneNotEmpty':
+    'No se puede clonar en un directorio no vac\u00edo. Elija una carpeta vac\u00eda u omita la URL de origen SSH.',
+
+  // ── Directory picker ─────────────────────────────────────────────
+  'picker.title': 'Seleccionar directorio',
+  'picker.browse': 'Explorar\u2026',
+  'picker.up': 'Arriba',
+  'picker.selectHere': 'Seleccionar este directorio',
+  'picker.showHidden': 'Mostrar ocultos',
+  'picker.empty': 'Este directorio no tiene subdirectorios.',
+  'picker.loading': 'Cargando\u2026',
+  'picker.gitRepo': 'git',
+  'picker.newDirectory': 'Nueva carpeta',
+  'picker.newDirectory.namePlaceholder': 'Nombre de la carpeta',
+  'picker.newDirectory.create': 'Crear',
+  'picker.newDirectory.creating': 'Creando\u2026',
+  'picker.newDirectory.cancel': 'Cancelar',
+  'picker.sshOriginUrl': 'URL de origen SSH (para clonar)',
+  'picker.sshOriginUrlHint':
+    'Opcional. Si se indica, el directorio se rellena con `git clone` usando la clave SSH del servidor.',
+  'picker.selectedPath': 'Seleccionado: {path}',
+  'picker.selectNothing': '(no hay carpeta seleccionada)',
+  'picker.error.load': 'No se pudo cargar el directorio',
+  'picker.error.outsideRoot': 'La ruta est\u00e1 fuera de la ra\u00edz permitida',
+  'picker.error.mkdirInvalidName':
+    'Nombre de carpeta inv\u00e1lido. Use letras, d\u00edgitos, espacios, punto, gui\u00f3n o gui\u00f3n bajo.',
+  'picker.error.mkdirExists': 'Ya existe una carpeta con ese nombre.',
+  'picker.error.mkdirFailed': 'Error al crear la carpeta: {message}'
 };
 
 export default es;

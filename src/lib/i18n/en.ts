@@ -139,6 +139,7 @@ const en = {
   'spawn.sentAsInitialInput': 'optional, sent as initial input',
   'spawn.absPath': 'absolute filesystem path',
   'spawn.originUrl': 'Origin URL',
+  'spawn.httpsOriginUrl': 'HTTP(S) Origin URL',
   'spawn.defaultBranch': 'Default branch',
   'spawn.projectName': 'Project name',
   'spawn.systemPrompt': 'System prompt',
@@ -281,7 +282,39 @@ const en = {
   'common.error.notGitNotEmpty':
     'Path is not a git repository and is not empty. Either clear the directory or run `git init` yourself.',
   'common.error.noBranch':
-    "Repo has no branch '{branch}' and no 'master' branch to rename. Create '{branch}' manually and try again."
+    "Repo has no branch '{branch}' and no 'master' branch to rename. Create '{branch}' manually and try again.",
+  'common.error.cloneInvalidUrl': 'Unsupported clone URL: {message}',
+  'common.error.cloneAuthFailed':
+    'Clone failed \u2014 authentication rejected. Check the server\u2019s SSH keys or HTTPS credentials. ({message})',
+  'common.error.cloneFailed': 'Clone failed: {message}',
+  'common.error.cloneNotEmpty':
+    'Cannot clone into a non-empty directory. Pick an empty folder or omit the SSH origin URL.',
+
+  // ── Directory picker ─────────────────────────────────────────────
+  'picker.title': 'Select directory',
+  'picker.browse': 'Browse\u2026',
+  'picker.up': 'Up',
+  'picker.selectHere': 'Select this directory',
+  'picker.showHidden': 'Show hidden',
+  'picker.empty': 'This directory has no sub-directories.',
+  'picker.loading': 'Loading\u2026',
+  'picker.gitRepo': 'git',
+  'picker.newDirectory': 'New directory',
+  'picker.newDirectory.namePlaceholder': 'Folder name',
+  'picker.newDirectory.create': 'Create',
+  'picker.newDirectory.creating': 'Creating\u2026',
+  'picker.newDirectory.cancel': 'Cancel',
+  'picker.sshOriginUrl': 'SSH Origin URL (for cloning)',
+  'picker.sshOriginUrlHint':
+    'Optional. If set, the directory is populated via `git clone` using your server\u2019s SSH key.',
+  'picker.selectedPath': 'Selected: {path}',
+  'picker.selectNothing': '(no folder selected)',
+  'picker.error.load': 'Failed to load directory',
+  'picker.error.outsideRoot': 'Path is outside the allowed root',
+  'picker.error.mkdirInvalidName':
+    'Invalid folder name. Use letters, digits, spaces, dot, dash or underscore.',
+  'picker.error.mkdirExists': 'A folder with that name already exists.',
+  'picker.error.mkdirFailed': 'Failed to create folder: {message}'
 } as const;
 
 export type TranslationKey = keyof typeof en;

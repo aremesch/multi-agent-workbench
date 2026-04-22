@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { untrack } from 'svelte';
   import { useT } from '$lib/client/i18n.svelte';
+  import DirectoryPickerDialog from './DirectoryPickerDialog.svelte';
 
   const t = useT();
 
@@ -72,8 +73,10 @@
   let showNewRepo = $state(false);
   let newRepoPath = $state('');
   let newRepoOriginUrl = $state('');
+  let newRepoCloneUrl = $state<string | null>(null);
   let newRepoError = $state<string | null>(null);
   let savingRepo = $state(false);
+  let pickerOpen = $state(false);
 
   // ── Task title + slug preview ──────────────────────────────────────────
   let taskTitle = $state('');
@@ -210,7 +213,8 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           path: newRepoPath,
-          origin_url: newRepoOriginUrl || undefined
+          origin_url: newRepoOriginUrl || undefined,
+          clone_url: newRepoCloneUrl || undefined
         })
       });
       const data = (await res.json()) as { id?: string; path?: string; projectName?: string; error?: string };
@@ -228,6 +232,7 @@
       showNewRepo = false;
       newRepoPath = '';
       newRepoOriginUrl = '';
+      newRepoCloneUrl = null;
     } catch {
       newRepoError = t('spawn.error.networkError');
     } finally {
@@ -325,12 +330,22 @@
         <div class="inline-form">
           <label>
             <span>Path <span class="muted">({t('spawn.absPath')})</span></span>
-            <input bind:value={newRepoPath} placeholder="/home/user/myrepo" />
+            <div class="path-row">
+              <input bind:value={newRepoPath} placeholder="/home/user/myrepo" />
+              <button
+                type="button"
+                class="browse-btn"
+                onclick={() => { pickerOpen = true; }}
+              >{t('picker.browse')}</button>
+            </div>
           </label>
           <label>
-            <span>{t('spawn.originUrl')} <span class="muted">({t('spawn.optional')})</span></span>
+            <span>{t('spawn.httpsOriginUrl')} <span class="muted">({t('spawn.optional')})</span></span>
             <input bind:value={newRepoOriginUrl} placeholder="https://github.com/…" />
           </label>
+          {#if newRepoCloneUrl}
+            <p class="muted clone-hint">↪ {t('picker.sshOriginUrl')}: <code>{newRepoCloneUrl}</code></p>
+          {/if}
           {#if newRepoError}
             <p class="err">{newRepoError}</p>
           {/if}
@@ -338,7 +353,7 @@
             <button
               type="button"
               class="cancel"
-              onclick={() => { showNewRepo = false; newRepoError = null; newRepoPath = ''; newRepoOriginUrl = ''; }}
+              onclick={() => { showNewRepo = false; newRepoError = null; newRepoPath = ''; newRepoOriginUrl = ''; newRepoCloneUrl = null; }}
               disabled={savingRepo}
             >{t('spawn.cancel')}</button>
             <button
@@ -415,6 +430,17 @@
     </div>
   </form>
 </div>
+
+<DirectoryPickerDialog
+  open={pickerOpen}
+  initialPath={newRepoPath || undefined}
+  onClose={() => { pickerOpen = false; }}
+  onSelect={({ path, cloneUrl }) => {
+    newRepoPath = path;
+    newRepoCloneUrl = cloneUrl;
+    pickerOpen = false;
+  }}
+/>
 
 <style>
   .wrap {
@@ -498,6 +524,30 @@
     padding: 0.4rem 0.5rem;
     font-size: 0.85rem;
   }
+  .path-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: stretch;
+  }
+  .path-row input {
+    flex: 1;
+    min-width: 0;
+  }
+  .browse-btn {
+    padding: 0.4rem 0.7rem;
+    border-radius: 0.375rem;
+    border: 1px solid #374151;
+    background: #1a1a1a;
+    color: #93c5fd;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .browse-btn:hover {
+    background: #1e293b;
+  }
   .inline-actions {
     display: flex;
     gap: 0.4rem;
@@ -523,6 +573,17 @@
   }
   .muted {
     color: #6b7280;
+  }
+  .clone-hint {
+    margin: 0;
+    font-size: 0.75rem;
+  }
+  .clone-hint code {
+    font-family: ui-monospace, Menlo, monospace;
+    background: #111827;
+    padding: 0.05rem 0.25rem;
+    border-radius: 0.2rem;
+    color: #93c5fd;
   }
   .slug-preview {
     color: #6b7280;

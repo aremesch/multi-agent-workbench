@@ -6,7 +6,8 @@
  */
 
 import { resolve } from 'node:path';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 
 /**
  * Minimal .env loader. We intentionally avoid adding the `dotenv` dependency:
@@ -109,4 +110,27 @@ export function getConfig(): MawConfig {
     isDev: env.NODE_ENV !== 'production'
   };
   return _cfg;
+}
+
+let _fsBrowseRoot: string | null = null;
+
+/**
+ * Sandbox root for the directory-picker API (`/api/fs/list`).
+ *
+ * Defaults to the server user's home directory. Resolved through
+ * `realpathSync` once per process so that a symlinked `$HOME` doesn't
+ * produce false negatives on the prefix check downstream.
+ *
+ * Deliberately kept module-local (not on `MawConfig`) — this is a
+ * picker-only concern; revisit if we ever expose multi-root config.
+ */
+export function getFsBrowseRoot(): string {
+  if (_fsBrowseRoot) return _fsBrowseRoot;
+  const raw = process.env.HOME || homedir();
+  try {
+    _fsBrowseRoot = realpathSync(raw);
+  } catch {
+    _fsBrowseRoot = raw;
+  }
+  return _fsBrowseRoot;
 }

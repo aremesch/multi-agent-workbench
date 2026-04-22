@@ -7,6 +7,7 @@ import { ulid } from 'ulid';
 import type { RequestHandler } from './$types';
 import { getProject, insertRepo } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
+import { cloneInto, CloneError } from '$lib/server/git/clone';
 import { resolveGitIdentity } from '$lib/server/user/gitIdentity';
 import { t } from '$lib/i18n';
 
@@ -26,6 +27,7 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
   const project_id: string | null = project_id_raw || null;
   const path = String(b.path ?? '').trim();
   const origin_url = String(b.origin_url ?? '').trim() || null;
+  const clone_url = String(b.clone_url ?? '').trim() || null;
   const default_branch_in = String(b.default_branch ?? '').trim();
 
   let projectName = '';
@@ -50,15 +52,57 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 
   const entries = readdirSync(path);
   if (entries.length === 0) {
-    try {
-      await WorktreeManager.initEmpty(path, effectiveDefaultBranch, identity);
-    } catch (err) {
+    if (clone_url) {
+      try {
+        await cloneInto(clone_url, path);
+      } catch (err) {
+        if (err instanceof CloneError) {
+          const key =
+            err.code === 'invalid_url'
+              ? 'common.error.cloneInvalidUrl'
+              : err.code === 'auth_failed'
+                ? 'common.error.cloneAuthFailed'
+                : 'common.error.cloneFailed';
+          return json(
+            { error: t(locals.locale, key, { message: err.message }) },
+            { status: 400 }
+          );
+        }
+        return json(
+          { error: t(locals.locale, 'common.error.cloneFailed', { message: (err as Error).message }) },
+          { status: 400 }
+        );
+      }
+      // After clone, normalize default branch (rename master → main etc.).
+      const normalized = await WorktreeManager.ensureDefaultBranch(
+        path,
+        effectiveDefaultBranch,
+        identity
+      );
+      if (normalized.kind === 'no_master') {
+        const where = normalized.current ? ` (currently on '${normalized.current}')` : '';
+        return json(
+          { error: t(locals.locale, 'common.error.noBranch', { branch: effectiveDefaultBranch }) + where },
+          { status: 400 }
+        );
+      }
+    } else {
+      try {
+        await WorktreeManager.initEmpty(path, effectiveDefaultBranch, identity);
+      } catch (err) {
+        return json(
+          { error: t(locals.locale, 'common.error.gitInitFailed', { message: (err as Error).message }) },
+          { status: 400 }
+        );
+      }
+    }
+  } else {
+    if (clone_url) {
       return json(
-        { error: t(locals.locale, 'common.error.gitInitFailed', { message: (err as Error).message }) },
+        { error: t(locals.locale, 'common.error.cloneNotEmpty') },
         { status: 400 }
       );
     }
-  } else {
     try {
       await execa('git', ['-C', path, 'rev-parse', '--git-dir']);
     } catch {

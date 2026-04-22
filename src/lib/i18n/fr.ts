@@ -125,6 +125,7 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'spawn.sentAsInitialInput': "facultatif, envoy\u00e9 comme entr\u00e9e initiale",
   'spawn.absPath': 'chemin absolu',
   'spawn.originUrl': 'URL d\u2019origine',
+  'spawn.httpsOriginUrl': 'URL d\u2019origine HTTP(S)',
   'spawn.defaultBranch': 'Branche par d\u00e9faut',
   'spawn.projectName': 'Nom du projet',
   'spawn.systemPrompt': 'Prompt syst\u00e8me',
@@ -244,7 +245,39 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'common.error.notGitNotEmpty':
     "Le chemin n'est pas un d\u00e9p\u00f4t Git et n'est pas vide. Videz le r\u00e9pertoire ou ex\u00e9cutez `git init` manuellement.",
   'common.error.noBranch':
-    "Le d\u00e9p\u00f4t n'a pas de branche '{branch}' ni de branche 'master' \u00e0 renommer. Cr\u00e9ez '{branch}' manuellement et r\u00e9essayez."
+    "Le d\u00e9p\u00f4t n'a pas de branche '{branch}' ni de branche 'master' \u00e0 renommer. Cr\u00e9ez '{branch}' manuellement et r\u00e9essayez.",
+  'common.error.cloneInvalidUrl': 'URL de clone non prise en charge\u00a0: {message}',
+  'common.error.cloneAuthFailed':
+    '\u00c9chec du clone \u2014 authentification refus\u00e9e. V\u00e9rifiez les cl\u00e9s SSH ou les identifiants HTTPS du serveur. ({message})',
+  'common.error.cloneFailed': '\u00c9chec du clone\u00a0: {message}',
+  'common.error.cloneNotEmpty':
+    'Clone impossible dans un r\u00e9pertoire non vide. Choisissez un dossier vide ou omettez l\u2019URL d\u2019origine SSH.',
+
+  // ── Directory picker ─────────────────────────────────────────────
+  'picker.title': 'S\u00e9lectionner un r\u00e9pertoire',
+  'picker.browse': 'Parcourir\u2026',
+  'picker.up': 'Haut',
+  'picker.selectHere': 'S\u00e9lectionner ce r\u00e9pertoire',
+  'picker.showHidden': 'Afficher les fichiers cach\u00e9s',
+  'picker.empty': 'Ce r\u00e9pertoire n\u2019a pas de sous-r\u00e9pertoires.',
+  'picker.loading': 'Chargement\u2026',
+  'picker.gitRepo': 'git',
+  'picker.newDirectory': 'Nouveau dossier',
+  'picker.newDirectory.namePlaceholder': 'Nom du dossier',
+  'picker.newDirectory.create': 'Cr\u00e9er',
+  'picker.newDirectory.creating': 'Cr\u00e9ation\u2026',
+  'picker.newDirectory.cancel': 'Annuler',
+  'picker.sshOriginUrl': 'URL d\u2019origine SSH (pour le clone)',
+  'picker.sshOriginUrlHint':
+    'Facultatif. Si renseign\u00e9e, le r\u00e9pertoire est peupl\u00e9 via `git clone` en utilisant la cl\u00e9 SSH du serveur.',
+  'picker.selectedPath': 'S\u00e9lectionn\u00e9\u00a0: {path}',
+  'picker.selectNothing': '(aucun dossier s\u00e9lectionn\u00e9)',
+  'picker.error.load': '\u00c9chec du chargement du r\u00e9pertoire',
+  'picker.error.outsideRoot': 'Le chemin est en dehors de la racine autoris\u00e9e',
+  'picker.error.mkdirInvalidName':
+    'Nom de dossier invalide. Utilisez lettres, chiffres, espaces, point, tiret ou underscore.',
+  'picker.error.mkdirExists': 'Un dossier avec ce nom existe d\u00e9j\u00e0.',
+  'picker.error.mkdirFailed': '\u00c9chec de la cr\u00e9ation du dossier\u00a0: {message}'
 };
 
 export default fr;
