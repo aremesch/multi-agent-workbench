@@ -11,13 +11,15 @@ export function parseRemoteUrl(originUrl: string | null | undefined): AgentRemot
 
   let host = '';
   let pathPart = '';
+  let scheme = 'https';
 
   const sshMatch = url.match(/^(?:ssh:\/\/)?(?:[\w.-]+@)?([^:/]+)[:/](.+?)(?:\.git)?\/?$/);
-  const httpsMatch = url.match(/^https?:\/\/(?:[^@/]+@)?([^/]+)\/(.+?)(?:\.git)?\/?$/);
+  const httpMatch = url.match(/^(https?):\/\/(?:[^@/]+@)?([^/]+)\/(.+?)(?:\.git)?\/?$/);
 
-  if (httpsMatch) {
-    host = httpsMatch[1] ?? '';
-    pathPart = httpsMatch[2] ?? '';
+  if (httpMatch) {
+    scheme = httpMatch[1] ?? 'https';
+    host = httpMatch[2] ?? '';
+    pathPart = httpMatch[3] ?? '';
   } else if (sshMatch) {
     host = sshMatch[1] ?? '';
     pathPart = sshMatch[2] ?? '';
@@ -27,6 +29,6 @@ export function parseRemoteUrl(originUrl: string | null | undefined): AgentRemot
 
   const provider: AgentRemote['provider'] =
     host === 'github.com' ? 'github' : host.includes('.') ? 'gitea' : 'unknown';
-  const webBase = `https://${host}/${pathPart}`;
+  const webBase = `${scheme}://${host}/${pathPart}`;
   return { provider, webBase };
 }
