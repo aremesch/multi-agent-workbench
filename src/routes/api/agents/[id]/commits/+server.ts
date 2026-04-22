@@ -8,12 +8,13 @@
 
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getAgent, listPersistedAgentCommits } from '$lib/server/db/queries';
+import { getAgent, getRepo, listPersistedAgentCommits } from '$lib/server/db/queries';
 import { snapshotAgentCommits } from '$lib/server/git/commitSnapshot';
+import { checkShaReachability } from '$lib/server/git/agentCommits';
 import type { AgentCommit, AgentCommitSource } from '$lib/shared/types';
 import type { AgentCommitRow } from '$lib/server/db/types';
 
-function rowToCommit(row: AgentCommitRow): AgentCommit {
+function rowToCommit(row: AgentCommitRow, reachable: boolean): AgentCommit {
   let parents: string[] = [];
   try {
     parents = JSON.parse(row.parent_shas) as string[];
@@ -34,7 +35,8 @@ function rowToCommit(row: AgentCommitRow): AgentCommit {
     committedAt: row.committed_at,
     date: new Date(row.authored_at * 1000).toISOString(),
     subject: row.subject,
-    body: row.body
+    body: row.body,
+    reachable
   };
 }
 
@@ -43,12 +45,26 @@ export interface AgentCommitsResponse {
   snapshottedAt: number | null;
   headShaAtSnapshot: string | null;
   source: AgentCommitSource | null;
+  /** Present when the refresh preserved existing rows (branch/base gone). */
+  preserved?: number;
+  preservedReason?: 'branch-missing' | 'base-missing' | 'empty-unreachable';
+  /** Count of commits captured by a fresh snapshot, when applicable. */
+  captured?: number;
 }
 
-function buildResponse(agentId: string, snapshottedAt: number | null, headSha: string | null): AgentCommitsResponse {
+async function buildResponse(
+  agentId: string,
+  repoPath: string,
+  snapshottedAt: number | null,
+  headSha: string | null
+): Promise<AgentCommitsResponse> {
   const rows = listPersistedAgentCommits(agentId);
+  const reachable = await checkShaReachability(
+    repoPath,
+    rows.map((r) => r.sha)
+  );
   return {
-    commits: rows.map(rowToCommit),
+    commits: rows.map((r) => rowToCommit(r, reachable.has(r.sha))),
     snapshottedAt,
     headShaAtSnapshot: headSha,
     source: (rows[0]?.source ?? null) as AgentCommitSource | null
@@ -60,8 +76,17 @@ export const GET: RequestHandler = async ({ locals, params }) => {
   const agent = getAgent(params.id);
   if (!agent) throw error(404, 'Agent not found');
   if (agent.user_id !== locals.user.id) throw error(403, 'Forbidden');
+  const repo = getRepo(agent.repo_id);
+  if (!repo) throw error(404, 'Repo not found');
 
-  return json(buildResponse(agent.id, agent.commits_snapshotted_at, agent.head_sha_at_snapshot));
+  return json(
+    await buildResponse(
+      agent.id,
+      repo.path,
+      agent.commits_snapshotted_at,
+      agent.head_sha_at_snapshot
+    )
+  );
 };
 
 export const POST: RequestHandler = async ({ locals, params }) => {
@@ -69,6 +94,8 @@ export const POST: RequestHandler = async ({ locals, params }) => {
   const agent = getAgent(params.id);
   if (!agent) throw error(404, 'Agent not found');
   if (agent.user_id !== locals.user.id) throw error(403, 'Forbidden');
+  const repo = getRepo(agent.repo_id);
+  if (!repo) throw error(404, 'Repo not found');
 
   const result = await snapshotAgentCommits(agent.id);
   if ('error' in result) {
@@ -77,7 +104,14 @@ export const POST: RequestHandler = async ({ locals, params }) => {
 
   // Re-read agent for updated snapshot timestamps.
   const refreshed = getAgent(agent.id)!;
-  return json(
-    buildResponse(refreshed.id, refreshed.commits_snapshotted_at, refreshed.head_sha_at_snapshot)
+  const base = await buildResponse(
+    refreshed.id,
+    repo.path,
+    refreshed.commits_snapshotted_at,
+    refreshed.head_sha_at_snapshot
   );
+  if ('preserved' in result) {
+    return json({ ...base, preserved: result.preserved, preservedReason: result.reason });
+  }
+  return json({ ...base, captured: result.captured });
 };

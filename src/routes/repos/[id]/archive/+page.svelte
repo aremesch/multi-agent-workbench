@@ -23,6 +23,9 @@
   let dirtyFiles = $state<string[]>([]);
   let deleteError = $state<string>('');
 
+  let refreshing = $state<Record<string, boolean>>({});
+  let refreshToast = $state<Record<string, string>>({});
+
   function viewLog(entry: PageData['archivedAgents'][number]): void {
     openAgentId = entry.agent.id;
     openAgentTitle = `${entry.agent.role_name} — ${entry.agent.cli_kind} (${entry.agent.status})`;
@@ -43,6 +46,35 @@
       .split(/\n{2,}/)
       .map((para) => para.replace(/\n/g, ' '))
       .join('\n\n');
+  }
+
+  async function refreshCommits(agentId: string): Promise<void> {
+    refreshing[agentId] = true;
+    refreshToast[agentId] = '';
+    try {
+      const res = await apiFetch(`/api/agents/${agentId}/commits`, { method: 'POST' });
+      const body = (await res.json().catch(() => ({}))) as {
+        preserved?: number;
+        captured?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        refreshToast[agentId] = t('archive.refresh.error', {
+          message: body.error ?? `HTTP ${res.status}`
+        });
+        return;
+      }
+      if (typeof body.preserved === 'number') {
+        refreshToast[agentId] = t('archive.refresh.preserved');
+      }
+      await invalidateAll();
+    } catch (err) {
+      refreshToast[agentId] = t('archive.refresh.error', {
+        message: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      refreshing[agentId] = false;
+    }
   }
 
   function askDelete(entry: PageData['archivedAgents'][number]): void {
@@ -165,6 +197,30 @@
                 >
                 <button
                   type="button"
+                  class="refresh-btn"
+                  aria-label={t('archive.refresh.btn')}
+                  title={refreshToast[entry.agent.id] || t('archive.refresh.btn')}
+                  disabled={refreshing[entry.agent.id]}
+                  onclick={() => refreshCommits(entry.agent.id)}
+                >
+                  {#if refreshing[entry.agent.id]}
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                      stroke-linejoin="round" aria-hidden="true" class="spin">
+                      <path d="M21 12a9 9 0 1 1-3-6.7" />
+                      <path d="M21 4v5h-5" />
+                    </svg>
+                  {:else}
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                      stroke-linejoin="round" aria-hidden="true">
+                      <path d="M21 12a9 9 0 1 1-3-6.7" />
+                      <path d="M21 4v5h-5" />
+                    </svg>
+                  {/if}
+                </button>
+                <button
+                  type="button"
                   class="delete-btn"
                   aria-label={t('archive.delete.btn')}
                   title={t('archive.delete.btn')}
@@ -199,13 +255,22 @@
                         {#if commitUrl(c.sha)}
                           <a
                             class="sha"
+                            class:stale={!c.reachable}
                             href={commitUrl(c.sha)}
                             target="_blank"
                             rel="noopener"
-                            title={`${c.author} · ${c.date}`}>{c.shortSha}</a
+                            title={c.reachable
+                              ? `${c.author} · ${c.date}`
+                              : t('archive.commit.stale')}>{c.shortSha}</a
                           >
                         {:else}
-                          <span class="sha" title={`${c.author} · ${c.date}`}>{c.shortSha}</span>
+                          <span
+                            class="sha"
+                            class:stale={!c.reachable}
+                            title={c.reachable
+                              ? `${c.author} · ${c.date}`
+                              : t('archive.commit.stale')}>{c.shortSha}</span
+                          >
                         {/if}
                         <span class="subject">{c.subject}</span>
                         {#if c.body}
@@ -584,6 +649,38 @@
   }
   .commits a.sha:hover {
     text-decoration: underline;
+  }
+  .commits .sha.stale {
+    opacity: 0.55;
+    text-decoration: line-through dotted;
+  }
+  .commits a.sha.stale:hover {
+    text-decoration: line-through underline;
+  }
+  .refresh-btn {
+    background: transparent;
+    border: none;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .refresh-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+    color: var(--md-sys-color-on-surface);
+  }
+  .refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .refresh-btn .spin {
+    animation: archive-refresh-spin 0.9s linear infinite;
+  }
+  @keyframes archive-refresh-spin {
+    to { transform: rotate(360deg); }
   }
   .commits .subject {
     color: var(--md-sys-color-on-surface);

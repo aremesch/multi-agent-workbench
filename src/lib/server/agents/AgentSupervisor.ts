@@ -282,6 +282,10 @@ export class AgentSupervisor {
       .then((r) => {
         if ('error' in r) {
           console.warn(`[AgentSupervisor] commit snapshot failed for ${agentId}: ${r.error}`);
+        } else if ('preserved' in r) {
+          console.log(
+            `[AgentSupervisor] preserved ${r.preserved} existing commits for ${agentId} (${r.reason})`
+          );
         } else {
           console.log(
             `[AgentSupervisor] captured ${r.captured} commits for ${agentId} (${r.source})`

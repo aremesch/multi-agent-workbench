@@ -40,7 +40,8 @@ function parseLog(stdout: string): AgentCommit[] {
         committedAt: Number(committedAtStr) || 0,
         date,
         subject,
-        body: body.trimEnd()
+        body: body.trimEnd(),
+        reachable: true
       };
     });
 }
@@ -177,6 +178,53 @@ async function refExists(repoPath: string, ref: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** True when `ref` resolves. Thin wrapper over git rev-parse --verify. */
+export async function revParseQuiet(repoPath: string, ref: string): Promise<boolean> {
+  return refExists(repoPath, ref);
+}
+
+/** True when the object `sha` exists in the repo's object DB. */
+export async function catFileExists(repoPath: string, sha: string): Promise<boolean> {
+  try {
+    await execa('git', ['-C', repoPath, 'cat-file', '-e', sha]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Batch-check which of `shas` are reachable in the repo's object DB.
+ * Runs a single `git cat-file --batch-check` feeding SHAs on stdin;
+ * returns the subset that resolved.
+ */
+export async function checkShaReachability(
+  repoPath: string,
+  shas: string[]
+): Promise<Set<string>> {
+  const unique = [...new Set(shas.filter((s) => s))];
+  if (unique.length === 0) return new Set();
+  try {
+    const { stdout } = await execa(
+      'git',
+      ['-C', repoPath, 'cat-file', '--batch-check=%(objectname) %(objecttype)'],
+      { input: unique.join('\n') + '\n' }
+    );
+    const reachable = new Set<string>();
+    const lines = stdout.split('\n');
+    for (let i = 0; i < lines.length && i < unique.length; i++) {
+      const line = lines[i] ?? '';
+      // "<sha> missing" → unreachable; "<sha> commit" → present.
+      if (!line.includes(' missing')) {
+        reachable.add(unique[i]!);
+      }
+    }
+    return reachable;
+  } catch {
+    return new Set();
   }
 }
 

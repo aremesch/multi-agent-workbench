@@ -216,6 +216,11 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'archive.th.cacheR': 'Cache L',
   'archive.note':
     "Actif/inactif repose sur une heuristique de 30s sur le log du terminal. Les compteurs de tokens proviennent du transcript JSONL de Claude Code (disponible uniquement pour les agents claude-code).",
+  'archive.refresh.btn': 'Rafra\u00eechir les commits',
+  'archive.refresh.preserved':
+    'Commits existants conserv\u00e9s ; la branche ou la base a disparu.',
+  'archive.refresh.error': 'Rafra\u00eechissement \u00e9chou\u00e9 : {message}',
+  'archive.commit.stale': 'Objet local manquant ; le lien peut \u00eatre obsol\u00e8te.',
 
   // ── Common / API errors ──────────────────────────────────────────
   'common.close': 'Fermer',
