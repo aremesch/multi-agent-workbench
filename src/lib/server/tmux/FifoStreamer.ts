@@ -53,10 +53,21 @@ export class FifoStreamer extends EventEmitter {
 
   async create(): Promise<void> {
     mkdirSync(dirname(this.path), { recursive: true });
-    if (!existsSync(this.path)) {
-      // mkfifo is not in node's fs; shell out.
-      await execa('mkfifo', [this.path]);
+    // Always start from a fresh FIFO inode. If the previous maw process
+    // was SIGKILL'd before it could call stop(), the stale FIFO file on
+    // disk may still be bound to a surviving tmux-side `cat` writer.
+    // Unlinking + remaking guarantees our new reader is attached to a
+    // fresh kernel FIFO with no stray state from the old process
+    // lifetime. See docs/plans/v0.2-reattach-live-stream-fix.md.
+    if (existsSync(this.path)) {
+      try {
+        unlinkSync(this.path);
+      } catch {
+        // ignore — racing cleanup is fine, mkfifo will fail loudly if truly stuck
+      }
     }
+    // mkfifo is not in node's fs; shell out.
+    await execa('mkfifo', [this.path]);
   }
 
   /** Begin streaming. Calls back with each Buffer chunk tmux writes into the fifo. */

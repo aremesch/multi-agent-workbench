@@ -109,12 +109,25 @@ describe('Tmux.newSession', () => {
 });
 
 describe('Tmux — pipePane + stopPipePane', () => {
-  it('pipePane wires `cat >> "<fifo>"` with the -o flag so restarts replace cleanly', async () => {
+  it('pipePane wires `cat >> "<fifo>"` without -o so every call destroys+replaces the prior pipe', async () => {
     execaMock.mockResolvedValueOnce({ stdout: '' });
     await Tmux.pipePane('sid', '/tmp/x with space/fifo');
     const args = execaMock.mock.calls[0][1];
-    expect(args.slice(0, 6)).toEqual(['-L', 'maw', 'pipe-pane', '-o', '-t', 'sid']);
-    expect(args[6]).toBe('cat >> "/tmp/x with space/fifo"');
+    expect(args.slice(0, 5)).toEqual(['-L', 'maw', 'pipe-pane', '-t', 'sid']);
+    expect(args[5]).toBe('cat >> "/tmp/x with space/fifo"');
+  });
+
+  it('pipePane never uses -o — regression guard for the reattach dead-stream bug', async () => {
+    // `-o` makes pipe-pane a TOGGLE: if an existing pipe is present (e.g.
+    // a surviving `cat` child from the pre-SIGKILL maw process) the flag
+    // tells tmux to close the old pipe AND skip opening a new one. The
+    // net effect is pane output piped to /dev/null while capture-pane
+    // still works — the live terminal stream silently dies across
+    // restarts. See docs/plans/v0.2-reattach-live-stream-fix.md.
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    await Tmux.pipePane('sid', '/tmp/fifo');
+    const args = execaMock.mock.calls[0]![1];
+    expect(args).not.toContain('-o');
   });
 
   it('stopPipePane swallows errors — session may already be gone', async () => {

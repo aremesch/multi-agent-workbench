@@ -116,11 +116,25 @@ export class Tmux {
     ]));
   }
 
-  /** `tmux pipe-pane -o 'cat >> <fifo>'` — open-ended (-o) so restarts replace cleanly. */
+  /**
+   * `tmux pipe-pane 'cat >> <fifo>'` — no `-o`.
+   *
+   * Default (no `-o`) tmux semantics destroy any existing pipe and open a
+   * new one. That is what reattach needs: if the previous maw process was
+   * SIGKILL'd before it could call `stopPipePane`, tmux may still have
+   * `wp->pipe_fd != -1` from a surviving `cat` child. Under `-o` that
+   * existing pipe makes the flag a TOGGLE-OFF — tmux closes the old pipe
+   * and returns WITHOUT opening a new one, leaving pane output piped to
+   * nothing. The live terminal stream silently dies, though `capture-pane`
+   * still answers (so thumbnails and reconnect snapshots keep working and
+   * the bug looks "only the modal stream is broken").
+   *
+   * See `docs/plans/v0.2-reattach-live-stream-fix.md` for the full
+   * post-mortem.
+   */
   static async pipePane(session: string, fifoPath: string): Promise<void> {
     await execa('tmux', t([
       'pipe-pane',
-      '-o',
       '-t',
       session,
       `cat >> ${JSON.stringify(fifoPath)}`

@@ -86,11 +86,43 @@ describe('FifoStreamer.create', () => {
     expect(execaMock).toHaveBeenCalledWith('mkfifo', ['/tmp/fifos/fifo-a']);
   });
 
-  it('skips mkfifo when the pipe already exists (idempotent)', async () => {
+  it('unlinks and re-creates the pipe when a stale FIFO is already on disk (reattach fresh-inode guarantee)', async () => {
+    // Regression guard for the reattach dead-stream bug: if a prior maw
+    // process was SIGKILL'd before it could call stop(), the stale FIFO
+    // file may still be bound to a surviving tmux-side `cat` writer.
+    // create() MUST replace it so the new reader attaches to a fresh
+    // kernel FIFO with no stray state from the old lifetime.
+    // See docs/plans/v0.2-reattach-live-stream-fix.md.
     existsSyncMock.mockReturnValue(true);
+    execaMock.mockResolvedValueOnce({ stdout: '' });
     const s = new FifoStreamer({ fifoDir: '/tmp/fifos', agentId: 'a' });
     await s.create();
-    expect(execaMock).not.toHaveBeenCalled();
+    expect(unlinkSyncMock).toHaveBeenCalledWith('/tmp/fifos/fifo-a');
+    expect(execaMock).toHaveBeenCalledWith('mkfifo', ['/tmp/fifos/fifo-a']);
+    // mkfifo runs AFTER unlink.
+    const unlinkOrder = unlinkSyncMock.mock.invocationCallOrder[0]!;
+    const mkfifoOrder = execaMock.mock.invocationCallOrder[0]!;
+    expect(unlinkOrder).toBeLessThan(mkfifoOrder);
+  });
+
+  it('still mkfifos (without unlinking) when the path does not yet exist', async () => {
+    existsSyncMock.mockReturnValue(false);
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    const s = new FifoStreamer({ fifoDir: '/tmp/fifos', agentId: 'a' });
+    await s.create();
+    expect(unlinkSyncMock).not.toHaveBeenCalled();
+    expect(execaMock).toHaveBeenCalledWith('mkfifo', ['/tmp/fifos/fifo-a']);
+  });
+
+  it('swallows unlink errors — mkfifo still runs (racing cleanup is fine)', async () => {
+    existsSyncMock.mockReturnValue(true);
+    unlinkSyncMock.mockImplementationOnce(() => {
+      throw new Error('EACCES');
+    });
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    const s = new FifoStreamer({ fifoDir: '/tmp/fifos', agentId: 'a' });
+    await expect(s.create()).resolves.toBeUndefined();
+    expect(execaMock).toHaveBeenCalledWith('mkfifo', ['/tmp/fifos/fifo-a']);
   });
 });
 
