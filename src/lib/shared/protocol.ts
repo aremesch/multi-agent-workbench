@@ -10,7 +10,7 @@
 
 import type { AdapterEventKind } from './adapterTypes.js';
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 5;
 
 // ---------- client → server ----------
 
@@ -21,13 +21,6 @@ export interface CS_Hello {
 export interface CS_SubscribeAgent {
   type: 'subscribe_agent';
   agentId: string;
-  /**
-   * Client's current xterm dimensions. When present, the server resizes the
-   * tmux pane to these dims *before* capturing the reconnect snapshot, so the
-   * snapshot's line widths match what the viewer will render them at.
-   */
-  cols?: number;
-  rows?: number;
 }
 export interface CS_UnsubscribeAgent {
   type: 'unsubscribe_agent';
@@ -99,30 +92,21 @@ export interface SC_Welcome {
   userId: string;
 }
 /**
- * Reconnect snapshot. Sent once in response to `subscribe_agent`, carrying a
- * single `tmux capture-pane -e` frame sized to the client's declared dims.
- * The `chunks` array is kept for protocol stability but in practice always
- * holds exactly one entry; clients should `term.reset()` before applying it.
+ * Reconnect snapshot. Sent once in response to `subscribe_agent`, carrying
+ * the tmux pane's currently rendered grid as ANSI (from `capture-pane -p
+ * -e -S 0`). Clients `term.reset()` before writing `ansi` so the paint
+ * always lands on a clean grid — no redraw-bursting replay. `seq` is the
+ * `terminal_log.seq` watermark at capture time; after applying the
+ * snapshot the client sets its dedup cursor to this value so live `output`
+ * frames with `seq > snapshotSeq` paint on top without duplication and
+ * any catch-up re-emits (bytes that slipped past during the capture-pane
+ * await) are re-applied once.
  */
-export interface SC_Scrollback {
-  type: 'scrollback';
+export interface SC_PaneSnapshot {
+  type: 'pane_snapshot';
   agentId: string;
-  chunks: { seq: number; b64: string }[];
-}
-/**
- * Out-of-band conversation history rendered from the CLI's own transcript
- * (e.g. Claude Code's JSONL session log). Sent on subscribe *before* the
- * `scrollback` message so the client can write it into xterm scrollback;
- * the live `scrollback` snapshot then takes over the visible viewport.
- * Optional — only adapters with a `historySource` produce this.
- */
-export interface SC_HistorySnapshot {
-  type: 'history_snapshot';
-  agentId: string;
-  /** UTF-8 text body (already CRLF-normalized for xterm). */
-  body: string;
-  /** Server hit its size budget and elided the oldest entries. */
-  truncated: boolean;
+  ansi: string;
+  seq: number;
 }
 export interface SC_Output {
   type: 'output';
@@ -176,8 +160,7 @@ export interface SC_Pong {
 
 export type ServerMessage =
   | SC_Welcome
-  | SC_Scrollback
-  | SC_HistorySnapshot
+  | SC_PaneSnapshot
   | SC_Output
   | SC_AgentEvent
   | SC_AgentState

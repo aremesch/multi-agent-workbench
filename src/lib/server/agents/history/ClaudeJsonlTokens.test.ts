@@ -4,10 +4,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { summarizeTokenUsage } from './ClaudeJsonlTokens.js';
 
-// Phase 4 — token usage aggregator. Pairs with ClaudeJsonlHistory.test.ts;
-// both read the same JSONL transcript but answer different questions, so
-// they own separate test modules.
-
 let tempDir: string;
 
 beforeEach(() => {

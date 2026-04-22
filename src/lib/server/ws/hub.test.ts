@@ -16,17 +16,15 @@ const mocks = vi.hoisted(() => {
       kill: vi.fn()
     },
     // --- tmux shim ---
-    capturePane: vi.fn(),
     sendKey: vi.fn(),
-    cursorPosition: vi.fn(),
-    resizeWindow: vi.fn(),
+    capturePane: vi.fn(),
     // --- auth / config ---
     resolveSession: vi.fn(),
     logAuth: vi.fn(),
     config: { publicOrigin: null as string | null },
-    // --- history + db ---
-    renderClaudeJsonlHistory: vi.fn(),
-    getWorktree: vi.fn()
+    // --- db ---
+    getLatestTerminalSeq: vi.fn(),
+    listTerminalChunksSince: vi.fn()
   };
 });
 
@@ -35,10 +33,8 @@ vi.mock('../bootstrap.js', () => ({
 }));
 vi.mock('../tmux/TmuxSession.js', () => ({
   Tmux: {
-    capturePane: (...a: unknown[]) => mocks.capturePane(...a),
     sendKey: (...a: unknown[]) => mocks.sendKey(...a),
-    cursorPosition: (...a: unknown[]) => mocks.cursorPosition(...a),
-    resizeWindow: (...a: unknown[]) => mocks.resizeWindow(...a)
+    capturePane: (...a: unknown[]) => mocks.capturePane(...a)
   }
 }));
 vi.mock('../auth/session.js', async () => {
@@ -54,20 +50,12 @@ vi.mock('../auth/authLog.js', () => ({
 vi.mock('../config.js', () => ({
   getConfig: () => mocks.config
 }));
-vi.mock('../agents/history/ClaudeJsonlHistory.js', async () => {
-  const actual = await vi.importActual<typeof import('../agents/history/ClaudeJsonlHistory.js')>(
-    '../agents/history/ClaudeJsonlHistory.js'
-  );
-  return {
-    ...actual,
-    renderClaudeJsonlHistory: (...a: unknown[]) => mocks.renderClaudeJsonlHistory(...a)
-  };
-});
 vi.mock('../db/queries.js', () => ({
-  getWorktree: (...a: unknown[]) => mocks.getWorktree(...a)
+  getLatestTerminalSeq: (...a: unknown[]) => mocks.getLatestTerminalSeq(...a),
+  listTerminalChunksSince: (...a: unknown[]) => mocks.listTerminalChunksSince(...a)
 }));
 
-import { WsHub, collapseRepeatingTailBlocks, getWsHub } from './hub.js';
+import { WsHub, getWsHub } from './hub.js';
 import { SESSION_COOKIE } from '../auth/session.js';
 import { PROTOCOL_VERSION } from '$shared/protocol';
 
@@ -105,30 +93,16 @@ function makeRuntime(overrides: Partial<{
   userId: string;
   agentId: string;
   tmuxSession: string;
-  scrollbackMode: 'visible' | 'history';
-  historySource: { kind: string } | null;
-  cliSessionId: string | null;
-  worktreeId: string;
 }> = {}): EventEmitter & Record<string, unknown> {
   const o = {
     userId: 'u1',
     agentId: 'a1',
     tmuxSession: 'maw-agent-a1',
-    scrollbackMode: 'visible' as const,
-    historySource: null as { kind: string } | null,
-    cliSessionId: null as string | null,
-    worktreeId: 'w1',
     ...overrides
   };
   const rt = new EventEmitter() as EventEmitter & Record<string, unknown>;
-  rt.agent = {
-    user_id: o.userId,
-    worktree_id: o.worktreeId,
-    cli_session_id: o.cliSessionId
-  };
+  rt.agent = { user_id: o.userId };
   rt.tmuxSession = o.tmuxSession;
-  rt.scrollbackMode = o.scrollbackMode;
-  rt.historySource = o.historySource;
   rt.resize = vi.fn(async () => undefined);
   rt.enqueueInput = vi.fn(async () => undefined);
   rt.enqueueRawKeys = vi.fn(async () => undefined);
@@ -156,12 +130,10 @@ beforeEach(() => {
   mocks.config.publicOrigin = null;
   mocks.supervisor.get.mockReset();
   mocks.supervisor.kill.mockReset();
-  mocks.capturePane.mockReset().mockResolvedValue('');
   mocks.sendKey.mockReset().mockResolvedValue(undefined);
-  mocks.cursorPosition.mockReset().mockResolvedValue(null);
-  mocks.resizeWindow.mockReset().mockResolvedValue(undefined);
-  mocks.renderClaudeJsonlHistory.mockReset().mockResolvedValue(null);
-  mocks.getWorktree.mockReset();
+  mocks.capturePane.mockReset().mockResolvedValue('');
+  mocks.getLatestTerminalSeq.mockReset().mockReturnValue(0);
+  mocks.listTerminalChunksSince.mockReset().mockReturnValue([]);
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
@@ -170,15 +142,12 @@ afterEach(() => {
 });
 
 // -----------------------------------------------------------------------------
-// collapseRepeatingTailBlocks — quick re-export guard (full unit test lives in
-// collapseRepeatingTailBlocks.test.ts)
+// Singleton accessor
 // -----------------------------------------------------------------------------
 
 describe('hub re-exports', () => {
-  it('exposes collapseRepeatingTailBlocks and getWsHub', () => {
-    expect(typeof collapseRepeatingTailBlocks).toBe('function');
+  it('getWsHub returns a singleton WsHub', () => {
     expect(getWsHub()).toBeInstanceOf(WsHub);
-    // Singleton: same instance across calls.
     expect(getWsHub()).toBe(getWsHub());
   });
 });
@@ -298,7 +267,7 @@ describe('HubClient — defensive parsing', () => {
 });
 
 // -----------------------------------------------------------------------------
-// subscribe_agent — dispatch + snapshot
+// subscribe_agent — pane snapshot + catch-up (protocol v5)
 // -----------------------------------------------------------------------------
 
 describe('HubClient — subscribe_agent', () => {
@@ -321,100 +290,93 @@ describe('HubClient — subscribe_agent', () => {
     expect(err.code).toBe('forbidden');
   });
 
-  it('captures with startLine=0 when scrollbackMode is "visible" (TUI CLI)', async () => {
-    const rt = makeRuntime({ scrollbackMode: 'visible' });
+  it('ships the tmux pane state as a `pane_snapshot` with the current seq watermark', async () => {
+    const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    mocks.capturePane.mockResolvedValue('screen bytes\n');
-    const { ws } = attachAuthedClient();
-    ws.deliver({ type: 'subscribe_agent', agentId: 'a1', cols: 80, rows: 24 });
-    // The snapshot is async (awaits a 25ms fence); wait for it.
-    await new Promise((r) => setTimeout(r, 60));
-    expect(mocks.capturePane).toHaveBeenCalledWith('maw-agent-a1', 0);
-    const scrollback = ws.sentMessages().find((m) => (m as { type?: string }).type === 'scrollback') as {
-      chunks: { b64: string }[];
-    };
-    expect(scrollback).toBeDefined();
-    expect(Buffer.from(scrollback.chunks[0].b64, 'base64').toString('utf8')).toContain('screen bytes');
-  });
-
-  it('captures with startLine=-500 when scrollbackMode is "history"', async () => {
-    mocks.supervisor.get.mockReturnValue(makeRuntime({ scrollbackMode: 'history' }));
-    mocks.capturePane.mockResolvedValue('log line\n');
+    mocks.getLatestTerminalSeq.mockReturnValue(42);
+    mocks.capturePane.mockResolvedValue('\x1b[2J\x1b[H$ ready\r\n');
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
-    await new Promise((r) => setTimeout(r, 10));
-    expect(mocks.capturePane).toHaveBeenCalledWith('maw-agent-a1', -500);
-  });
 
-  it('emits a history_snapshot before scrollback when the adapter declares claude-jsonl', async () => {
-    const rt = makeRuntime({
-      scrollbackMode: 'visible',
-      historySource: { kind: 'claude-jsonl' },
-      cliSessionId: 'session-uuid',
-      worktreeId: 'w1'
-    });
-    mocks.supervisor.get.mockReturnValue(rt);
-    mocks.getWorktree.mockReturnValue({ path: '/home/u/wt' });
-    mocks.renderClaudeJsonlHistory.mockResolvedValue('rendered body\n');
-    mocks.capturePane.mockResolvedValue('live bytes\n');
-    const { ws } = attachAuthedClient();
-    ws.deliver({ type: 'subscribe_agent', agentId: 'a1', cols: 80, rows: 24 });
-    await new Promise((r) => setTimeout(r, 60));
-    const types = ws.sentMessages().map((m) => (m as { type?: string }).type);
-    const historyIdx = types.indexOf('history_snapshot');
-    const scrollbackIdx = types.indexOf('scrollback');
-    expect(historyIdx).toBeGreaterThan(-1);
-    expect(scrollbackIdx).toBeGreaterThan(-1);
-    expect(historyIdx).toBeLessThan(scrollbackIdx);
-    const hist = ws.sentMessages()[historyIdx] as { truncated: boolean; body: string };
-    expect(hist.truncated).toBe(false);
-  });
-
-  it('sets truncated=true when the renderer prepends the truncation marker', async () => {
-    const rt = makeRuntime({
-      scrollbackMode: 'visible',
-      historySource: { kind: 'claude-jsonl' },
-      cliSessionId: 'sid',
-      worktreeId: 'w'
-    });
-    mocks.supervisor.get.mockReturnValue(rt);
-    mocks.getWorktree.mockReturnValue({ path: '/w' });
-    mocks.renderClaudeJsonlHistory.mockResolvedValue(
-      '--- (history truncated to most recent entries above) ---\n\nactual'
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
     );
-    const { ws } = attachAuthedClient();
-    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
-    await new Promise((r) => setTimeout(r, 10));
-    const hist = ws.sentMessages().find((m) => (m as { type?: string }).type === 'history_snapshot') as
-      | { truncated: boolean }
-      | undefined;
-    expect(hist?.truncated).toBe(true);
+    expect(mocks.capturePane).toHaveBeenCalledWith('maw-agent-a1', 0);
+    expect(mocks.getLatestTerminalSeq).toHaveBeenCalledWith('a1');
+    const snap = ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot') as {
+      ansi: string;
+      seq: number;
+    };
+    expect(snap.ansi).toBe('\x1b[2J\x1b[H$ ready\r\n');
+    expect(snap.seq).toBe(42);
   });
 
-  it('skips the resize dance when cols/rows are absent', async () => {
+  it('follows the snapshot with a catch-up of terminal_log chunks newer than the snapshot seq', async () => {
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getLatestTerminalSeq.mockReturnValue(5);
+    mocks.capturePane.mockResolvedValue('');
+    mocks.listTerminalChunksSince.mockReturnValue([
+      { seq: 6, chunk: Buffer.from('x', 'utf8') },
+      { seq: 7, chunk: Buffer.from('y', 'utf8') }
+    ]);
+    const { ws } = attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().filter((m) => (m as { type?: string }).type === 'output').length
+      ).toBe(2)
+    );
+    expect(mocks.listTerminalChunksSince).toHaveBeenCalledWith('a1', 5);
+    const outs = ws
+      .sentMessages()
+      .filter((m) => (m as { type?: string }).type === 'output') as Array<{
+      seq: number;
+      b64: string;
+    }>;
+    expect(outs.map((o) => o.seq)).toEqual([6, 7]);
+    expect(Buffer.from(outs[0]!.b64, 'base64').toString('utf8')).toBe('x');
+    expect(Buffer.from(outs[1]!.b64, 'base64').toString('utf8')).toBe('y');
+    // Wire order: snapshot before catch-up.
+    const frames = ws.sentMessages() as Array<{ type: string }>;
+    const snapIdx = frames.findIndex((f) => f.type === 'pane_snapshot');
+    const firstOutIdx = frames.findIndex((f) => f.type === 'output');
+    expect(snapIdx).toBeGreaterThanOrEqual(0);
+    expect(firstOutIdx).toBeGreaterThan(snapIdx);
+  });
+
+  it('emits an empty-ansi snapshot (with console.warn) when capture-pane fails', async () => {
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getLatestTerminalSeq.mockReturnValue(3);
+    mocks.capturePane.mockRejectedValue(new Error('tmux kaboom'));
+    const { ws } = attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
+    );
+    const snap = ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot') as {
+      ansi: string;
+      seq: number;
+    };
+    expect(snap.ansi).toBe('');
+    expect(snap.seq).toBe(3);
+  });
+
+  it('fans out runtime `output` events as output frames (live stream)', () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
-    await new Promise((r) => setTimeout(r, 10));
-    expect(rt.resize).not.toHaveBeenCalled();
-  });
-
-  it('resizes the tmux pane when cols/rows are provided', async () => {
-    const rt = makeRuntime();
-    mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
-    ws.deliver({ type: 'subscribe_agent', agentId: 'a1', cols: 80, rows: 24 });
-    await new Promise((r) => setTimeout(r, 40));
-    expect(rt.resize).toHaveBeenCalledWith(80, 24);
-  });
-
-  it('fans out runtime `output` events as output frames', async () => {
-    const rt = makeRuntime();
-    mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
-    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
-    await new Promise((r) => setTimeout(r, 10));
+    // Listener registration is synchronous within handleSubscribe, so a
+    // live output event landing BEFORE the async snapshot resolves still
+    // reaches the client (client dedup handles overlap with catch-up).
     rt.emit('output', { seq: 42, chunk: Buffer.from('hello', 'utf8') });
     const out = ws.sentMessages().find((m) => (m as { type?: string }).type === 'output') as {
       seq: number;
@@ -424,12 +386,11 @@ describe('HubClient — subscribe_agent', () => {
     expect(Buffer.from(out.b64, 'base64').toString('utf8')).toBe('hello');
   });
 
-  it('fans out runtime `state` events as agent_state frames', async () => {
+  it('fans out runtime `state` events as agent_state frames', () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
-    await new Promise((r) => setTimeout(r, 10));
     rt.emit('state', 'WAITING_PROMPT');
     const st = ws.sentMessages().find((m) => (m as { type?: string }).type === 'agent_state') as {
       status: string;
@@ -437,16 +398,38 @@ describe('HubClient — subscribe_agent', () => {
     expect(st.status).toBe('WAITING_PROMPT');
   });
 
-  it('is idempotent — subscribing twice does not double-attach listeners', async () => {
+  it('is idempotent — subscribing twice does not double-attach listeners', () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
-    await new Promise((r) => setTimeout(r, 10));
     rt.emit('output', { seq: 1, chunk: Buffer.from('x') });
     const outputs = ws.sentMessages().filter((m) => (m as { type?: string }).type === 'output');
     expect(outputs.length).toBe(1);
+  });
+
+  it('drops the snapshot tail if the client unsubscribes before capture-pane resolves', async () => {
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getLatestTerminalSeq.mockReturnValue(0);
+    // Capture-pane never resolves until we let it.
+    let releaseCapture: (v: string) => void = () => {};
+    mocks.capturePane.mockReturnValue(
+      new Promise<string>((r) => {
+        releaseCapture = r;
+      })
+    );
+    const { ws } = attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+    // Unsubscribe while the snapshot is still pending.
+    ws.deliver({ type: 'unsubscribe_agent', agentId: 'a1' });
+    // Now release capture-pane — the tail should bail out.
+    releaseCapture('ignored-by-client');
+    await new Promise((r) => setImmediate(r));
+    expect(
+      ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+    ).toBeUndefined();
   });
 });
 
@@ -455,23 +438,21 @@ describe('HubClient — subscribe_agent', () => {
 // -----------------------------------------------------------------------------
 
 describe('HubClient — unsubscribe + cleanup', () => {
-  it('detaches runtime listeners on unsubscribe_agent', async () => {
+  it('detaches runtime listeners on unsubscribe_agent', () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
-    await new Promise((r) => setTimeout(r, 10));
     const before = rt.listenerCount('output');
     ws.deliver({ type: 'unsubscribe_agent', agentId: 'a1' });
     expect(rt.listenerCount('output')).toBe(before - 1);
   });
 
-  it('cleanup on ws close removes every subscription', async () => {
+  it('cleanup on ws close removes every subscription', () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
     const { ws } = attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
-    await new Promise((r) => setTimeout(r, 10));
     ws.emit('close');
     expect(rt.listenerCount('output')).toBe(0);
     expect(rt.listenerCount('state')).toBe(0);

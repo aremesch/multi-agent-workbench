@@ -46,46 +46,23 @@
   // Debounce resize broadcasts: xterm fires onResize during the initial fit
   // as well as for every wheel of a window-drag, and we don't need to spam
   // tmux with 30 resize-window calls per drag.
-  //
-  // The *first* onResize after mount is special: it's how we learn the real
-  // xterm dimensions, and it's what we use to issue the very first
-  // `subscribe_agent` (so the server's reconnect snapshot is captured at
-  // the viewer's actual width). Until that lands we haven't subscribed at
-  // all — there's nothing to send a resize for.
   let lastSentCols = 0;
   let lastSentRows = 0;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-  let subscribed = false;
-  // Holds the most recent `history_snapshot` body until the matching live
-  // `scrollback` arrives. We can't write history immediately because
-  // `onScrollback` calls `term.reset()` and would wipe it. Server always
-  // sends history first, scrollback second, so this is the simple buffer.
-  let pendingHistory: string | null = null;
 
   const handlers: AgentHandlers = {
     onOutput: ({ b64 }) => {
       term?.write(b64ToBytes(b64));
     },
-    onHistorySnapshot: ({ body }) => {
-      // Out-of-band CLI transcript prepended before the live scrollback. We
-      // arrive *before* `onScrollback`, which calls `term.reset()` — so we
-      // queue the body to be written immediately after that reset, otherwise
-      // the live snapshot would wipe us. See `pendingHistory` below.
-      pendingHistory = body;
-    },
-    onScrollback: ({ chunks }) => {
-      // Reconnect snapshot: wipe parser state so nothing carries over
-      // from a previous frame (e.g. a warm-up write before this panel
-      // mounted, or a stale alt-screen mode), then prepend any history
-      // body that arrived alongside this snapshot, then apply the live
-      // capture. The history body is plain text already CRLF-normalized
-      // server-side; the live capture is the byte-accurate current screen.
+    onPaneSnapshot: ({ ansi }) => {
+      // Reconnect = current-pane snapshot. Wipe parser state so nothing
+      // from a previous frame (or a stray pre-snapshot live byte that
+      // raced the capture-pane await) leaks into how the ANSI is parsed,
+      // then paint the captured grid. Empty `ansi` (fresh pane, or
+      // capture-pane failed) still triggers the reset so the screen
+      // stays consistent on reattach.
       term?.reset();
-      if (pendingHistory) {
-        term?.write(pendingHistory);
-        pendingHistory = null;
-      }
-      for (const c of chunks) term?.write(b64ToBytes(c.b64));
+      if (ansi.length > 0) term?.write(ansi);
     },
     onEvent: ({ kind, choices, detail }) => {
       if (kind === 'prompt_detected') {
@@ -101,23 +78,12 @@
   };
 
   function scheduleResize(cols: number, rows: number): void {
-    const ws = getMawWsClient();
-    if (!subscribed) {
-      // First onResize after fit: kick off the subscribe with real dims so
-      // the server resize-then-captures at the right width. No debounce —
-      // we want the snapshot in flight ASAP.
-      subscribed = true;
-      lastSentCols = cols;
-      lastSentRows = rows;
-      ws.subscribe(agent.id, handlers, cols, rows);
-      return;
-    }
     if (cols === lastSentCols && rows === lastSentRows) return;
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       lastSentCols = cols;
       lastSentRows = rows;
-      ws.sendResize(agent.id, cols, rows);
+      getMawWsClient().sendResize(agent.id, cols, rows);
     }, 120);
   }
 
@@ -134,11 +100,11 @@
   }
 
   onMount(() => {
-    // Shared ws singleton; layout already kicked it open, but this call is
-    // idempotent and guarantees a client exists before any keystrokes go
-    // out. Subscribe is deferred until the first `onTerminalResize` fires
-    // with real xterm dimensions — see `scheduleResize` above.
-    getMawWsClient();
+    // Subscribe immediately — protocol v5 ships a `pane_snapshot` in reply,
+    // so the terminal paints the current tmux grid without waiting for any
+    // resize handshake. Resize messages still flow separately through
+    // `CS_Resize` once xterm reports its dimensions.
+    getMawWsClient().subscribe(agent.id, handlers);
     // `(pointer: coarse)` == primary pointer is a finger. Good enough for
     // phones and tablets; desktops and laptops with a mouse/trackpad stay
     // `false` unless the user flips `mobileQuickKeysMode` to `always`.
@@ -157,7 +123,7 @@
 
   onDestroy(() => {
     if (resizeTimer) clearTimeout(resizeTimer);
-    if (subscribed) getMawWsClient().unsubscribe(agent.id);
+    getMawWsClient().unsubscribe(agent.id);
     mql?.removeEventListener('change', onTouchChange);
     mql = null;
   });

@@ -3,11 +3,6 @@
   "kind": "shell",
   "displayName": "Shell (bash smoke test)",
 
-  // Line-based REPL: every prompt/command/output is an append to the pane,
-  // never a full-UI redraw. The hub should hand the reconnect modal real
-  // session backlog (deduped) instead of just the visible screen.
-  "scrollbackMode": "history",
-
   // Run directly in the repo root on whatever branch is already checked
   // out — no disposable `maw/<agentId>` worktree. The smoke adapter is a
   // plain bash shell; a throwaway side branch would be noise.

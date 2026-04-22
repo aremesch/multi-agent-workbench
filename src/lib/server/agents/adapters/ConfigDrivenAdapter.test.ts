@@ -263,24 +263,24 @@ describe('ConfigDrivenAdapter', () => {
         worktreeCwd: '/tmp/wt',
         task: { title: 't1', body: 'b1' },
         env: { HOME: '/home/ar' },
-        agent: { id: 'agent-xyz', cliSessionId: 'sess-123' },
+        agent: { id: 'agent-xyz' },
         ...overrides
       };
     }
 
-    it('substitutes {{worktree}}, {{agent.id}}, {{agent.cliSessionId}}', () => {
+    it('substitutes {{worktree}} and {{agent.id}}', () => {
       const a = new ConfigDrivenAdapter(
         cfg({
           spawn: {
-            command: 'claude',
-            args: ['--session-id', '{{agent.cliSessionId}}', '--cwd', '{{worktree}}'],
+            command: 'bash',
+            args: ['--cwd', '{{worktree}}'],
             env: { AGENT_ID: '{{agent.id}}' }
           }
         })
       );
       const spec = a.buildSpawnSpec(opts());
-      expect(spec.command).toBe('claude');
-      expect(spec.args).toEqual(['--session-id', 'sess-123', '--cwd', '/tmp/wt']);
+      expect(spec.command).toBe('bash');
+      expect(spec.args).toEqual(['--cwd', '/tmp/wt']);
       expect(spec.env.AGENT_ID).toBe('agent-xyz');
       expect(spec.cwd).toBe('/tmp/wt');
     });
@@ -317,14 +317,6 @@ describe('ConfigDrivenAdapter', () => {
       );
       const spec = a.buildSpawnSpec(opts());
       expect(spec.args).toEqual(['', 'after']);
-    });
-
-    it('null cliSessionId substitutes to empty string', () => {
-      const a = new ConfigDrivenAdapter(
-        cfg({ spawn: { command: 'x', args: ['{{agent.cliSessionId}}'] } })
-      );
-      const spec = a.buildSpawnSpec(opts({ agent: { id: 'a', cliSessionId: null } }));
-      expect(spec.args).toEqual(['']);
     });
 
     it('null task substitutes title/body to empty', () => {
@@ -404,22 +396,10 @@ describe('ConfigDrivenAdapter', () => {
   });
 
   describe('exposed readonly properties', () => {
-    it('mirrors config for kind / displayName / scrollbackMode / historySource', () => {
-      const a = new ConfigDrivenAdapter(
-        cfg({
-          scrollbackMode: 'history',
-          historySource: { kind: 'claude-jsonl' }
-        })
-      );
+    it('mirrors config for kind / displayName', () => {
+      const a = new ConfigDrivenAdapter(cfg());
       expect(a.kind).toBe('shell');
       expect(a.displayName).toBe('Shell');
-      expect(a.scrollbackMode).toBe('history');
-      expect(a.historySource).toEqual({ kind: 'claude-jsonl' });
-    });
-
-    it('historySource is null when unset', () => {
-      const a = new ConfigDrivenAdapter(cfg());
-      expect(a.historySource).toBeNull();
     });
   });
 });

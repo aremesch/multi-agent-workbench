@@ -62,16 +62,6 @@ describe('adapterConfigSchema', () => {
   });
 
   describe('defaults', () => {
-    it('scrollbackMode defaults to "visible"', () => {
-      const r = adapterConfigSchema.parse(minimal());
-      expect(r.scrollbackMode).toBe('visible');
-    });
-
-    it('scrollbackMode accepts explicit "history"', () => {
-      const r = adapterConfigSchema.parse({ ...minimal(), scrollbackMode: 'history' });
-      expect(r.scrollbackMode).toBe('history');
-    });
-
     it('idleDetection defaults: method=inactivity, inactivityMs=2000', () => {
       const r = adapterConfigSchema.parse(minimal());
       expect(r.idleDetection.method).toBe('inactivity');
@@ -124,30 +114,6 @@ describe('adapterConfigSchema', () => {
     it('defaults.autoAnswer defaults to empty array', () => {
       const r = adapterConfigSchema.parse(minimal());
       expect(r.defaults.autoAnswer).toEqual([]);
-    });
-  });
-
-  describe('historySource', () => {
-    it('accepts kind: "claude-jsonl"', () => {
-      const r = adapterConfigSchema.safeParse({
-        ...minimal(),
-        historySource: { kind: 'claude-jsonl' }
-      });
-      expect(r.success).toBe(true);
-      if (r.success) expect(r.data.historySource?.kind).toBe('claude-jsonl');
-    });
-
-    it('rejects unknown historySource.kind', () => {
-      const r = adapterConfigSchema.safeParse({
-        ...minimal(),
-        historySource: { kind: 'other' }
-      });
-      expect(r.success).toBe(false);
-    });
-
-    it('is optional (omitted → undefined)', () => {
-      const r = adapterConfigSchema.parse(minimal());
-      expect(r.historySource).toBeUndefined();
     });
   });
 

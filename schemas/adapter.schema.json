@@ -8,26 +8,9 @@
     "$schema": { "type": "string" },
     "kind": { "type": "string", "minLength": 1 },
     "displayName": { "type": "string", "minLength": 1 },
-    "scrollbackMode": {
-      "type": "string",
-      "enum": ["visible", "history"],
-      "description": "Reconnect snapshot mode. 'visible' captures only what's on screen (right for TUI CLIs like Claude Code, Codex, Gemini). 'history' captures ~500 lines of tmux scrollback through the repeating-tail dedup (right for line-based CLIs like shell). Defaults to 'visible'."
-    },
     "createWorktree": {
       "type": "boolean",
       "description": "Whether spawning this adapter creates a dedicated git worktree under <worktreeRoot>/<agentId>. Defaults to true. Set false to run directly in the repo root on whatever branch is already checked out (e.g. shell smoke adapter)."
-    },
-    "historySource": {
-      "type": "object",
-      "description": "Optional structured CLI transcript reader for the reconnect history snapshot. 'claude-jsonl' reads ~/.claude/projects/<encoded-cwd>/<cli_session_id>.jsonl.",
-      "required": ["kind"],
-      "properties": {
-        "kind": { "type": "string", "enum": ["claude-jsonl"] }
-      }
-    },
-    "forceRedrawOnReconnect": {
-      "type": "boolean",
-      "description": "When true, the hub nudges pane width by one cell and back after shipping the reconnect snapshot so the CLI sees a SIGWINCH and fully repaints. Defaults to false; enable for TUI CLIs (Claude Code) that otherwise leave the viewer looking at a frozen frame."
     },
     "mobileQuickKeys": {
       "type": "array",

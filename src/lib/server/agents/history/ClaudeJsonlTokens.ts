@@ -7,7 +7,8 @@
  */
 
 import { promises as fs } from 'node:fs';
-import { jsonlPathFor } from './ClaudeJsonlHistory';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export interface TokenUsageSummary {
   inputTokens: number;
@@ -26,6 +27,18 @@ interface JsonlUsageEntry {
       cache_read_input_tokens?: number;
     };
   };
+}
+
+/**
+ * Map an absolute filesystem path to the directory name Claude Code uses
+ * under `~/.claude/projects/`. Empirically: every `/` and `.` becomes `-`.
+ */
+function encodeCwdForClaude(cwd: string): string {
+  return cwd.replace(/[/.]/g, '-');
+}
+
+export function jsonlPathFor(cwd: string, sessionId: string): string {
+  return join(homedir(), '.claude', 'projects', encodeCwdForClaude(cwd), `${sessionId}.jsonl`);
 }
 
 /**
@@ -67,5 +80,3 @@ export async function summarizeTokenUsage(filePath: string): Promise<TokenUsageS
 
   return summary;
 }
-
-export { jsonlPathFor };

@@ -3,10 +3,6 @@
   "kind": "codex",
   "displayName": "Codex CLI",
 
-  // TUI CLI — full-UI repaints in the main buffer, same class as Claude
-  // Code. Keep reconnect snapshots to the visible pane only.
-  "scrollbackMode": "visible",
-
   // Mobile quick-keys for the phone PWA. Starter set — same rationale as
   // claude-code.jsonc. Tune against a real codex session.
   "mobileQuickKeys": [

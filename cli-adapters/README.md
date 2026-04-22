@@ -18,8 +18,6 @@ autocomplete — keep both in sync when adding fields.
   "$schema": "../schemas/adapter.schema.json",
   "kind": "...",
   "displayName": "...",
-  "scrollbackMode": "visible",
-  "historySource": { "kind": "claude-jsonl" },
   "spawn":         { ... },
   "input":         { ... },
   "patterns":      [ ... ],
@@ -35,8 +33,6 @@ autocomplete — keep both in sync when adding fields.
 | `$schema` | no | string | Editor autocomplete only. Always `"../schemas/adapter.schema.json"`. |
 | `kind` | **yes** | string | Stable adapter key (e.g. `claude-code`). Must be unique across the directory. Persisted on agent rows and referenced in UI code. |
 | `displayName` | **yes** | string | Human-readable label shown in the spawn form. |
-| `scrollbackMode` | no | `"visible"` \| `"history"` | How the hub captures the reconnect snapshot. **Default `"visible"`.** Use `"visible"` for TUI CLIs that repaint the whole pane (Claude Code, Codex, Gemini) — `capture-pane -S 0` only. Use `"history"` for line-based CLIs/REPLs — `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`. |
-| `historySource` | no | object | Out-of-band structured transcript reader used *in addition* to the live capture. Currently only `{ "kind": "claude-jsonl" }` is supported — it reads `~/.claude/projects/<encoded-cwd>/<cli_session_id>.jsonl` and ships it as a `history_snapshot` WS frame ahead of the live scrollback. Pair with `scrollbackMode: "visible"` to recover the pre-scroll history the visible capture drops. |
 | `mobileQuickKeys` | no | array | On-screen key-chord buttons rendered under xterm on touch devices (or when the user forces them on via `/settings`). Soft keyboards don't expose arrow keys / Esc / Shift+Tab / Ctrl+C — each adapter declares the ones its CLI needs. See [mobileQuickKeys](#mobilequickkeys). Default `[]` (adapter opts out). |
 | `spawn` | **yes** | object | How to launch the CLI. See below. |
 | `input` | **yes** | object | How the hub sends keystrokes via `tmux send-keys`. See below. |
@@ -61,8 +57,6 @@ Both `spawn.args`, `spawn.env` values and `spawn.initialInput` support
 
 - `worktree` — absolute path of the agent's worktree (`cwd`).
 - `agent.id` — MAW agent row id.
-- `agent.cliSessionId` — UUID minted at spawn. For `claude-code`, pass
-  this as `--session-id` so the JSONL transcript path is deterministic.
 - `role.systemPrompt` — role prompt text.
 - `role.toolConfig` — role tool config as JSON.
 - `task.title` / `task.body` — task fields, empty string if no task.
@@ -150,32 +144,26 @@ and the user (`ui.mobileQuickKeys` in `/settings` — `auto` / `always` /
    any secrets via `env` with `{{env.FOO}}`; wire the task prompt
    via `initialInput: "{{task.body}}"` if the CLI accepts text on
    stdin; expose user toggles via `optionalArgs`.
-3. **Pick `scrollbackMode`.** TUI/ink-style CLI that repaints →
-   `"visible"`. Line-based REPL/shell → `"history"`. If in doubt,
-   leave it at the default `"visible"` and iterate.
-4. **Pick `historySource`** (optional). Only `claude-jsonl` exists
-   today. Add it if the CLI writes a compatible JSONL transcript
-   and you set `scrollbackMode: "visible"`.
-5. **Define `input.promptAnswers`.** Map human-meaningful names
+3. **Define `input.promptAnswers`.** Map human-meaningful names
    (`yes`, `no`, `1`, `abort`, …) to the exact tmux key sequences
    the CLI expects. `promptAnswers` values feed both `patterns[].choices`
    and `defaults.autoAnswer`.
-6. **Write `patterns`.** Start with `ready` (prompt is back, agent
+4. **Write `patterns`.** Start with `ready` (prompt is back, agent
    idle) and whatever `prompt_detected` lines the CLI shows when it
    wants permission. Add `task_done` and `error` as you discover
    real lines. Use named capture groups to surface data to the UI.
-7. **Pick `idleDetection`.** If the CLI shows a recognisable prompt
+5. **Pick `idleDetection`.** If the CLI shows a recognisable prompt
    line, use `cursor_at_prompt` with a tight regex — this is more
    accurate than time-based inactivity. Otherwise use `inactivity`.
-8. **Tune against a real session.** Run the CLI manually, copy the
+6. **Tune against a real session.** Run the CLI manually, copy the
    raw bytes to a file, then iterate patterns with
    `pnpm test:adapter cli-adapters/<kind>.jsonc <session.txt>`.
    The registry hot-reloads, so no restart needed while you tweak.
-9. **Validate end-to-end.** `pnpm check` for typing, then spawn an
+7. **Validate end-to-end.** `pnpm check` for typing, then spawn an
    agent of this kind from the UI and exercise reconnect (close the
    modal, reopen it) and prompt-handling (let it ask for permission,
    answer from the UI).
-10. **Do not** mirror schema changes only in `adapter.schema.json`.
-    If your adapter needs a new field, add it to the Zod schema
-    *first* (`adapter.config.schema.ts`) — that's the validator — and
-    then update `adapter.schema.json` for editor autocomplete.
+8. **Do not** mirror schema changes only in `adapter.schema.json`.
+   If your adapter needs a new field, add it to the Zod schema
+   *first* (`adapter.config.schema.ts`) — that's the validator — and
+   then update `adapter.schema.json` for editor autocomplete.
