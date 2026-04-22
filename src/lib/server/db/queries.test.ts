@@ -82,6 +82,7 @@ import {
   setUserSetting,
   summarizeTerminalActivity,
   updateAgentAttention,
+  updateAgentCommitSnapshot,
   updateAgentCurrentTask,
   updateAgentStatus,
   updateUserPasswordHash,
@@ -512,6 +513,27 @@ describe('agents', () => {
     expect(getAgent('a1')?.current_task_id).toBe('t1');
     updateAgentCurrentTask('a1', null);
     expect(getAgent('a1')?.current_task_id).toBeNull();
+  });
+
+  it('updateAgentCommitSnapshot writes snapshot fields without bumping updated_at', () => {
+    // Archive falls back to agent.updated_at for the "ended" timestamp
+    // when no run row carries an ended_at. A manual commits refresh must
+    // not shift that display — so the snapshot-metadata update must
+    // leave updated_at alone.
+    seedAgent('a1', 'user-1');
+    const before = getAgent('a1')!;
+    const beforeUpdatedAt = before.updated_at;
+    // Force a clock gap so any bump would be observable.
+    db!.prepare('UPDATE agents SET updated_at = ? WHERE id = ?').run(
+      beforeUpdatedAt - 10_000,
+      'a1'
+    );
+    const pinned = getAgent('a1')!.updated_at;
+    updateAgentCommitSnapshot('a1', 'deadbee', 1_700_000_000);
+    const after = getAgent('a1')!;
+    expect(after.head_sha_at_snapshot).toBe('deadbee');
+    expect(after.commits_snapshotted_at).toBe(1_700_000_000);
+    expect(after.updated_at).toBe(pinned);
   });
 
   it('deleteAgent removes the row', () => {

@@ -484,9 +484,9 @@ export function updateAgentCommitSnapshot(
   head_sha_at_snapshot: string | null,
   commits_snapshotted_at: number
 ): void {
-  prep<[string | null, number, number, string]>(
-    'UPDATE agents SET head_sha_at_snapshot = ?, commits_snapshotted_at = ?, updated_at = ? WHERE id = ?'
-  ).run(head_sha_at_snapshot, commits_snapshotted_at, now(), id);
+  prep<[string | null, number, string]>(
+    'UPDATE agents SET head_sha_at_snapshot = ?, commits_snapshotted_at = ? WHERE id = ?'
+  ).run(head_sha_at_snapshot, commits_snapshotted_at, id);
 }
 
 export function updateAgentStatus(id: string, status: AgentStatus): void {

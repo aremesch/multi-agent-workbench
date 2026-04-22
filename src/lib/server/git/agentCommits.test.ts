@@ -176,14 +176,20 @@ describe('checkShaReachability', () => {
     expect(execaMock).not.toHaveBeenCalled();
   });
 
-  it('returns the subset present in the object DB', async () => {
-    execaMock.mockImplementation((_cmd, args) => {
-      expect(args.slice(2)).toEqual([
-        'cat-file',
-        '--batch-check=%(objectname) %(objecttype)'
-      ]);
+  it('returns the subset reachable from remote-tracking refs', async () => {
+    // 1st call: has-remote probe (returns a ref → remote exists).
+    // Subsequent calls: per-sha `for-each-ref --contains`.
+    execaMock.mockImplementation((_cmd, args: string[]) => {
+      const a = args.slice(2);
+      if (a.includes('--count=1') && !a.includes('--contains')) {
+        // probe
+        return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+      }
+      const i = a.indexOf('--contains');
+      const sha = a[i + 1];
+      const onRemote = sha === 'aaa1111' || sha === 'ccc3333';
       return Promise.resolve({
-        stdout: 'aaa1111 commit\nbbb2222 missing\nccc3333 commit',
+        stdout: onRemote ? 'refs/remotes/origin/main\n' : '',
         stderr: ''
       });
     });
@@ -191,16 +197,71 @@ describe('checkShaReachability', () => {
     expect([...out].sort()).toEqual(['aaa1111', 'ccc3333']);
   });
 
-  it('deduplicates input shas before the batch call', async () => {
-    execaMock.mockResolvedValue({ stdout: 'aaa commit', stderr: '' });
-    const out = await checkShaReachability('/repo', ['aaa', 'aaa', 'aaa']);
-    expect(out.has('aaa')).toBe(true);
-    expect(execaMock).toHaveBeenCalledTimes(1);
+  it('falls back to local object DB when no remote refs exist', async () => {
+    execaMock.mockImplementation((_cmd, args: string[]) => {
+      const a = args.slice(2);
+      if (a.includes('for-each-ref')) {
+        // probe returns empty → no remote
+        return Promise.resolve({ stdout: '', stderr: '' });
+      }
+      if (a[0] === 'cat-file' && a[1] === '--batch-check=%(objectname) %(objecttype)') {
+        return Promise.resolve({
+          stdout: 'aaa1111 commit\nbbb2222 missing\nccc3333 commit',
+          stderr: ''
+        });
+      }
+      throw new Error(`unmatched: ${a.join(' ')}`);
+    });
+    const out = await checkShaReachability('/repo', ['aaa1111', 'bbb2222', 'ccc3333']);
+    expect([...out].sort()).toEqual(['aaa1111', 'ccc3333']);
   });
 
-  it('returns empty set when execa throws', async () => {
+  it('marks a locally-present sha unreachable when no remote ref contains it', async () => {
+    // Models the rebase/recommit case: old SHA still loose in the local
+    // object DB, but gone from every remote-tracking ref.
+    execaMock.mockImplementation((_cmd, args: string[]) => {
+      const a = args.slice(2);
+      if (a.includes('--count=1') && !a.includes('--contains')) {
+        return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+      }
+      // Every per-sha containment check returns empty (no remote ref contains it).
+      return Promise.resolve({ stdout: '', stderr: '' });
+    });
+    const out = await checkShaReachability('/repo', ['96534ce']);
+    expect(out.size).toBe(0);
+  });
+
+  it('deduplicates input shas before checking', async () => {
+    const seen: string[] = [];
+    execaMock.mockImplementation((_cmd, args: string[]) => {
+      const a = args.slice(2);
+      if (a.includes('--count=1') && !a.includes('--contains')) {
+        return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+      }
+      const i = a.indexOf('--contains');
+      if (i >= 0) seen.push(a[i + 1]!);
+      return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+    });
+    const out = await checkShaReachability('/repo', ['aaa', 'aaa', 'aaa']);
+    expect(out.has('aaa')).toBe(true);
+    expect(seen).toEqual(['aaa']);
+  });
+
+  it('returns empty set when the probe throws', async () => {
     execaMock.mockRejectedValue(Object.assign(new Error('git fail'), { stderr: '' }));
     const out = await checkShaReachability('/repo', ['aaa', 'bbb']);
+    expect(out.size).toBe(0);
+  });
+
+  it('treats per-sha containment failure as unreachable', async () => {
+    execaMock.mockImplementation((_cmd, args: string[]) => {
+      const a = args.slice(2);
+      if (a.includes('--count=1') && !a.includes('--contains')) {
+        return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+      }
+      throw Object.assign(new Error('bad rev'), { stderr: '' });
+    });
+    const out = await checkShaReachability('/repo', ['aaa']);
     expect(out.size).toBe(0);
   });
 });
