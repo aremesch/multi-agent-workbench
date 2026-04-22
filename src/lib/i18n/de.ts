@@ -67,6 +67,23 @@ const de: Partial<Record<TranslationKey, string>> = {
   'settings.notify.task_done': 'Agent hat Aufgabe beendet',
   'settings.notify.error': 'Agent hat einen Fehler',
   'settings.notify.exited': 'Agent unerwartet beendet',
+  'settings.git.title': 'Git-Identit\u00e4t',
+  'settings.git.desc':
+    'Commits deiner Agenten mit einem Namen und einer E-Mail deiner Wahl signieren. Leer lassen, um auf deinen Benutzernamen zur\u00fcckzufallen.',
+  'settings.git.nameLabel': 'Autorname',
+  'settings.git.emailLabel': 'Autor-E-Mail',
+  'settings.git.githubNoreplyHint':
+    'Tipp: Verwende f\u00fcr \u00f6ffentliche GitHub-Repos deine Privatsph\u00e4re-E-Mail im Format <id>+<username>@users.noreply.github.com \u2014 zu finden unter GitHub \u2192 Settings \u2192 Emails.',
+  'settings.git.appliesToNewAgents': 'Gilt f\u00fcr Agenten, die nach dem Speichern gestartet werden.',
+  'settings.git.save': 'Identit\u00e4t speichern',
+  'settings.git.saved': 'Git-Identit\u00e4t gespeichert.',
+  'settings.git.error.nameRequired': 'Autorname ist erforderlich',
+  'settings.git.error.nameInvalid': 'Autorname enth\u00e4lt ung\u00fcltige Zeichen',
+  'settings.git.error.emailRequired': 'Autor-E-Mail ist erforderlich',
+  'settings.git.error.emailInvalid': 'Gib eine g\u00fcltige E-Mail-Adresse ein',
+  'banner.gitIdentityUnset':
+    'Deine Git-Autoren-Identit\u00e4t ist nicht gesetzt \u2014 Agent-Commits werden deinem Benutzernamen mit einer synthetischen E-Mail zugeordnet.',
+  'banner.gitIdentityAction': 'Jetzt einrichten',
 
   'theme.desc.dark-slate': 'Fast schwarze Neutrale mit k\u00fchlem Blauakzent.',
   'theme.desc.dark-midnight': 'Tiefblau get\u00f6nte Fl\u00e4chen, weicherer Kontrast.',

@@ -28,6 +28,7 @@ import { Tmux } from '../tmux/TmuxSession.js';
 import { WorktreeManager } from '../git/WorktreeManager.js';
 import { snapshotAgentCommits } from '../git/commitSnapshot.js';
 import { getConfig } from '../config.js';
+import { resolveGitIdentityForUser } from '../user/gitIdentity.js';
 
 export interface SpawnAgentArgs {
   /**
@@ -357,11 +358,13 @@ export class AgentSupervisor {
     });
 
     const tmuxSession = Tmux.sessionName(agentId);
-    // Distinctive per-agent committer identity. The author fields are NOT
-    // touched — PR UIs upstream still show the user's real name/avatar.
-    // See docs/plans/v0.2-agent-git-attribution.md (mechanism E).
+    // Distinctive per-agent committer identity anchors attribution in
+    // `agent_commits` (commitSnapshot keys on committer_email). Author is
+    // the logged-in user's configured git identity so PR UIs / public
+    // history show them, not the MAW ops user.
     const committerEmail = `${agentId}@maw.local`;
     const committerName = `MAW-Agent-${agentId}`;
+    const authorIdentity = resolveGitIdentityForUser(args.userId);
 
     insertAgent({
       id: agentId,
@@ -383,7 +386,9 @@ export class AgentSupervisor {
       MAW_AGENT_ID: agentId,
       MAW_URL: `http://${cfg.host}:${cfg.port}`,
       GIT_COMMITTER_NAME: committerName,
-      GIT_COMMITTER_EMAIL: committerEmail
+      GIT_COMMITTER_EMAIL: committerEmail,
+      GIT_AUTHOR_NAME: authorIdentity.name,
+      GIT_AUTHOR_EMAIL: authorIdentity.email
     };
 
     await Tmux.newSession({

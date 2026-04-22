@@ -67,6 +67,23 @@ const es: Partial<Record<TranslationKey, string>> = {
   'settings.notify.task_done': 'Agente termina tarea',
   'settings.notify.error': 'Agente tiene un error',
   'settings.notify.exited': 'Agente se detiene inesperadamente',
+  'settings.git.title': 'Identidad de Git',
+  'settings.git.desc':
+    'Firma los commits de tus agentes con un nombre y correo de tu elecci\u00f3n. D\u00e9jalo vac\u00edo para usar tu nombre de usuario.',
+  'settings.git.nameLabel': 'Nombre del autor',
+  'settings.git.emailLabel': 'Correo del autor',
+  'settings.git.githubNoreplyHint':
+    'Consejo: para repos p\u00fablicos de GitHub usa tu correo de privacidad con el formato <id>+<username>@users.noreply.github.com \u2014 lo encuentras en GitHub \u2192 Settings \u2192 Emails.',
+  'settings.git.appliesToNewAgents': 'Se aplica a los agentes lanzados despu\u00e9s de guardar.',
+  'settings.git.save': 'Guardar identidad',
+  'settings.git.saved': 'Identidad de Git guardada.',
+  'settings.git.error.nameRequired': 'El nombre del autor es obligatorio',
+  'settings.git.error.nameInvalid': 'El nombre del autor contiene caracteres no v\u00e1lidos',
+  'settings.git.error.emailRequired': 'El correo del autor es obligatorio',
+  'settings.git.error.emailInvalid': 'Introduce un correo v\u00e1lido',
+  'banner.gitIdentityUnset':
+    'Tu identidad de autor de Git no est\u00e1 configurada \u2014 los commits de los agentes se atribuir\u00e1n a tu nombre de usuario con un correo sint\u00e9tico.',
+  'banner.gitIdentityAction': 'Configurar ahora',
 
   'theme.desc.dark-slate': 'Neutros casi negros con acento azul fr\u00edo.',
   'theme.desc.dark-midnight': 'Superficies con tinte azul profundo, contraste m\u00e1s suave.',

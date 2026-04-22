@@ -6,6 +6,7 @@ import { ulid } from 'ulid';
 import type { Actions, PageServerLoad } from './$types';
 import { getProject, insertRepo } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
+import { resolveGitIdentity } from '$lib/server/user/gitIdentity';
 import { t } from '$lib/i18n';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -64,10 +65,12 @@ export const actions: Actions = {
     //                          it (exists / renamed / seeded / no_master).
     //  3. Non-empty non-git  → rejected to avoid accidentally tracking an
     //                          arbitrary pile of user files.
+    const identity = resolveGitIdentity(locals.user.id, locals.user.username);
+
     const entries = readdirSync(path);
     if (entries.length === 0) {
       try {
-        await WorktreeManager.initEmpty(path, project.default_branch);
+        await WorktreeManager.initEmpty(path, project.default_branch, identity);
         console.log(
           `[maw] repo attach: initialized empty dir as git repo on branch '${project.default_branch}' at ${path}`
         );
@@ -91,7 +94,8 @@ export const actions: Actions = {
 
       const normalized = await WorktreeManager.ensureDefaultBranch(
         path,
-        project.default_branch
+        project.default_branch,
+        identity
       );
       if (normalized.kind === 'renamed') {
         console.log(

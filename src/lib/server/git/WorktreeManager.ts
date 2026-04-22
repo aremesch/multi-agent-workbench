@@ -7,6 +7,7 @@
 import { execa } from 'execa';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import type { GitIdentity } from '../user/gitIdentity.js';
 
 export interface WorktreeEntry {
   path: string;
@@ -17,16 +18,19 @@ export interface WorktreeEntry {
 }
 
 /**
- * Git config flags used whenever MAW creates commits on the user's behalf
- * (empty-dir init, unborn-repo seeding). Passed via `-c` so we never touch
- * the repo's own config file.
+ * Git `-c` flags that pin author and committer for a single `git` invocation.
+ * Used for MAW's own admin commits (empty-dir init, unborn-repo seeding) so
+ * the acting user — not the `maw` Unix account the server runs as — is the
+ * one recorded in the repo history.
  */
-const MAW_COMMIT_IDENTITY = [
-  '-c',
-  'user.name=Multi-Agent Workbench',
-  '-c',
-  'user.email=maw@localhost'
-];
+function commitIdentityFlags(identity: GitIdentity): string[] {
+  return [
+    '-c',
+    `user.name=${identity.name}`,
+    '-c',
+    `user.email=${identity.email}`
+  ];
+}
 
 export class WorktreeManager {
   constructor(private readonly worktreeRoot: string) {}
@@ -136,11 +140,13 @@ export class WorktreeManager {
    * default branch) so downstream worktree operations just work.
    *
    * The caller must verify the directory is empty; this helper does not check.
+   * `identity` is the author/committer for the seed commit — caller passes
+   * the logged-in user's resolved git identity.
    */
-  static async initEmpty(dir: string, desired: string): Promise<void> {
+  static async initEmpty(dir: string, desired: string, identity: GitIdentity): Promise<void> {
     await execa('git', ['-C', dir, 'init', '-b', desired]);
     await execa('git', [
-      ...MAW_COMMIT_IDENTITY,
+      ...commitIdentityFlags(identity),
       '-C',
       dir,
       'commit',
@@ -175,7 +181,8 @@ export class WorktreeManager {
    */
   static async ensureDefaultBranch(
     repoPath: string,
-    desired: string
+    desired: string,
+    identity: GitIdentity
   ): Promise<
     | { kind: 'exists' }
     | { kind: 'renamed'; from: 'master' }
@@ -207,7 +214,7 @@ export class WorktreeManager {
         `refs/heads/${desired}`
       ]);
       await execa('git', [
-        ...MAW_COMMIT_IDENTITY,
+        ...commitIdentityFlags(identity),
         '-C',
         repoPath,
         'commit',

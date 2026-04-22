@@ -15,6 +15,7 @@ import {
 import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
 import { getConfig } from '$lib/server/config';
 import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
+import { hasGitIdentity } from '$lib/server/user/gitIdentity';
 
 const ALL_STATUSES: AgentStatus[] = [
   'spawning',
@@ -93,6 +94,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
     locale: (locals.locale ?? DEFAULT_LOCALE) as Locale,
     cliKinds,
     spawnDefaults,
-    vapidPublicKey: getConfig().vapidPublicKey
+    vapidPublicKey: getConfig().vapidPublicKey,
+    gitIdentitySet: hasGitIdentity(locals.user.id)
   };
 };

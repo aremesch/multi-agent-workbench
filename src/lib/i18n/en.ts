@@ -79,6 +79,25 @@ const en = {
   'settings.notify.task_done': 'Agent finishes task',
   'settings.notify.error': 'Agent hits an error',
   'settings.notify.exited': 'Agent exits unexpectedly',
+  'settings.git.title': 'Git identity',
+  'settings.git.desc':
+    'Author your agents\u2019 commits with a name and email of your choice. Leave empty to fall back to your username.',
+  'settings.git.nameLabel': 'Author name',
+  'settings.git.emailLabel': 'Author email',
+  'settings.git.githubNoreplyHint':
+    'Tip: for public GitHub repos, use your privacy email in the form <id>+<username>@users.noreply.github.com \u2014 find it at GitHub \u2192 Settings \u2192 Emails.',
+  'settings.git.appliesToNewAgents': 'Applies to agents spawned after saving.',
+  'settings.git.save': 'Save identity',
+  'settings.git.saved': 'Git identity saved.',
+  'settings.git.error.nameRequired': 'Author name is required',
+  'settings.git.error.nameInvalid': 'Author name contains invalid characters',
+  'settings.git.error.emailRequired': 'Author email is required',
+  'settings.git.error.emailInvalid': 'Enter a valid email address',
+
+  // ── Banners ──────────────────────────────────────────────────────
+  'banner.gitIdentityUnset':
+    'Your git author identity is not set \u2014 agent commits will be attributed to your username with a synthetic email.',
+  'banner.gitIdentityAction': 'Configure now',
 
   // Theme descriptions (keyed by theme id)
   'theme.desc.dark-slate': 'Near-black neutrals with a cool blue accent.',

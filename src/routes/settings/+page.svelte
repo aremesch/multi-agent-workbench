@@ -1,6 +1,6 @@
 <script lang="ts">
   import { apiFetch } from '$lib/client/api';
-  import type { PageData } from './$types';
+  import type { ActionData, PageData } from './$types';
   import { ALL_THEMES, type ThemeId } from '$lib/shared/dashboard';
   import { currentTheme, setTheme } from '$lib/client/stores/theme';
   import { currentLocale, setLocale } from '$lib/client/stores/locale';
@@ -10,7 +10,7 @@
 
   const t = useT();
 
-  let { data }: { data: PageData } = $props();
+  let { data, form }: { data: PageData; form: ActionData } = $props();
 
   // ── Push notification state ────────────────────────────────────────
   const NOTIFY_KINDS = ['prompt_detected', 'task_done', 'error', 'exited'] as const;
@@ -209,6 +209,47 @@
         {/if}
       </div>
     {/each}
+  </section>
+
+  <section id="git" class="group" aria-labelledby="git-heading">
+    <header class="group-head">
+      <h2 id="git-heading">{t('settings.git.title')}</h2>
+      <p class="muted">{t('settings.git.desc')}</p>
+    </header>
+
+    <form method="post" action="?/gitIdentity" class="identity-form">
+      <label>
+        <span>{t('settings.git.nameLabel')}</span>
+        <input
+          name="gitAuthorName"
+          type="text"
+          maxlength="100"
+          autocomplete="name"
+          value={form?.gitAuthorName ?? data.gitIdentity.name ?? ''}
+        />
+      </label>
+      <label>
+        <span>{t('settings.git.emailLabel')}</span>
+        <input
+          name="gitAuthorEmail"
+          type="email"
+          maxlength="254"
+          autocomplete="email"
+          value={form?.gitAuthorEmail ?? data.gitIdentity.email ?? ''}
+        />
+        <span class="field-hint">{t('settings.git.githubNoreplyHint')}</span>
+      </label>
+      <p class="muted small">{t('settings.git.appliesToNewAgents')}</p>
+      {#if form?.error}
+        <p class="err">{form.error}</p>
+      {/if}
+      {#if form?.gitIdentitySaved}
+        <p class="ok">{t('settings.git.saved')}</p>
+      {/if}
+      <div>
+        <button type="submit" class="save-btn">{t('settings.git.save')}</button>
+      </div>
+    </form>
   </section>
 
   <section class="group" aria-labelledby="notifications-heading">
@@ -491,6 +532,58 @@
     transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
   }
   .push-enable-btn:hover {
+    opacity: 0.9;
+  }
+  .identity-form {
+    display: grid;
+    gap: 0.75rem;
+    max-width: 32rem;
+  }
+  .identity-form label {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    color: var(--md-sys-color-on-surface);
+  }
+  .identity-form input {
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--md-sys-shape-corner-sm);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    font-size: 0.9rem;
+  }
+  .identity-form input:focus {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 1px;
+  }
+  .field-hint {
+    font-size: 0.8rem;
+    color: var(--md-sys-color-on-surface-variant);
+    font-weight: normal;
+  }
+  .err {
+    color: var(--md-sys-color-error);
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  .ok {
+    color: var(--md-sys-color-primary);
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  .save-btn {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    border: none;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--md-sys-shape-corner-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+  }
+  .save-btn:hover {
     opacity: 0.9;
   }
 </style>

@@ -28,6 +28,7 @@
       theme: ThemeId;
       locale: Locale;
       vapidPublicKey?: string;
+      gitIdentitySet?: boolean;
     };
   } = $props();
 
@@ -229,9 +230,38 @@
       />
     {/if}
     <section class="min-w-0 flex-1 overflow-y-auto p-4">
+      {#if data.user && data.gitIdentitySet === false}
+        <aside class="git-identity-banner" role="status">
+          <span class="banner-text">{tt('banner.gitIdentityUnset')}</span>
+          <a class="banner-link" href="/settings#git">{tt('banner.gitIdentityAction')}</a>
+        </aside>
+      {/if}
       {@render children()}
     </section>
   </div>
 </div>
 
 <AboutModal open={aboutOpen} onClose={() => (aboutOpen = false)} />
+
+<style>
+  .git-identity-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 1rem;
+    background: var(--md-sys-color-tertiary-container);
+    color: var(--md-sys-color-on-tertiary-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-md);
+    font-size: 0.9rem;
+  }
+  .banner-text {
+    flex: 1 1 auto;
+  }
+  .banner-link {
+    color: var(--md-sys-color-primary);
+    text-decoration: underline;
+    white-space: nowrap;
+  }
+</style>

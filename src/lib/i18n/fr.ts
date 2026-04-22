@@ -67,6 +67,23 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'settings.notify.task_done': 'Agent a termin\u00e9 la t\u00e2che',
   'settings.notify.error': 'Agent rencontre une erreur',
   'settings.notify.exited': 'Agent s\u2019arr\u00eate de mani\u00e8re inattendue',
+  'settings.git.title': 'Identit\u00e9 Git',
+  'settings.git.desc':
+    'Signez les commits de vos agents avec un nom et un e-mail de votre choix. Laissez vide pour utiliser votre nom d\u2019utilisateur.',
+  'settings.git.nameLabel': 'Nom de l\u2019auteur',
+  'settings.git.emailLabel': 'E-mail de l\u2019auteur',
+  'settings.git.githubNoreplyHint':
+    'Astuce\u00a0: pour les d\u00e9p\u00f4ts publics GitHub, utilisez votre e-mail priv\u00e9 au format <id>+<username>@users.noreply.github.com \u2014 disponible dans GitHub \u2192 Settings \u2192 Emails.',
+  'settings.git.appliesToNewAgents': "S\u2019applique aux agents lanc\u00e9s apr\u00e8s l\u2019enregistrement.",
+  'settings.git.save': 'Enregistrer l\u2019identit\u00e9',
+  'settings.git.saved': 'Identit\u00e9 Git enregistr\u00e9e.',
+  'settings.git.error.nameRequired': 'Le nom de l\u2019auteur est obligatoire',
+  'settings.git.error.nameInvalid': 'Le nom de l\u2019auteur contient des caract\u00e8res invalides',
+  'settings.git.error.emailRequired': 'L\u2019e-mail de l\u2019auteur est obligatoire',
+  'settings.git.error.emailInvalid': 'Saisissez une adresse e-mail valide',
+  'banner.gitIdentityUnset':
+    'Votre identit\u00e9 d\u2019auteur Git n\u2019est pas d\u00e9finie \u2014 les commits des agents seront attribu\u00e9s \u00e0 votre nom d\u2019utilisateur avec un e-mail synth\u00e9tique.',
+  'banner.gitIdentityAction': 'Configurer maintenant',
 
   'theme.desc.dark-slate': 'Tons neutres quasi noirs avec un accent bleu froid.',
   'theme.desc.dark-midnight': 'Surfaces teint\u00e9es bleu profond, contraste plus doux.',

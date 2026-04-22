@@ -7,6 +7,7 @@ import { ulid } from 'ulid';
 import type { RequestHandler } from './$types';
 import { getProject, insertRepo } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
+import { resolveGitIdentity } from '$lib/server/user/gitIdentity';
 import { t } from '$lib/i18n';
 
 export const POST: RequestHandler = async ({ locals, request, cookies }) => {
@@ -45,10 +46,12 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
   if (!existsSync(path)) return json({ error: t(locals.locale, 'common.error.pathNotExist') }, { status: 400 });
   if (!statSync(path).isDirectory()) return json({ error: t(locals.locale, 'common.error.pathNotDir') }, { status: 400 });
 
+  const identity = resolveGitIdentity(locals.user.id, locals.user.username);
+
   const entries = readdirSync(path);
   if (entries.length === 0) {
     try {
-      await WorktreeManager.initEmpty(path, effectiveDefaultBranch);
+      await WorktreeManager.initEmpty(path, effectiveDefaultBranch, identity);
     } catch (err) {
       return json(
         { error: t(locals.locale, 'common.error.gitInitFailed', { message: (err as Error).message }) },
@@ -65,7 +68,11 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
       );
     }
 
-    const normalized = await WorktreeManager.ensureDefaultBranch(path, effectiveDefaultBranch);
+    const normalized = await WorktreeManager.ensureDefaultBranch(
+      path,
+      effectiveDefaultBranch,
+      identity
+    );
     if (normalized.kind === 'no_master') {
       const where = normalized.current ? ` (currently on '${normalized.current}')` : '';
       return json(

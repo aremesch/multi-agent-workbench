@@ -186,14 +186,14 @@ describe('WorktreeManager.isDirty', () => {
 // -----------------------------------------------------------------------------
 
 describe('WorktreeManager.initEmpty', () => {
-  it('runs git init -b <desired> then an empty initial commit with the MAW identity', async () => {
+  it('runs git init -b <desired> then an empty initial commit with the given identity', async () => {
     execaMock.mockResolvedValue({ stdout: '' });
-    await WorktreeManager.initEmpty('/dir', 'main');
+    await WorktreeManager.initEmpty('/dir', 'main', { name: 'Alice', email: 'a@b.c' });
     expect(execaMock.mock.calls[0][1]).toEqual(['-C', '/dir', 'init', '-b', 'main']);
     const commitArgs = execaMock.mock.calls[1][1];
-    // -c user.name= ... -c user.email= ... -C /dir commit --allow-empty -m "initial commit"
-    expect(commitArgs).toContain('user.name=Multi-Agent Workbench');
-    expect(commitArgs).toContain('user.email=maw@localhost');
+    // -c user.name=<name> -c user.email=<email> -C /dir commit --allow-empty -m "initial commit"
+    expect(commitArgs).toContain('user.name=Alice');
+    expect(commitArgs).toContain('user.email=a@b.c');
     expect(commitArgs).toContain('commit');
     expect(commitArgs).toContain('--allow-empty');
     expect(commitArgs[commitArgs.length - 1]).toBe('initial commit');
@@ -212,7 +212,7 @@ describe('WorktreeManager.ensureDefaultBranch', () => {
         result: { stdout: 'sha' }
       }
     ]);
-    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main');
+    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main', { name: 'Alice', email: 'a@b.c' });
     expect(out).toEqual({ kind: 'exists' });
   });
 
@@ -235,7 +235,7 @@ describe('WorktreeManager.ensureDefaultBranch', () => {
         result: { stdout: '' }
       }
     ]);
-    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main');
+    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main', { name: 'Alice', email: 'a@b.c' });
     expect(out).toEqual({ kind: 'seeded' });
   });
 
@@ -257,7 +257,7 @@ describe('WorktreeManager.ensureDefaultBranch', () => {
       }
       throw new Error(`unexpected: ${args.join(' ')}`);
     });
-    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main');
+    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main', { name: 'Alice', email: 'a@b.c' });
     expect(out).toEqual({ kind: 'renamed', from: 'master' });
     // Rename call was the final one.
     const last = execaMock.mock.calls.at(-1)?.[1];
@@ -281,7 +281,7 @@ describe('WorktreeManager.ensureDefaultBranch', () => {
       }
       throw new Error(`unexpected: ${args.join(' ')}`);
     });
-    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main');
+    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main', { name: 'Alice', email: 'a@b.c' });
     expect(out).toEqual({ kind: 'no_master', current: 'develop' });
   });
 
@@ -301,7 +301,7 @@ describe('WorktreeManager.ensureDefaultBranch', () => {
       }
       throw new Error(`unexpected: ${args.join(' ')}`);
     });
-    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main');
+    const out = await WorktreeManager.ensureDefaultBranch('/r', 'main', { name: 'Alice', email: 'a@b.c' });
     expect(out).toEqual({ kind: 'no_master', current: null });
   });
 });
