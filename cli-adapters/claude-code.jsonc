@@ -14,6 +14,17 @@
   // out of the visible pane) — see docs/plans/v0.1-jsonl-history.md.
   "historySource": { "kind": "claude-jsonl" },
 
+  // Phone soft keyboards hide arrow keys, Esc and Shift+Tab — every one of
+  // which Claude Code needs constantly (history recall, menu navigation,
+  // plan/thinking tab cycling, dismissing popovers). The user asked for
+  // these explicitly; tune as you hit new gaps.
+  "mobileQuickKeys": [
+    { "id": "up",        "label": "↑",    "keys": "\u001b[A" },
+    { "id": "down",      "label": "↓",    "keys": "\u001b[B" },
+    { "id": "shift-tab", "label": "⇧⇥",  "keys": "\u001b[Z" },
+    { "id": "esc",       "label": "Esc",  "keys": "\u001b"   }
+  ],
+
   // NOTE: these patterns are starting points. Tune against real captured
   // sessions with `pnpm test:adapter cli-adapters/claude-code.jsonc <session.txt>`.
   "spawn": {

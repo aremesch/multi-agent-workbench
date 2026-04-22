@@ -29,6 +29,31 @@
       "type": "boolean",
       "description": "When true, the hub nudges pane width by one cell and back after shipping the reconnect snapshot so the CLI sees a SIGWINCH and fully repaints. Defaults to false; enable for TUI CLIs (Claude Code) that otherwise leave the viewer looking at a frozen frame."
     },
+    "mobileQuickKeys": {
+      "type": "array",
+      "description": "On-screen key-chord buttons rendered under xterm on touch devices. Phone soft keyboards don't expose arrow keys, Esc, Shift+Tab or Ctrl+C — declare the ones this CLI needs here. Empty by default.",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "keys"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$",
+            "description": "Stable id, unique within this adapter. Lowercase kebab."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Short on-button text. Unicode glyphs allowed (e.g. \"↑\", \"⇧⇥\")."
+          },
+          "keys": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Raw UTF-8 bytes sent via send_keys. Use JSON escapes for control bytes (e.g. \"\\u001b[A\" for cursor up, \"\\u0003\" for Ctrl+C)."
+          }
+        }
+      }
+    },
     "spawn": {
       "type": "object",
       "required": ["command"],

@@ -55,6 +55,25 @@ export const historySourceSchema = z.object({
 });
 export type HistorySourceConfig = z.infer<typeof historySourceSchema>;
 
+/**
+ * One on-screen key-chord button shown to mobile users under xterm. Phone soft
+ * keyboards don't surface arrow keys / Esc / Shift+Tab / Ctrl+C, which most
+ * coding-agent TUIs need constantly — `mobileQuickKeys` lets each adapter
+ * declare its own tailored quick-key row. The string in `keys` is forwarded
+ * verbatim through the existing `send_keys` WS path (same encoding as bytes
+ * coming out of xterm's `onData`), so values are raw UTF-8 — typically VT
+ * escape sequences like `"\u001b[A"` for cursor up.
+ */
+export const mobileQuickKeySchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .regex(/^[a-z0-9-]+$/, 'id must match /^[a-z0-9-]+$/'),
+  label: z.string().min(1),
+  keys: z.string().min(1)
+});
+export type MobileQuickKeyConfig = z.infer<typeof mobileQuickKeySchema>;
+
 export const adapterConfigSchema = z.object({
   $schema: z.string().optional(),
   kind: z.string().min(1),
@@ -85,6 +104,30 @@ export const adapterConfigSchema = z.object({
    * line-based CLIs don't need it and the extra redraw is visible flicker.
    */
   forceRedrawOnReconnect: z.boolean().default(false),
+
+  /**
+   * On-screen key-chord buttons rendered under xterm on touch devices (or
+   * whenever the user toggles `ui.mobileQuickKeys` to `"always"`). Empty by
+   * default — an adapter opts in by listing keys. `id` must be unique within
+   * the adapter; `keys` is raw UTF-8 forwarded verbatim via `send_keys`.
+   */
+  mobileQuickKeys: z
+    .array(mobileQuickKeySchema)
+    .default([])
+    .superRefine((arr, ctx) => {
+      const seen = new Set<string>();
+      for (let i = 0; i < arr.length; i++) {
+        const id = arr[i]!.id;
+        if (seen.has(id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [i, 'id'],
+            message: `duplicate mobileQuickKeys id '${id}' within adapter`
+          });
+        }
+        seen.add(id);
+      }
+    }),
 
   spawn: z.object({
     command: z.string().min(1),

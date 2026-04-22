@@ -7,6 +7,16 @@
   // Code. Keep reconnect snapshots to the visible pane only.
   "scrollbackMode": "visible",
 
+  // Mobile quick-keys for the phone PWA. Starter set — tune against a
+  // real gemini session.
+  "mobileQuickKeys": [
+    { "id": "up",   "label": "↑",   "keys": "\u001b[A" },
+    { "id": "down", "label": "↓",   "keys": "\u001b[B" },
+    { "id": "tab",  "label": "⇥",   "keys": "\t"       },
+    { "id": "esc",  "label": "Esc", "keys": "\u001b"   },
+    { "id": "ctrl-c", "label": "^C", "keys": "\u0003"  }
+  ],
+
   // Starter patterns — must be tuned against a real recording.
   "spawn": {
     "command": "gemini",

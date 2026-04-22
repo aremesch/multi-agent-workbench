@@ -4,6 +4,10 @@ import { getSpawnDefaultsAll, getUserSetting } from '$lib/server/db/queries';
 import { getConfig } from '$lib/server/config';
 import { PUSH_PREFS_KEY, parseNotifyKinds } from '$lib/server/push/pushPrefs';
 import {
+  MOBILE_QUICK_KEYS_SETTING_KEY,
+  parseMobileQuickKeysMode
+} from '$lib/shared/dashboard';
+import {
   getStoredGitIdentity,
   setGitIdentity,
   validateGitIdentity
@@ -20,7 +24,17 @@ export const load: PageServerLoad = async ({ locals }) => {
   const pushNotifyKinds = parseNotifyKinds(getUserSetting(locals.user.id, PUSH_PREFS_KEY));
   const vapidConfigured = !!getConfig().vapidPublicKey;
   const gitIdentity = getStoredGitIdentity(locals.user.id);
-  return { cliKinds, spawnDefaults, pushNotifyKinds, vapidConfigured, gitIdentity };
+  const mobileQuickKeysMode = parseMobileQuickKeysMode(
+    getUserSetting(locals.user.id, MOBILE_QUICK_KEYS_SETTING_KEY)
+  );
+  return {
+    cliKinds,
+    spawnDefaults,
+    pushNotifyKinds,
+    vapidConfigured,
+    gitIdentity,
+    mobileQuickKeysMode
+  };
 };
 
 export const actions: Actions = {

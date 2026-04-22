@@ -1,7 +1,13 @@
 <script lang="ts">
   import { apiFetch } from '$lib/client/api';
   import type { ActionData, PageData } from './$types';
-  import { ALL_THEMES, type ThemeId } from '$lib/shared/dashboard';
+  import {
+    ALL_THEMES,
+    MOBILE_QUICK_KEYS_MODES,
+    type MobileQuickKeysMode,
+    type ThemeId
+  } from '$lib/shared/dashboard';
+  import { invalidateAll } from '$app/navigation';
   import { currentTheme, setTheme } from '$lib/client/stores/theme';
   import { currentLocale, setLocale } from '$lib/client/stores/locale';
   import { registerPush } from '$lib/client/push';
@@ -86,6 +92,21 @@
   async function chooseLocale(loc: Locale): Promise<void> {
     await setLocale(loc);
   }
+
+  // ── Mobile quick-keys preference ───────────────────────────────────
+  // svelte-ignore state_referenced_locally
+  let mobileQuickKeysMode = $state<MobileQuickKeysMode>(data.mobileQuickKeysMode);
+  async function chooseMobileQuickKeysMode(mode: MobileQuickKeysMode): Promise<void> {
+    mobileQuickKeysMode = mode;
+    await apiFetch('/api/user/mobile-quickkeys-state', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    // Refresh layout/page data so AgentTerminalPanel picks up the new mode
+    // without requiring a hard reload.
+    await invalidateAll();
+  }
 </script>
 
 <section class="wrap">
@@ -127,6 +148,44 @@
               <span class="mode">{theme.mode}</span>
             </span>
             <span class="desc">{t(`theme.desc.${theme.id}`)}</span>
+          </span>
+          <span class="check" aria-hidden="true">
+            {#if selected}
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path
+                  fill="currentColor"
+                  d="M9 16.2l-3.5-3.6L4 14.1 9 19l11-11-1.5-1.5L9 16.2z"
+                />
+              </svg>
+            {/if}
+          </span>
+        </label>
+      {/each}
+    </fieldset>
+  </section>
+
+  <section class="group" aria-labelledby="quickkeys-heading">
+    <header class="group-head">
+      <h2 id="quickkeys-heading">{t('settings.mobileQuickKeys.title')}</h2>
+      <p class="muted">{t('settings.mobileQuickKeys.desc')}</p>
+    </header>
+
+    <fieldset class="quickkeys-modes" aria-labelledby="quickkeys-heading">
+      <legend class="sr-only">{t('settings.mobileQuickKeys.title')}</legend>
+      {#each MOBILE_QUICK_KEYS_MODES as mode (mode)}
+        {@const selected = mobileQuickKeysMode === mode}
+        <label class="mode-card" class:selected>
+          <input
+            class="sr-only"
+            type="radio"
+            name="mobileQuickKeysMode"
+            value={mode}
+            checked={selected}
+            onchange={() => chooseMobileQuickKeysMode(mode)}
+          />
+          <span class="mode-meta">
+            <span class="mode-title">{t(`settings.mobileQuickKeys.mode.${mode}`)}</span>
+            <span class="mode-desc">{t(`settings.mobileQuickKeys.mode.${mode}.desc`)}</span>
           </span>
           <span class="check" aria-hidden="true">
             {#if selected}
@@ -327,6 +386,57 @@
     border: none;
     padding: 0;
     margin: 0;
+  }
+  .quickkeys-modes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: 0.75rem;
+    border: none;
+    padding: 0;
+    margin: 0;
+  }
+  .mode-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.85rem 1rem;
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-md);
+    cursor: pointer;
+    transition:
+      background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+      border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+  }
+  .mode-card:hover {
+    background: var(--md-sys-color-surface-container-high);
+  }
+  .mode-card.selected {
+    background: var(--md-sys-color-secondary-container);
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  .mode-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .mode-title {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+  }
+  .mode-card.selected .mode-title {
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  .mode-desc {
+    font-size: 0.8rem;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .mode-card.selected .mode-desc {
+    color: var(--md-sys-color-on-secondary-container);
+    opacity: 0.85;
   }
   .locales {
     display: grid;

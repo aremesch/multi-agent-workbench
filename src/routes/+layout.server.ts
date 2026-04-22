@@ -7,9 +7,12 @@ import {
 } from '$lib/server/db/queries';
 import type { AgentStatus } from '$lib/server/db/types';
 import {
+  DEFAULT_MOBILE_QUICK_KEYS_MODE,
   DEFAULT_THEME,
+  MOBILE_QUICK_KEYS_SETTING_KEY,
   SIDEBAR_COLLAPSED_KEY,
   THEME_SETTING_KEY,
+  parseMobileQuickKeysMode,
   parseTheme
 } from '$lib/shared/dashboard';
 import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
@@ -56,7 +59,13 @@ function parseCollapsed(raw: string | null): boolean {
 
 export const load: LayoutServerLoad = async ({ locals }) => {
   if (!locals.user) {
-    return { user: null, sidebar: null, theme: DEFAULT_THEME, locale: (locals.locale ?? DEFAULT_LOCALE) as Locale };
+    return {
+      user: null,
+      sidebar: null,
+      theme: DEFAULT_THEME,
+      locale: (locals.locale ?? DEFAULT_LOCALE) as Locale,
+      mobileQuickKeysMode: DEFAULT_MOBILE_QUICK_KEYS_MODE
+    };
   }
   const cards = listAgentCardsForUser(locals.user.id, ALL_STATUSES);
   const live: AgentCardRow[] = [];
@@ -95,6 +104,9 @@ export const load: LayoutServerLoad = async ({ locals }) => {
     cliKinds,
     spawnDefaults,
     vapidPublicKey: getConfig().vapidPublicKey,
-    gitIdentitySet: hasGitIdentity(locals.user.id)
+    gitIdentitySet: hasGitIdentity(locals.user.id),
+    mobileQuickKeysMode: parseMobileQuickKeysMode(
+      getUserSetting(locals.user.id, MOBILE_QUICK_KEYS_SETTING_KEY)
+    )
   };
 };

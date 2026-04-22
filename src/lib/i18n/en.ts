@@ -93,6 +93,15 @@ const en = {
   'settings.git.error.nameInvalid': 'Author name contains invalid characters',
   'settings.git.error.emailRequired': 'Author email is required',
   'settings.git.error.emailInvalid': 'Enter a valid email address',
+  'settings.mobileQuickKeys.title': 'Mobile quick keys',
+  'settings.mobileQuickKeys.desc':
+    'Keys the soft keyboard hides (arrows, Shift+Tab, Esc, Ctrl+C) shown as a touch bar under the terminal.',
+  'settings.mobileQuickKeys.mode.auto': 'Auto',
+  'settings.mobileQuickKeys.mode.auto.desc': 'Visible on touch devices, hidden elsewhere.',
+  'settings.mobileQuickKeys.mode.always': 'Always',
+  'settings.mobileQuickKeys.mode.always.desc': 'Always visible, even on desktop.',
+  'settings.mobileQuickKeys.mode.never': 'Never',
+  'settings.mobileQuickKeys.mode.never.desc': 'Hidden everywhere.',
 
   // ── Banners ──────────────────────────────────────────────────────
   'banner.gitIdentityUnset':
@@ -161,12 +170,11 @@ const en = {
   'agent.loading': 'loading\u2026',
   'agent.empty': '(empty)',
   'agent.promptDetected': 'Prompt detected',
-  'agent.sendPlaceholder': 'Type a message, press Enter to send',
-  'agent.send': 'Send',
   'agent.spawnAgent': 'Spawn agent',
   'agent.noLiveAgents': 'No live agents. Click the + button to spawn one.',
   'agent.failedLoadLog': 'Failed to load log: {error}',
   'agent.loadingLog': 'Loading log\u2026',
+  'agent.quickKeysLabel': 'Terminal quick keys',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Roles',

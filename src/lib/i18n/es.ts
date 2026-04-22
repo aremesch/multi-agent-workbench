@@ -81,6 +81,15 @@ const es: Partial<Record<TranslationKey, string>> = {
   'settings.git.error.nameInvalid': 'El nombre del autor contiene caracteres no v\u00e1lidos',
   'settings.git.error.emailRequired': 'El correo del autor es obligatorio',
   'settings.git.error.emailInvalid': 'Introduce un correo v\u00e1lido',
+  'settings.mobileQuickKeys.title': 'Teclas r\u00e1pidas m\u00f3viles',
+  'settings.mobileQuickKeys.desc':
+    'Teclas que oculta el teclado virtual (flechas, Shift+Tab, Esc, Ctrl+C) como barra t\u00e1ctil bajo el terminal.',
+  'settings.mobileQuickKeys.mode.auto': 'Autom\u00e1tico',
+  'settings.mobileQuickKeys.mode.auto.desc': 'Visible en dispositivos t\u00e1ctiles, oculto en el resto.',
+  'settings.mobileQuickKeys.mode.always': 'Siempre',
+  'settings.mobileQuickKeys.mode.always.desc': 'Siempre visible, incluso en escritorio.',
+  'settings.mobileQuickKeys.mode.never': 'Nunca',
+  'settings.mobileQuickKeys.mode.never.desc': 'Oculto en todas partes.',
   'banner.gitIdentityUnset':
     'Tu identidad de autor de Git no est\u00e1 configurada \u2014 los commits de los agentes se atribuir\u00e1n a tu nombre de usuario con un correo sint\u00e9tico.',
   'banner.gitIdentityAction': 'Configurar ahora',
@@ -143,12 +152,11 @@ const es: Partial<Record<TranslationKey, string>> = {
   'agent.loading': 'cargando\u2026',
   'agent.empty': '(vac\u00edo)',
   'agent.promptDetected': 'Prompt detectado',
-  'agent.sendPlaceholder': 'Escribe un mensaje, pulsa Enter para enviar',
-  'agent.send': 'Enviar',
   'agent.spawnAgent': 'Lanzar agente',
   'agent.noLiveAgents': 'No hay agentes activos. Haz clic en + para lanzar uno.',
   'agent.failedLoadLog': 'Error al cargar el log: {error}',
   'agent.loadingLog': 'Cargando log\u2026',
+  'agent.quickKeysLabel': 'Teclas r\u00e1pidas del terminal',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Roles',

@@ -99,6 +99,7 @@ export class AdapterRegistry {
       description?: string;
       default: boolean;
     }>;
+    mobileQuickKeys: Array<{ id: string; label: string; keys: string }>;
   }[] {
     return Array.from(this.entries.values()).map((e) => ({
       kind: e.config.kind,
@@ -109,6 +110,11 @@ export class AdapterRegistry {
         label: o.label,
         description: o.description,
         default: o.default
+      })),
+      mobileQuickKeys: e.config.mobileQuickKeys.map((k) => ({
+        id: k.id,
+        label: k.label,
+        keys: k.keys
       }))
     }));
   }

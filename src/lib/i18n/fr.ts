@@ -81,6 +81,15 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'settings.git.error.nameInvalid': 'Le nom de l\u2019auteur contient des caract\u00e8res invalides',
   'settings.git.error.emailRequired': 'L\u2019e-mail de l\u2019auteur est obligatoire',
   'settings.git.error.emailInvalid': 'Saisissez une adresse e-mail valide',
+  'settings.mobileQuickKeys.title': 'Touches rapides mobiles',
+  'settings.mobileQuickKeys.desc':
+    'Touches que le clavier virtuel masque (fl\u00e8ches, Maj+Tab, \u00c9chap, Ctrl+C) affich\u00e9es sous le terminal.',
+  'settings.mobileQuickKeys.mode.auto': 'Automatique',
+  'settings.mobileQuickKeys.mode.auto.desc': 'Visible sur appareils tactiles, masqu\u00e9 ailleurs.',
+  'settings.mobileQuickKeys.mode.always': 'Toujours',
+  'settings.mobileQuickKeys.mode.always.desc': 'Toujours visible, m\u00eame sur ordinateur.',
+  'settings.mobileQuickKeys.mode.never': 'Jamais',
+  'settings.mobileQuickKeys.mode.never.desc': 'Masqu\u00e9 partout.',
   'banner.gitIdentityUnset':
     'Votre identit\u00e9 d\u2019auteur Git n\u2019est pas d\u00e9finie \u2014 les commits des agents seront attribu\u00e9s \u00e0 votre nom d\u2019utilisateur avec un e-mail synth\u00e9tique.',
   'banner.gitIdentityAction': 'Configurer maintenant',
@@ -143,12 +152,11 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'agent.loading': 'chargement\u2026',
   'agent.empty': '(vide)',
   'agent.promptDetected': 'Invite d\u00e9tect\u00e9e',
-  'agent.sendPlaceholder': 'Tapez un message, Entr\u00e9e pour envoyer',
-  'agent.send': 'Envoyer',
   'agent.spawnAgent': 'Lancer un agent',
   'agent.noLiveAgents': 'Aucun agent actif. Cliquez sur + pour en lancer un.',
   'agent.failedLoadLog': '\u00c9chec du chargement du log\u00a0: {error}',
   'agent.loadingLog': 'Chargement du log\u2026',
+  'agent.quickKeysLabel': 'Touches rapides du terminal',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'R\u00f4les',

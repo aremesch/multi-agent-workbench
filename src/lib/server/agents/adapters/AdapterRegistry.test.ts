@@ -60,6 +60,51 @@ describe('AdapterRegistry', () => {
       expect(one.displayName).toBe('Fixture One');
       expect(Array.isArray(one.optionalArgs)).toBe(true);
     });
+
+    it('list exposes mobileQuickKeys (empty array for adapters that omit it)', () => {
+      const reg = new AdapterRegistry(FIXTURES_DIR);
+      reg.loadAll();
+      const entries = reg.list();
+      for (const e of entries) {
+        expect(Array.isArray(e.mobileQuickKeys)).toBe(true);
+      }
+    });
+  });
+
+  describe('list maps mobileQuickKeys verbatim from the config', () => {
+    let scratch: ReturnType<typeof scratchDir>;
+
+    beforeEach(() => {
+      scratch = scratchDir();
+    });
+
+    afterEach(() => {
+      scratch.cleanup();
+    });
+
+    it('copies id/label/keys onto each list entry', () => {
+      scratch.write(
+        'qk.jsonc',
+        JSON.stringify({
+          kind: 'qk',
+          displayName: 'QK',
+          spawn: { command: 'x' },
+          input: {},
+          mobileQuickKeys: [
+            { id: 'up', label: '\u2191', keys: '\u001b[A' },
+            { id: 'down', label: '\u2193', keys: '\u001b[B' }
+          ]
+        })
+      );
+      const reg = new AdapterRegistry(scratch.dir);
+      const result = reg.loadAll();
+      expect(result.errors).toEqual([]);
+      const entry = reg.list().find((e) => e.kind === 'qk')!;
+      expect(entry.mobileQuickKeys).toEqual([
+        { id: 'up', label: '\u2191', keys: '\u001b[A' },
+        { id: 'down', label: '\u2193', keys: '\u001b[B' }
+      ]);
+    });
   });
 
   describe('loadAll — error paths', () => {

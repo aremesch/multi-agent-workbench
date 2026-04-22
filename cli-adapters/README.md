@@ -37,6 +37,7 @@ autocomplete — keep both in sync when adding fields.
 | `displayName` | **yes** | string | Human-readable label shown in the spawn form. |
 | `scrollbackMode` | no | `"visible"` \| `"history"` | How the hub captures the reconnect snapshot. **Default `"visible"`.** Use `"visible"` for TUI CLIs that repaint the whole pane (Claude Code, Codex, Gemini) — `capture-pane -S 0` only. Use `"history"` for line-based CLIs/REPLs — `capture-pane -S -500` piped through `collapseRepeatingTailBlocks`. |
 | `historySource` | no | object | Out-of-band structured transcript reader used *in addition* to the live capture. Currently only `{ "kind": "claude-jsonl" }` is supported — it reads `~/.claude/projects/<encoded-cwd>/<cli_session_id>.jsonl` and ships it as a `history_snapshot` WS frame ahead of the live scrollback. Pair with `scrollbackMode: "visible"` to recover the pre-scroll history the visible capture drops. |
+| `mobileQuickKeys` | no | array | On-screen key-chord buttons rendered under xterm on touch devices (or when the user forces them on via `/settings`). Soft keyboards don't expose arrow keys / Esc / Shift+Tab / Ctrl+C — each adapter declares the ones its CLI needs. See [mobileQuickKeys](#mobilequickkeys). Default `[]` (adapter opts out). |
 | `spawn` | **yes** | object | How to launch the CLI. See below. |
 | `input` | **yes** | object | How the hub sends keystrokes via `tmux send-keys`. See below. |
 | `patterns` | no | array | Regex matchers applied to streaming output to drive the state machine and emit events. |
@@ -94,6 +95,36 @@ each PTY read. Last-matching `kind` wins for the state machine.
 | `choices` | no | string[] | For `prompt_detected`: names from `input.promptAnswers` that the UI (and `defaults.autoAnswer`) can send. |
 | `severity` | no | enum | `info` \| `warning` \| `error` \| `critical`. Feeds alert/push-notification priority. |
 | `description` | no | string | Human-readable hint for the UI and docs. |
+
+## `mobileQuickKeys`
+
+Array of key-chord buttons rendered below xterm on touch devices. Each
+button fires its `keys` bytes through the same `send_keys` WS path as
+xterm's own keystrokes — no special server support required. Values are
+raw UTF-8; use JSON escapes for control bytes (`\u001b[A` for cursor
+up, `\u0003` for Ctrl+C, `\t` for Tab).
+
+| Field | Required | Type | Notes |
+|---|---|---|---|
+| `id` | **yes** | string | Stable id, unique within this adapter. Lowercase kebab (`/^[a-z0-9-]+$/`). |
+| `label` | **yes** | string | Short on-button text. Unicode glyphs welcome (`↑`, `⇧⇥`, `^C`). |
+| `keys` | **yes** | string | Raw UTF-8 bytes to send. VT sequences and control bytes both work. |
+
+Example — `claude-code.jsonc`:
+
+```jsonc
+"mobileQuickKeys": [
+  { "id": "up",        "label": "↑",   "keys": "\u001b[A" },
+  { "id": "down",      "label": "↓",   "keys": "\u001b[B" },
+  { "id": "shift-tab", "label": "⇧⇥", "keys": "\u001b[Z" },
+  { "id": "esc",       "label": "Esc", "keys": "\u001b"   }
+]
+```
+
+Visibility is a joint decision between the adapter (declares the keys)
+and the user (`ui.mobileQuickKeys` in `/settings` — `auto` / `always` /
+`never`). `auto` (default) shows the bar on any touch device
+(`matchMedia('(pointer: coarse)')`).
 
 ## `idleDetection`
 

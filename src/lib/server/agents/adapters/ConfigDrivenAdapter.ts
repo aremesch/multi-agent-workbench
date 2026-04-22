@@ -20,6 +20,7 @@ import type {
   CliAdapter,
   HistorySourceSpec,
   InputEncoding,
+  MobileQuickKey,
   ScrollbackMode,
   SpawnSpec
 } from '$shared/adapterTypes';
@@ -39,6 +40,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
   readonly historySource: HistorySourceSpec | null;
   readonly forceRedrawOnReconnect: boolean;
   readonly createWorktree: boolean;
+  readonly mobileQuickKeys: MobileQuickKey[];
   readonly input: InputEncoding;
 
   private readonly cfg: AdapterConfig;
@@ -59,6 +61,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
     this.historySource = cfg.historySource ?? null;
     this.forceRedrawOnReconnect = cfg.forceRedrawOnReconnect;
     this.createWorktree = cfg.createWorktree;
+    this.mobileQuickKeys = cfg.mobileQuickKeys;
     this.patterns = cfg.patterns.map((p) => ({
       cfg: p,
       re: new RegExp(p.regex, p.flags ?? '')

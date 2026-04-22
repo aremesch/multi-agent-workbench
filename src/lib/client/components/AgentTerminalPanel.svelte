@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { page } from '$app/state';
   import { getMawWsClient, type AgentHandlers } from '$lib/client/ws';
   import Terminal from '$lib/client/components/Terminal.svelte';
+  import type { MobileQuickKey } from '$lib/shared/adapterTypes';
+  import { DEFAULT_MOBILE_QUICK_KEYS_MODE, type MobileQuickKeysMode } from '$lib/shared/dashboard';
   import { useT } from '$lib/client/i18n.svelte';
 
   const t = useT();
@@ -125,12 +128,23 @@
     return bytes;
   }
 
+  let mql: MediaQueryList | null = null;
+  function onTouchChange(ev: MediaQueryListEvent): void {
+    isTouch = ev.matches;
+  }
+
   onMount(() => {
     // Shared ws singleton; layout already kicked it open, but this call is
     // idempotent and guarantees a client exists before any keystrokes go
     // out. Subscribe is deferred until the first `onTerminalResize` fires
     // with real xterm dimensions — see `scheduleResize` above.
     getMawWsClient();
+    // `(pointer: coarse)` == primary pointer is a finger. Good enough for
+    // phones and tablets; desktops and laptops with a mouse/trackpad stay
+    // `false` unless the user flips `mobileQuickKeysMode` to `always`.
+    mql = window.matchMedia('(pointer: coarse)');
+    isTouch = mql.matches;
+    mql.addEventListener('change', onTouchChange);
   });
 
   function onTerminalData(bytes: string): void {
@@ -144,23 +158,40 @@
   onDestroy(() => {
     if (resizeTimer) clearTimeout(resizeTimer);
     if (subscribed) getMawWsClient().unsubscribe(agent.id);
+    mql?.removeEventListener('change', onTouchChange);
+    mql = null;
   });
-
-  function send(text: string): void {
-    getMawWsClient().sendInput(agent.id, text, true);
-  }
 
   function answer(choice: string): void {
     getMawWsClient().answerPrompt(agent.id, choice);
     pendingPrompt = null;
   }
 
-  let inputText = $state('');
-  function submitInput(event: SubmitEvent): void {
-    event.preventDefault();
-    if (!inputText.trim()) return;
-    send(inputText);
-    inputText = '';
+  // ── Mobile quick-keys ──────────────────────────────────────────────
+  // Phone soft keyboards hide arrow keys / Esc / Shift+Tab / Ctrl+C.
+  // Each adapter declares its own preferred key-chord row in the JSONC
+  // `mobileQuickKeys` field; we render them under xterm when either the
+  // device is touch-primary (pointer: coarse) or the user forced the row
+  // on via /settings. Each button fires bytes through the same send_keys
+  // path as real xterm keystrokes, then refocuses the terminal so the
+  // next real keypress lands in the PTY rather than on the button.
+  const quickKeys = $derived<MobileQuickKey[]>(
+    page.data.cliKinds?.find(
+      (k: { kind: string; mobileQuickKeys?: MobileQuickKey[] }) => k.kind === agent.cli_kind
+    )?.mobileQuickKeys ?? []
+  );
+  const quickKeysMode = $derived<MobileQuickKeysMode>(
+    page.data.mobileQuickKeysMode ?? DEFAULT_MOBILE_QUICK_KEYS_MODE
+  );
+  let isTouch = $state(false);
+  const showQuickKeys = $derived(
+    quickKeys.length > 0 &&
+      (quickKeysMode === 'always' || (quickKeysMode === 'auto' && isTouch))
+  );
+
+  function pressQuickKey(keys: string): void {
+    getMawWsClient().sendKeys(agent.id, keys);
+    term?.focus();
   }
 </script>
 
@@ -183,14 +214,21 @@
     </section>
   {/if}
 
-  <form onsubmit={submitInput} class="input">
-    <input
-      bind:value={inputText}
-      placeholder={t('agent.sendPlaceholder')}
-      autocomplete="off"
-    />
-    <button type="submit">{t('agent.send')}</button>
-  </form>
+  {#if showQuickKeys}
+    <div class="quick-keys" aria-label={t('agent.quickKeysLabel')}>
+      {#each quickKeys as key (key.id)}
+        <button
+          type="button"
+          class="quick-key"
+          title={key.label}
+          aria-label={key.label}
+          onclick={() => pressQuickKey(key.keys)}
+        >
+          {key.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -230,17 +268,33 @@
     min-width: 4rem;
     min-height: 2.5rem;
   }
-  .input {
+  .quick-keys {
     flex: 0 0 auto;
     display: flex;
-    gap: 0.5rem;
+    gap: 0.3rem;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
+    /* Thin scrollbar so a long key row doesn't steal vertical space. */
+    scrollbar-width: thin;
   }
-  .input input {
-    flex: 1;
-    padding: 0.5rem 0.6rem;
-    border-radius: 0.375rem;
-    border: 1px solid #374151;
-    background: #111;
-    color: #e5e5e5;
+  .quick-key {
+    flex: 0 0 auto;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 0.4rem;
+    border: 1px solid var(--md-sys-color-outline-variant, #374151);
+    background: var(--md-sys-color-surface-container-high, #1f2937);
+    color: var(--md-sys-color-on-surface, #e5e7eb);
+    font-size: 1rem;
+    font-family: ui-monospace, Menlo, Monaco, monospace;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .quick-key:hover {
+    background: var(--md-sys-color-surface-container-highest, #374151);
+  }
+  .quick-key:active {
+    background: var(--md-sys-color-primary-container, #2a3a52);
   }
 </style>

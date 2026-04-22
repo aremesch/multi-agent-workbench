@@ -206,6 +206,66 @@ describe('adapterConfigSchema', () => {
     });
   });
 
+  describe('mobileQuickKeys', () => {
+    it('defaults to an empty array when omitted', () => {
+      const r = adapterConfigSchema.parse(minimal());
+      expect(r.mobileQuickKeys).toEqual([]);
+    });
+
+    it('accepts a well-formed entry', () => {
+      const r = adapterConfigSchema.safeParse({
+        ...minimal(),
+        mobileQuickKeys: [{ id: 'arrow-up', label: '\u2191', keys: '\u001b[A' }]
+      });
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data.mobileQuickKeys).toEqual([
+          { id: 'arrow-up', label: '\u2191', keys: '\u001b[A' }
+        ]);
+      }
+    });
+
+    it('rejects an id containing uppercase or illegal chars', () => {
+      const r = adapterConfigSchema.safeParse({
+        ...minimal(),
+        mobileQuickKeys: [{ id: 'ArrowUp', label: '\u2191', keys: '\u001b[A' }]
+      });
+      expect(r.success).toBe(false);
+    });
+
+    it('rejects an empty label', () => {
+      const r = adapterConfigSchema.safeParse({
+        ...minimal(),
+        mobileQuickKeys: [{ id: 'a', label: '', keys: 'x' }]
+      });
+      expect(r.success).toBe(false);
+    });
+
+    it('rejects empty keys', () => {
+      const r = adapterConfigSchema.safeParse({
+        ...minimal(),
+        mobileQuickKeys: [{ id: 'a', label: 'A', keys: '' }]
+      });
+      expect(r.success).toBe(false);
+    });
+
+    it('rejects duplicate ids within the same adapter', () => {
+      const r = adapterConfigSchema.safeParse({
+        ...minimal(),
+        mobileQuickKeys: [
+          { id: 'dup', label: 'A', keys: 'x' },
+          { id: 'dup', label: 'B', keys: 'y' }
+        ]
+      });
+      expect(r.success).toBe(false);
+      if (!r.success) {
+        expect(
+          r.error.issues.some((i) => /duplicate mobileQuickKeys id 'dup'/.test(i.message))
+        ).toBe(true);
+      }
+    });
+  });
+
   describe('input block', () => {
     it('accepts promptAnswers record of tmux key arrays', () => {
       const r = adapterConfigSchema.safeParse({

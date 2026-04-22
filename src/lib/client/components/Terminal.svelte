@@ -59,6 +59,16 @@
     else pending = [];
   }
 
+  /**
+   * Re-assert keyboard focus on the xterm host. Called by callers (the
+   * mobile quick-key bar) that steal focus by clicking a button and need
+   * the very next real keypress to land in the PTY again. Safe no-op
+   * before xterm has finished loading.
+   */
+  export function focus(): void {
+    term?.focus();
+  }
+
   onMount(() => {
     let disposed = false;
     let cleanup: (() => void) | null = null;

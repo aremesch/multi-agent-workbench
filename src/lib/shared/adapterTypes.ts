@@ -65,6 +65,18 @@ export interface HistorySourceSpec {
   kind: 'claude-jsonl';
 }
 
+/**
+ * One key-chord button rendered under xterm on touch devices. `keys` is sent
+ * verbatim via the existing `send_keys` WS path — same channel as keystrokes
+ * out of `term.onData`. Typical values are VT escape sequences (e.g.
+ * `"\u001b[A"` for cursor up). See `mobileQuickKeySchema` for validation.
+ */
+export interface MobileQuickKey {
+  id: string;
+  label: string;
+  keys: string;
+}
+
 export interface BuildSpawnSpecOpts {
   role: { systemPrompt: string; toolConfig: unknown };
   worktreeCwd: string;
@@ -96,6 +108,12 @@ export interface CliAdapter {
    * root on whatever branch is already checked out. See adapter.config.schema.ts.
    */
   readonly createWorktree: boolean;
+  /**
+   * On-screen key-chord buttons to render under xterm on touch devices (or
+   * when the user forces them on via settings). Empty array = adapter opted
+   * out; the UI just hides the row. See {@link MobileQuickKey}.
+   */
+  readonly mobileQuickKeys: MobileQuickKey[];
   buildSpawnSpec(opts: BuildSpawnSpecOpts): SpawnSpec;
   ingest(chunk: Buffer): AdapterEvent[];
   input: InputEncoding;

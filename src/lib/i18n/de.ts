@@ -81,6 +81,15 @@ const de: Partial<Record<TranslationKey, string>> = {
   'settings.git.error.nameInvalid': 'Autorname enth\u00e4lt ung\u00fcltige Zeichen',
   'settings.git.error.emailRequired': 'Autor-E-Mail ist erforderlich',
   'settings.git.error.emailInvalid': 'Gib eine g\u00fcltige E-Mail-Adresse ein',
+  'settings.mobileQuickKeys.title': 'Mobile Schnelltasten',
+  'settings.mobileQuickKeys.desc':
+    'Tasten, die die Bildschirmtastatur verdeckt (Pfeile, Shift+Tab, Esc, Strg+C), als Touch-Leiste unter dem Terminal.',
+  'settings.mobileQuickKeys.mode.auto': 'Automatisch',
+  'settings.mobileQuickKeys.mode.auto.desc': 'Auf Touch-Ger\u00e4ten sichtbar, sonst ausgeblendet.',
+  'settings.mobileQuickKeys.mode.always': 'Immer',
+  'settings.mobileQuickKeys.mode.always.desc': 'Immer sichtbar, auch am Desktop.',
+  'settings.mobileQuickKeys.mode.never': 'Nie',
+  'settings.mobileQuickKeys.mode.never.desc': '\u00dcberall ausgeblendet.',
   'banner.gitIdentityUnset':
     'Deine Git-Autoren-Identit\u00e4t ist nicht gesetzt \u2014 Agent-Commits werden deinem Benutzernamen mit einer synthetischen E-Mail zugeordnet.',
   'banner.gitIdentityAction': 'Jetzt einrichten',
@@ -143,12 +152,11 @@ const de: Partial<Record<TranslationKey, string>> = {
   'agent.loading': 'Laden\u2026',
   'agent.empty': '(leer)',
   'agent.promptDetected': 'Eingabeaufforderung erkannt',
-  'agent.sendPlaceholder': 'Nachricht eingeben, Enter zum Senden',
-  'agent.send': 'Senden',
   'agent.spawnAgent': 'Agent starten',
   'agent.noLiveAgents': 'Keine aktiven Agenten. Klicke auf + um einen zu starten.',
   'agent.failedLoadLog': 'Log konnte nicht geladen werden: {error}',
   'agent.loadingLog': 'Log wird geladen\u2026',
+  'agent.quickKeysLabel': 'Terminal-Schnelltasten',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Rollen',

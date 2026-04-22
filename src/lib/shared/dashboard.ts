@@ -28,6 +28,42 @@ export function isValidLayoutKey(key: string): boolean {
 export const SIDEBAR_COLLAPSED_KEY = 'ui.sidebar.collapsed';
 
 // ─────────────────────────────────────────────────────────────
+// Mobile quick-keys preference (persisted in user_settings under
+// `ui.mobileQuickKeys`). Gates whether the on-screen key-chord row
+// rendered under xterm is visible. Default `auto` — visible on touch
+// devices only (matchMedia '(pointer: coarse)').
+// ─────────────────────────────────────────────────────────────
+
+export const MOBILE_QUICK_KEYS_SETTING_KEY = 'ui.mobileQuickKeys';
+
+export type MobileQuickKeysMode = 'auto' | 'always' | 'never';
+
+export const DEFAULT_MOBILE_QUICK_KEYS_MODE: MobileQuickKeysMode = 'auto';
+
+export const MOBILE_QUICK_KEYS_MODES: readonly MobileQuickKeysMode[] = [
+  'auto',
+  'always',
+  'never'
+];
+
+export function isMobileQuickKeysMode(value: unknown): value is MobileQuickKeysMode {
+  return value === 'auto' || value === 'always' || value === 'never';
+}
+
+export function parseMobileQuickKeysMode(
+  raw: string | null | undefined
+): MobileQuickKeysMode {
+  if (!raw) return DEFAULT_MOBILE_QUICK_KEYS_MODE;
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (isMobileQuickKeysMode(v)) return v;
+  } catch {
+    if (isMobileQuickKeysMode(raw)) return raw;
+  }
+  return DEFAULT_MOBILE_QUICK_KEYS_MODE;
+}
+
+// ─────────────────────────────────────────────────────────────
 // Theme preference (persisted in user_settings under `ui.theme`)
 // ─────────────────────────────────────────────────────────────
 
