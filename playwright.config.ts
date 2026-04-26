@@ -43,7 +43,7 @@ export default defineConfig({
   projects: [
     {
       name: 'smoke',
-      testMatch: /(?:smoke|agent-lifecycle)\.spec\.ts$/,
+      testMatch: /(?:smoke|agent-lifecycle|login-wire-status)\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] }
     },
     {

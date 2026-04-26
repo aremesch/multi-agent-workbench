@@ -9,6 +9,7 @@
  */
 
 import { redirect, type Handle } from '@sveltejs/kit';
+import { sequence } from '@sveltejs/kit/hooks';
 import { bootstrap, getSupervisor } from '$lib/server/bootstrap';
 import { resolveSession } from '$lib/server/auth/session';
 import { ensureCsrfCookie } from '$lib/server/auth/csrf';
@@ -18,7 +19,7 @@ import { DEFAULT_LOCALE, LOCALE_SETTING_KEY, detectLocale, parseLocale } from '$
 
 await bootstrap();
 
-export const handle: Handle = async ({ event, resolve }) => {
+const baseHandle: Handle = async ({ event, resolve }) => {
   const { user, session } = resolveSession(event.cookies);
   event.locals.user = user;
   event.locals.session = session;
@@ -76,3 +77,47 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   return response;
 };
+
+// SvelteKit form actions pin the wire status at 200 when the client takes
+// the JSON-action path (Accept negotiates application/json — true for the
+// default `Accept: */*` of curl / fetch / bots, since the kit lists JSON
+// first in its priority array). The fail() status only survives in the
+// response body. Browsers prioritise text/html and already get the right
+// wire status. This hook re-emits body.status onto the wire so non-browser
+// clients see real 4xx codes — important for HTTP-status-based monitoring
+// and WAF rules. fail2ban is unaffected (it parses MAW's own auth.log).
+const honestActionStatus: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event);
+
+  if (
+    event.request.method !== 'POST' ||
+    response.status !== 200 ||
+    !response.headers.get('content-type')?.startsWith('application/json')
+  ) {
+    return response;
+  }
+
+  const text = await response.clone().text();
+  let parsed: { type?: string; status?: number } | null = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return response;
+  }
+
+  if (
+    parsed?.type === 'failure' &&
+    typeof parsed.status === 'number' &&
+    parsed.status >= 400 &&
+    parsed.status < 600
+  ) {
+    return new Response(text, {
+      status: parsed.status,
+      headers: response.headers
+    });
+  }
+
+  return response;
+};
+
+export const handle = sequence(baseHandle, honestActionStatus);
