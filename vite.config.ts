@@ -59,8 +59,71 @@ function devWebSocketPlugin(): PluginOption {
   };
 }
 
+/**
+ * Dev plugin: forward /preview/<agentId>/* HTTP requests AND WebSocket
+ * upgrades to the agent's localhost target — same routing as server.js
+ * does in prod, just hooked into Vite's middleware/upgrade chain so the
+ * iframe works during `pnpm dev` too.
+ */
+function devPreviewProxyPlugin(): PluginOption {
+  return {
+    name: 'maw-dev-preview-proxy',
+    apply: 'serve',
+    configureServer(server) {
+      // HTTP forwarding: register a middleware that lets the proxy module
+      // decide whether to claim the request. It catches both `/preview/*`
+      // direct paths AND any path whose Referer is a preview iframe (so
+      // SPAs emitting absolute paths like `/@vite/client` route correctly).
+      server.middlewares.use(async (req, res, next) => {
+        try {
+          const proxyMod = (await server.ssrLoadModule(
+            '/src/lib/server/preview/proxy.ts'
+          )) as typeof import('./src/lib/server/preview/proxy.js');
+          const bootstrapMod = (await server.ssrLoadModule(
+            '/src/lib/server/bootstrap.ts'
+          )) as typeof import('./src/lib/server/bootstrap.js');
+          await bootstrapMod.bootstrap();
+          if (proxyMod.handlePreviewRequest(req, res)) return;
+          next();
+        } catch (err) {
+          server.config.logger.error(`[maw-dev-preview-proxy] http error: ${err}`);
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.end('preview proxy: internal error');
+          }
+        }
+      });
+
+      // WS forwarding: hook the same `upgrade` event (parallel listener
+      // alongside the /ws hub handler). Same Referer-fallback trick as the
+      // HTTP path so Vite HMR sockets connect through the proxy.
+      if (!server.httpServer) return;
+      server.httpServer.on(
+        'upgrade',
+        async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+          // Skip MAW's own /ws — handled by `devWebSocketPlugin`.
+          if (req.url === '/ws' || req.url?.startsWith('/ws?')) return;
+          try {
+            const proxyMod = (await server.ssrLoadModule(
+              '/src/lib/server/preview/proxy.ts'
+            )) as typeof import('./src/lib/server/preview/proxy.js');
+            const bootstrapMod = (await server.ssrLoadModule(
+              '/src/lib/server/bootstrap.ts'
+            )) as typeof import('./src/lib/server/bootstrap.js');
+            await bootstrapMod.bootstrap();
+            proxyMod.handlePreviewUpgrade(req, socket, head);
+          } catch (err) {
+            server.config.logger.error(`[maw-dev-preview-proxy] upgrade error: ${err}`);
+            socket.destroy();
+          }
+        }
+      );
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [tailwindcss(), sveltekit(), devWebSocketPlugin()],
+  plugins: [tailwindcss(), sveltekit(), devWebSocketPlugin(), devPreviewProxyPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __APP_BUILD_NUMBER__: JSON.stringify(appBuildNumber),

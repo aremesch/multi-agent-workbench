@@ -72,6 +72,83 @@ export interface CS_Resize {
   rows: number;
 }
 
+// ---------- client → server: browser-stream input forwarding ----------
+
+/**
+ * Pointer event from `<StreamView>`. Coordinates are page-relative inside
+ * the streamed viewport (the same coordinate space the server's Playwright
+ * page uses). `button` follows DOM `MouseEvent.button` (0=left, 1=middle,
+ * 2=right).
+ */
+export interface CS_StreamPointer {
+  type: 'stream_pointer';
+  agentId: string;
+  kind: 'move' | 'down' | 'up';
+  x: number;
+  y: number;
+  button: number;
+  buttons: number;
+}
+export interface CS_StreamWheel {
+  type: 'stream_wheel';
+  agentId: string;
+  x: number;
+  y: number;
+  deltaX: number;
+  deltaY: number;
+}
+export interface CS_StreamKey {
+  type: 'stream_key';
+  agentId: string;
+  kind: 'down' | 'up';
+  key: string;
+  code: string;
+  modifiers: { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean };
+}
+/**
+ * Type a string of text into whatever input has focus on the server-side
+ * page. Sent for IME / paste / mobile virtual keyboards which don't emit
+ * 1:1 keydown events.
+ */
+export interface CS_StreamText {
+  type: 'stream_text';
+  agentId: string;
+  text: string;
+}
+/**
+ * Tell the server-side Playwright page to use a specific viewport (so
+ * media queries and layout match what the user is looking at). Debounced
+ * by the client.
+ */
+export interface CS_StreamViewport {
+  type: 'stream_viewport';
+  agentId: string;
+  width: number;
+  height: number;
+  deviceScaleFactor?: number;
+}
+/**
+ * Ack a streamed frame so CDP knows the client received it and may push
+ * the next one. Required by `Page.startScreencast`.
+ */
+export interface CS_StreamFrameAck {
+  type: 'stream_frame_ack';
+  agentId: string;
+  sessionId: number;
+}
+/** Navigate the streamed page to a different URL. */
+export interface CS_StreamNavigate {
+  type: 'stream_navigate';
+  agentId: string;
+  url: string;
+}
+/** Reload / back / forward — Playwright's page.reload/.goBack/.goForward. */
+export interface CS_StreamHistory {
+  type: 'stream_history';
+  agentId: string;
+  action: 'reload' | 'back' | 'forward';
+}
+
 export type ClientMessage =
   | CS_Hello
   | CS_SubscribeAgent
@@ -82,7 +159,15 @@ export type ClientMessage =
   | CS_AssignTask
   | CS_Control
   | CS_Ping
-  | CS_Resize;
+  | CS_Resize
+  | CS_StreamPointer
+  | CS_StreamWheel
+  | CS_StreamKey
+  | CS_StreamText
+  | CS_StreamViewport
+  | CS_StreamFrameAck
+  | CS_StreamNavigate
+  | CS_StreamHistory;
 
 // ---------- server → client ----------
 
@@ -158,6 +243,41 @@ export interface SC_Pong {
   ts: number;
 }
 
+// ---------- server → client: browser-stream frames + state ----------
+
+/**
+ * A single CDP screencast frame. `b64` is the JPEG bytes the way Chromium
+ * emits them; the client renders it into an `<img src="data:image/jpeg;base64,…">`.
+ * `sessionId` is the CDP-allocated frame id the client must echo back via
+ * `stream_frame_ack` so the next frame is queued.
+ */
+export interface SC_StreamFrame {
+  type: 'stream_frame';
+  agentId: string;
+  sessionId: number;
+  b64: string;
+  /** Page-CSS pixel size of the rendered frame (independent of the JPEG's
+   *  pixel resolution, which factors in deviceScaleFactor). The client uses
+   *  this to map pointer coordinates into Playwright page coordinates. */
+  width: number;
+  height: number;
+}
+export interface SC_StreamReady {
+  type: 'stream_ready';
+  agentId: string;
+  url: string;
+}
+export interface SC_StreamUrl {
+  type: 'stream_url';
+  agentId: string;
+  url: string;
+}
+export interface SC_StreamError {
+  type: 'stream_error';
+  agentId: string;
+  message: string;
+}
+
 export type ServerMessage =
   | SC_Welcome
   | SC_PaneSnapshot
@@ -168,4 +288,8 @@ export type ServerMessage =
   | SC_Message
   | SC_Ack
   | SC_Error
-  | SC_Pong;
+  | SC_Pong
+  | SC_StreamFrame
+  | SC_StreamReady
+  | SC_StreamUrl
+  | SC_StreamError;

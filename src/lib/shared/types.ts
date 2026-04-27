@@ -28,6 +28,10 @@ export interface AgentCardRow {
   status: AgentStatus;
   last_attention_at: number | null;
   current_task_id: string | null;
+  /** Browser-agent target URL — null for CLI agents. */
+  target_url: string | null;
+  /** Browser-agent target port — null for CLI agents. */
+  target_port: number | null;
   created_at: number;
   updated_at: number;
   role_name: string;

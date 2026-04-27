@@ -159,6 +159,54 @@ const de: Partial<Record<TranslationKey, string>> = {
   'spawn.error.networkError': 'Netzwerkfehler',
   'spawn.advanced': 'Erweitert',
 
+  // ── Browser-Agent Spawn-Felder ─────────────────────────────────
+  'spawn.sessionLabel': 'Sitzungsname',
+  'spawn.previewUrl': 'Vorschau-URL',
+  'spawn.previewUrl.help':
+    'http://localhost:<Port> — gleicher Host wie MAW. Der Proxy leitet auf 127.0.0.1 weiter.',
+  'spawn.error.browserUrl.empty': 'Vorschau-URL ist erforderlich',
+  'spawn.error.browserUrl.invalid': 'Vorschau-URL ist keine gültige URL',
+  'spawn.error.browserUrl.scheme': 'Vorschau-URL muss http:// verwenden (nicht https://)',
+  'spawn.error.browserUrl.host': 'Vorschau-URL muss auf localhost oder 127.0.0.1 verweisen',
+  'spawn.error.browserUrl.port': 'Vorschau-URL muss einen Port enthalten (z. B. :5173)',
+
+  // ── Browser-Agent Ansicht ──────────────────────────────────────
+  'browser.iframeTitle': 'Vorschau-Iframe',
+  'browser.reload': 'Vorschau neu laden',
+  'browser.openExternal': 'In neuem Tab öffnen',
+  'browser.rotate': 'Ansicht drehen',
+  'browser.viewport.label': 'Ansichtsgröße',
+  'browser.viewport.width': 'Breite',
+  'browser.viewport.height': 'Höhe',
+  'browser.preset.mobile': 'Mobil',
+  'browser.preset.tablet': 'Tablet',
+  'browser.preset.desktop': 'Desktop',
+  'browser.preset.fit': 'Passend',
+  'browser.preset.custom': 'Benutzerdefiniert',
+  'browser.unreachable.title': 'Entwicklungsserver nicht erreichbar',
+  'browser.unreachable.body':
+    'Konnte {url} nicht erreichen — Entwicklungsserver starten und erneut versuchen.',
+  'browser.unreachable.retry': 'Erneut versuchen',
+  'browser.stop.title': 'Browser-Sitzung beenden',
+  'browser.stop.label': 'Beenden',
+  'browser.stop.confirmTitle': 'Beenden bestätigen — verschiebt den Agenten ins Archiv',
+  'browser.stop.confirmLabel': 'Bestätigen',
+  'browser.stop.stopping': 'Wird beendet…',
+  'browser.stop.cancel': 'Abbrechen',
+  'browser.stop.error': 'Beenden fehlgeschlagen: {message}',
+  'browser.target.urlLabel': 'Vorschau-URL',
+  'browser.target.apply': 'Übernehmen',
+  'browser.target.commonPorts': 'Schnellports',
+  'browser.target.saveFailed': 'Speichern der URL fehlgeschlagen',
+
+  // ── Server-gerenderte Stream-Ansicht ───────────────────────────
+  'stream.back': 'Zurück',
+  'stream.forward': 'Vor',
+  'stream.reload': 'Neu laden',
+  'stream.go': 'Los',
+  'stream.connecting': 'Verbinde zum Browser…',
+  'stream.imageAlt': 'Server-gerenderte Browser-Vorschau',
+
   // ── Agent card / terminal ────────────────────────────────────────
   'agent.openTerminal': 'Terminal \u00f6ffnen f\u00fcr {roleName}',
   'agent.tmuxGone': '(tmux-Sitzung beendet)',

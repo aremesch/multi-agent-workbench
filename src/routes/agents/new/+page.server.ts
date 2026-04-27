@@ -20,6 +20,8 @@ import { WorktreeManager } from '$lib/server/git/WorktreeManager';
 import { resolveSha } from '$lib/server/git/agentCommits';
 import { getConfig } from '$lib/server/config';
 import { slugifyTitle } from '$lib/server/util/slug';
+import { isBrowserKind } from '$lib/server/agents/AgentSupervisor';
+import { parseBrowserTargetUrl } from '$lib/shared/browserTarget';
 import type { RepoRow } from '$lib/server/db/types';
 
 interface RepoOption {
@@ -58,8 +60,9 @@ export const actions: Actions = {
     const repo_id = String(form.get('repo_id') ?? '').trim();
     const task_title = String(form.get('task_title') ?? '').trim();
     const task_body = String(form.get('task_body') ?? '');
+    const target_url = String(form.get('target_url') ?? '').trim();
 
-    const fields = { role_id, repo_id, task_title, task_body };
+    const fields = { role_id, repo_id, task_title, task_body, target_url };
 
     if (!role_id || !repo_id) {
       return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.roleRepoRequired') });
@@ -80,6 +83,20 @@ export const actions: Actions = {
     const repo: RepoRow | undefined = getRepo(repo_id);
     if (!repo || repo.user_id !== locals.user.id) {
       return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.unknownRepo') });
+    }
+
+    // Browser agents need a target URL for the iframe + reverse proxy.
+    // Validate up front so a typo doesn't reach the supervisor.
+    let browserTarget: { target_url: string; target_port: number } | undefined;
+    if (isBrowserKind(role.cli_kind)) {
+      const parsed = parseBrowserTargetUrl(target_url);
+      if (!parsed.ok) {
+        return fail(400, {
+          ...fields,
+          error: t(locals.locale, `spawn.error.browserUrl.${parsed.error}`)
+        });
+      }
+      browserTarget = { target_url: parsed.url, target_port: parsed.port };
     }
 
     const startPoint =
@@ -164,7 +181,8 @@ export const actions: Actions = {
         worktreePath,
         baseSha,
         task,
-        optionalArgs
+        optionalArgs,
+        browser: browserTarget
       });
     } catch (err) {
       return fail(500, {

@@ -159,6 +159,57 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'spawn.error.networkError': 'Erreur r\u00e9seau',
   'spawn.advanced': 'Avanc\u00e9',
 
+  // \u2500\u2500 Champs de spawn pour agent navigateur \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  'spawn.sessionLabel': 'Libell\u00e9 de session',
+  'spawn.previewUrl': 'URL d\u2019aper\u00e7u',
+  'spawn.previewUrl.help':
+    'http://localhost:<port> \u2014 m\u00eame h\u00f4te que MAW. Le proxy redirige vers 127.0.0.1.',
+  'spawn.error.browserUrl.empty': 'L\u2019URL d\u2019aper\u00e7u est obligatoire',
+  'spawn.error.browserUrl.invalid': 'L\u2019URL d\u2019aper\u00e7u n\u2019est pas valide',
+  'spawn.error.browserUrl.scheme':
+    'L\u2019URL d\u2019aper\u00e7u doit utiliser http:// (pas https://)',
+  'spawn.error.browserUrl.host':
+    'L\u2019h\u00f4te de l\u2019URL doit \u00eatre localhost ou 127.0.0.1',
+  'spawn.error.browserUrl.port':
+    'L\u2019URL d\u2019aper\u00e7u doit inclure un port (p. ex. :5173)',
+
+  // \u2500\u2500 Vue agent navigateur \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  'browser.iframeTitle': 'Iframe d\u2019aper\u00e7u',
+  'browser.reload': 'Recharger l\u2019aper\u00e7u',
+  'browser.openExternal': 'Ouvrir dans un nouvel onglet',
+  'browser.rotate': 'Pivoter le viewport',
+  'browser.viewport.label': 'Taille du viewport',
+  'browser.viewport.width': 'Largeur',
+  'browser.viewport.height': 'Hauteur',
+  'browser.preset.mobile': 'Mobile',
+  'browser.preset.tablet': 'Tablette',
+  'browser.preset.desktop': 'Bureau',
+  'browser.preset.fit': 'Ajuster',
+  'browser.preset.custom': 'Personnalis\u00e9',
+  'browser.unreachable.title': 'Serveur de dev injoignable',
+  'browser.unreachable.body':
+    'Impossible d\u2019atteindre {url} \u2014 d\u00e9marrez votre serveur de dev et r\u00e9essayez.',
+  'browser.unreachable.retry': 'R\u00e9essayer',
+  'browser.stop.title': 'Arr\u00eater la session navigateur',
+  'browser.stop.label': 'Arr\u00eater',
+  'browser.stop.confirmTitle': 'Confirmer l\u2019arr\u00eat \u2014 d\u00e9place l\u2019agent vers les archives',
+  'browser.stop.confirmLabel': 'Confirmer',
+  'browser.stop.stopping': 'Arr\u00eat\u2026',
+  'browser.stop.cancel': 'Annuler',
+  'browser.stop.error': '\u00c9chec de l\u2019arr\u00eat : {message}',
+  'browser.target.urlLabel': 'URL d\u2019aper\u00e7u',
+  'browser.target.apply': 'Appliquer',
+  'browser.target.commonPorts': 'Ports rapides',
+  'browser.target.saveFailed': '\u00c9chec de l\u2019enregistrement de l\u2019URL',
+
+  // \u2500\u2500 Vue stream rendu par le serveur \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  'stream.back': 'Pr\u00e9c\u00e9dent',
+  'stream.forward': 'Suivant',
+  'stream.reload': 'Recharger',
+  'stream.go': 'Aller',
+  'stream.connecting': 'Connexion au navigateur\u2026',
+  'stream.imageAlt': 'Aper\u00e7u du navigateur rendu par le serveur',
+
   // ── Agent card / terminal ────────────────────────────────────────
   'agent.openTerminal': 'Ouvrir le terminal pour {roleName}',
   'agent.tmuxGone': '(session tmux termin\u00e9e)',

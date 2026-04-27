@@ -28,6 +28,7 @@ import { WorktreeManager } from '../git/WorktreeManager.js';
 import { snapshotAgentCommits } from '../git/commitSnapshot.js';
 import { getConfig } from '../config.js';
 import { resolveGitIdentityForUser } from '../user/gitIdentity.js';
+import { getPlaywrightSessions } from '../preview/PlaywrightSessionManager.js';
 
 export interface SpawnAgentArgs {
   /**
@@ -51,6 +52,38 @@ export interface SpawnAgentArgs {
   task: { title: string; body: string } | null;
   /** Per-spawn optional arg overrides keyed by optionalArg id. */
   optionalArgs?: Record<string, boolean>;
+  /**
+   * Browser-agent target. Captured from the spawn form when the role's
+   * cli_kind is `browser`; ignored for CLI agents. The `/preview/<id>/*`
+   * reverse proxy reads `target_port` to forward HTTP and WebSocket upgrade
+   * requests; `target_url` is shown in the iframe URL bar.
+   */
+  browser?: { target_url: string; target_port: number };
+}
+
+export const BROWSER_KIND = 'browser';
+export const BROWSER_STREAM_KIND = 'browser-stream';
+
+/** Either flavor of browser agent — both skip tmux/FIFO + carry target_url. */
+export function isBrowserKind(kind: string): boolean {
+  return kind === BROWSER_KIND || kind === BROWSER_STREAM_KIND;
+}
+
+/** Server-rendered Chromium streaming flavor — drives a real browser via
+ *  Playwright and streams JPEG frames to the client. Used to gate the
+ *  Playwright session-manager hooks. */
+export function isStreamKind(kind: string): boolean {
+  return kind === BROWSER_STREAM_KIND;
+}
+
+/**
+ * Sentinel `tmux_session` value for browser agents. Stored in the DB so the
+ * NOT NULL UNIQUE column is satisfied without a 12-step rebuild migration.
+ * The supervisor branches on cli_kind everywhere else, so the sentinel is
+ * never actually passed to tmux.
+ */
+function browserSentinelSession(agentId: string): string {
+  return `browser-${agentId}`;
 }
 
 export class AgentSupervisor {
@@ -177,6 +210,33 @@ export class AgentSupervisor {
     const rows = listLiveAgents();
 
     for (const row of rows) {
+      // Browser agents have no tmux session — they survive restarts as-is
+      // (the iframe reconnects via the same /preview/<id>/* proxy route).
+      // Skip the tmux liveness check + AgentRuntime creation entirely.
+      if (isBrowserKind(row.cli_kind)) {
+        // Stream variant: Chromium child process died with the previous
+        // MAW process. Relaunch it from the row's stored target_url so the
+        // user's open StreamView reconnects cleanly. Best-effort — if
+        // chromium is broken, mark crashed and continue with other rows.
+        if (isStreamKind(row.cli_kind) && row.target_url) {
+          try {
+            await getPlaywrightSessions().start({
+              agentId: row.id,
+              targetUrl: row.target_url,
+              viewport: { width: 390, height: 844, deviceScaleFactor: 1 }
+            });
+          } catch (err) {
+            console.warn(
+              `[AgentSupervisor] reattach: failed to relaunch Playwright session for ${row.id}: ${(err as Error).message}`
+            );
+            updateAgentStatus(row.id, 'crashed');
+            crashed++;
+            continue;
+          }
+        }
+        reattached++;
+        continue;
+      }
       if (!liveSessions.has(row.tmux_session)) {
         updateAgentStatus(row.id, 'crashed');
         crashed++;
@@ -336,6 +396,59 @@ export class AgentSupervisor {
       throw new Error(`no adapter registered for cli_kind '${role.cli_kind}'`);
     }
 
+    // Browser-agent fast path: insert row, mark running, return. No tmux
+    // session, no AgentRuntime, no exit watcher — the iframe view + reverse
+    // proxy (browser kind) or the Playwright stream (browser-stream kind)
+    // is the entire runtime story for these.
+    if (isBrowserKind(role.cli_kind)) {
+      if (!args.browser) {
+        throw new Error('browser agent spawn requires args.browser.target_url + target_port');
+      }
+      const agentId = args.agentId;
+      insertAgent({
+        id: agentId,
+        user_id: args.userId,
+        role_id: role.id,
+        repo_id: args.repoId,
+        worktree_id: args.worktreeId,
+        cli_kind: role.cli_kind,
+        tmux_session: browserSentinelSession(agentId),
+        status: 'running',
+        cli_session_id: null,
+        base_sha: null,
+        committer_email: null,
+        target_url: args.browser.target_url,
+        target_port: args.browser.target_port
+      });
+      insertAgentRun({
+        id: ulid(),
+        user_id: args.userId,
+        agent_id: agentId,
+        started_at: Math.floor(Date.now() / 1000)
+      });
+      // Stream variant: launch Chromium via Playwright, hook screencast.
+      // Failure here surfaces as a spawn-time error (the user sees a 500
+      // with the friendly "install chromium" message) rather than a silent
+      // half-spawned agent.
+      if (isStreamKind(role.cli_kind)) {
+        try {
+          await getPlaywrightSessions().start({
+            agentId,
+            targetUrl: args.browser.target_url,
+            // Default to a mobile viewport. The StreamView resize controls
+            // can mutate this later via stream_viewport.
+            viewport: { width: 390, height: 844, deviceScaleFactor: 1 }
+          });
+        } catch (err) {
+          // Roll back: mark exited so the dashboard doesn't show a phantom
+          // running row, then re-throw so the spawn route returns 500.
+          updateAgentStatus(agentId, 'crashed');
+          throw err;
+        }
+      }
+      return getAgent(agentId)!;
+    }
+
     const adapter = this.registry.create(role.cli_kind);
     const agentId = args.agentId;
     const spec = adapter.buildSpawnSpec({
@@ -430,18 +543,28 @@ export class AgentSupervisor {
       this.runtimes.delete(agentId);
     }
     const row = getAgent(agentId);
-    if (row) {
-      await Tmux.killSession(row.tmux_session);
+    if (!row) return;
+    if (isBrowserKind(row.cli_kind)) {
+      // No tmux session, no FIFO, no commit history to snapshot — just flip
+      // the row to exited and let the dashboard route it to the archive on
+      // the next layout-data refresh. No 'state' emit needed since browser
+      // agents don't have a live runtime / WS subscriber path.
+      if (isStreamKind(row.cli_kind)) {
+        await getPlaywrightSessions().stop(agentId);
+      }
       updateAgentStatus(agentId, 'exited');
-      runtime?.emit('state', 'exited');
-      snapshotAgentCommits(agentId)
-        .then((r) => {
-          if ('error' in r) {
-            console.warn(`[AgentSupervisor] commit snapshot failed for ${agentId}: ${r.error}`);
-          }
-        })
-        .catch(() => {});
+      return;
     }
+    await Tmux.killSession(row.tmux_session);
+    updateAgentStatus(agentId, 'exited');
+    runtime?.emit('state', 'exited');
+    snapshotAgentCommits(agentId)
+      .then((r) => {
+        if ('error' in r) {
+          console.warn(`[AgentSupervisor] commit snapshot failed for ${agentId}: ${r.error}`);
+        }
+      })
+      .catch(() => {});
   }
 }
 

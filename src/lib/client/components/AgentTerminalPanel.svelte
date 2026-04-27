@@ -3,7 +3,13 @@
   import { page } from '$app/state';
   import { getMawWsClient, type AgentHandlers } from '$lib/client/ws';
   import Terminal from '$lib/client/components/Terminal.svelte';
+  import BrowserView from '$lib/client/components/BrowserView.svelte';
+  import StreamView from '$lib/client/components/StreamView.svelte';
   import type { MobileQuickKey } from '$lib/shared/adapterTypes';
+  import {
+    BROWSER_CLI_KIND,
+    BROWSER_STREAM_CLI_KIND
+  } from '$lib/shared/browserTarget';
   import { DEFAULT_MOBILE_QUICK_KEYS_MODE, type MobileQuickKeysMode } from '$lib/shared/dashboard';
   import { useT } from '$lib/client/i18n.svelte';
 
@@ -19,14 +25,28 @@
    * Status is bubbled up via `onStatusChange` so the host (e.g. the
    * dashboard modal) can render it next to its own title bar instead of
    * this panel having a second header.
+   *
+   * For `cli_kind === 'browser'` agents, this panel renders a `<BrowserView>`
+   * iframe instead of xterm — they don't have a tmux session or terminal
+   * stream, just a same-origin reverse-proxied dev-server preview.
    */
   let {
     agent,
     onStatusChange
   }: {
-    agent: { id: string; cli_kind: string; status: string; tmux_session: string };
+    agent: {
+      id: string;
+      cli_kind: string;
+      status: string;
+      tmux_session: string;
+      target_url?: string | null;
+    };
     onStatusChange?: (status: string) => void;
   } = $props();
+
+  const isBrowser = $derived(agent.cli_kind === BROWSER_CLI_KIND);
+  const isStream = $derived(agent.cli_kind === BROWSER_STREAM_CLI_KIND);
+  const isAnyBrowser = $derived(isBrowser || isStream);
 
   // Svelte warns if we seed $state from a prop at init time; derive it via
   // $effect so `status` stays mutable but reflects the latest status coming
@@ -100,6 +120,14 @@
   }
 
   onMount(() => {
+    if (isAnyBrowser) {
+      // Browser agents have no tmux session, no terminal_log replay, no
+      // pattern-matched events. BrowserView / StreamView own their own
+      // WS lifecycle. Bubble the (always 'running') status up immediately
+      // so the modal title shows it without waiting for a state event.
+      onStatusChange?.(agent.status);
+      return;
+    }
     // Subscribe immediately — protocol v5 ships a `pane_snapshot` in reply,
     // so the terminal paints the current tmux grid without waiting for any
     // resize handshake. Resize messages still flow separately through
@@ -122,6 +150,7 @@
   }
 
   onDestroy(() => {
+    if (isAnyBrowser) return;
     if (resizeTimer) clearTimeout(resizeTimer);
     getMawWsClient().unsubscribe(agent.id);
     mql?.removeEventListener('change', onTouchChange);
@@ -161,41 +190,55 @@
   }
 </script>
 
-<div class="panel">
-  <div class="term-wrap">
-    <Terminal bind:this={term} onData={onTerminalData} onResize={onTerminalResize} />
-  </div>
+{#if isStream}
+  <StreamView
+    agentId={agent.id}
+    targetUrl={agent.target_url ?? null}
+    onStopped={() => onStatusChange?.('exited')}
+  />
+{:else if isBrowser}
+  <BrowserView
+    agentId={agent.id}
+    targetUrl={agent.target_url ?? null}
+    onStopped={() => onStatusChange?.('exited')}
+  />
+{:else}
+  <div class="panel">
+    <div class="term-wrap">
+      <Terminal bind:this={term} onData={onTerminalData} onResize={onTerminalResize} />
+    </div>
 
-  {#if pendingPrompt}
-    <section class="prompt">
-      <h2>{t('agent.promptDetected')}</h2>
-      {#if pendingPrompt.detail}
-        <pre>{JSON.stringify(pendingPrompt.detail, null, 2)}</pre>
-      {/if}
-      <div class="actions">
-        {#each pendingPrompt.choices ?? ['yes', 'no'] as choice (choice)}
-          <button onclick={() => answer(choice)}>{choice}</button>
+    {#if pendingPrompt}
+      <section class="prompt">
+        <h2>{t('agent.promptDetected')}</h2>
+        {#if pendingPrompt.detail}
+          <pre>{JSON.stringify(pendingPrompt.detail, null, 2)}</pre>
+        {/if}
+        <div class="actions">
+          {#each pendingPrompt.choices ?? ['yes', 'no'] as choice (choice)}
+            <button onclick={() => answer(choice)}>{choice}</button>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if showQuickKeys}
+      <div class="quick-keys" aria-label={t('agent.quickKeysLabel')}>
+        {#each quickKeys as key (key.id)}
+          <button
+            type="button"
+            class="quick-key"
+            title={key.label}
+            aria-label={key.label}
+            onclick={() => pressQuickKey(key.keys)}
+          >
+            {key.label}
+          </button>
         {/each}
       </div>
-    </section>
-  {/if}
-
-  {#if showQuickKeys}
-    <div class="quick-keys" aria-label={t('agent.quickKeysLabel')}>
-      {#each quickKeys as key (key.id)}
-        <button
-          type="button"
-          class="quick-key"
-          title={key.label}
-          aria-label={key.label}
-          onclick={() => pressQuickKey(key.keys)}
-        >
-          {key.label}
-        </button>
-      {/each}
-    </div>
-  {/if}
-</div>
+    {/if}
+  </div>
+{/if}
 
 <style>
   /* The panel declares its own intrinsic size so the content-sized Modal

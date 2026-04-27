@@ -176,6 +176,53 @@ const en = {
   'spawn.error.networkError': 'Network error',
   'spawn.advanced': 'Advanced',
 
+  // ── Browser-agent spawn fields ───────────────────────────────────
+  'spawn.sessionLabel': 'Session label',
+  'spawn.previewUrl': 'Preview URL',
+  'spawn.previewUrl.help': 'http://localhost:<port> — same host as MAW. The proxy forwards to 127.0.0.1.',
+  'spawn.error.browserUrl.empty': 'Preview URL is required',
+  'spawn.error.browserUrl.invalid': 'Preview URL is not a valid URL',
+  'spawn.error.browserUrl.scheme': 'Preview URL must use http:// (not https://)',
+  'spawn.error.browserUrl.host': 'Preview URL host must be localhost or 127.0.0.1',
+  'spawn.error.browserUrl.port': 'Preview URL must include a port (e.g. :5173)',
+
+  // ── Browser-agent view ───────────────────────────────────────────
+  'browser.iframeTitle': 'Preview iframe',
+  'browser.reload': 'Reload preview',
+  'browser.openExternal': 'Open in new tab',
+  'browser.rotate': 'Rotate viewport',
+  'browser.viewport.label': 'Viewport size',
+  'browser.viewport.width': 'Width',
+  'browser.viewport.height': 'Height',
+  'browser.preset.mobile': 'Mobile',
+  'browser.preset.tablet': 'Tablet',
+  'browser.preset.desktop': 'Desktop',
+  'browser.preset.fit': 'Fit',
+  'browser.preset.custom': 'Custom',
+  'browser.unreachable.title': 'Dev server not reachable',
+  'browser.unreachable.body':
+    'Could not connect to {url} — start your dev server, then retry.',
+  'browser.unreachable.retry': 'Retry',
+  'browser.stop.title': 'Stop browser session',
+  'browser.stop.label': 'Stop',
+  'browser.stop.confirmTitle': 'Confirm stop — moves the agent to archive',
+  'browser.stop.confirmLabel': 'Confirm stop',
+  'browser.stop.stopping': 'Stopping…',
+  'browser.stop.cancel': 'Cancel',
+  'browser.stop.error': 'Failed to stop: {message}',
+  'browser.target.urlLabel': 'Preview URL',
+  'browser.target.apply': 'Apply',
+  'browser.target.commonPorts': 'Quick ports',
+  'browser.target.saveFailed': 'Failed to save URL',
+
+  // ── Server-rendered stream view ──────────────────────────────────
+  'stream.back': 'Back',
+  'stream.forward': 'Forward',
+  'stream.reload': 'Reload',
+  'stream.go': 'Go',
+  'stream.connecting': 'Connecting to browser…',
+  'stream.imageAlt': 'Server-rendered browser preview',
+
   // ── Agent card / terminal ────────────────────────────────────────
   'agent.openTerminal': 'Open terminal for {roleName}',
   'agent.tmuxGone': '(tmux session gone)',

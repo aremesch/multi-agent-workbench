@@ -1,0 +1,38 @@
+{
+  "$schema": "../schemas/adapter.schema.json",
+  "kind": "browser",
+  "displayName": "Browser (preview iframe)",
+
+  // Browser agents are not CLI processes — they're a per-agent iframe view
+  // backed by `/preview/<agentId>/*` reverse proxy on MAW's HTTP listener.
+  // No tmux session, no FIFO, no pattern matcher. The supervisor short-
+  // circuits every CLI-spawn touchpoint when `cli_kind === 'browser'`.
+  // The fields below exist only so the adapter registry treats `browser`
+  // as a known kind; the spawn config is never executed.
+  "createWorktree": false,
+
+  "mobileQuickKeys": [],
+
+  "spawn": {
+    "command": "/bin/true",
+    "args": [],
+    "env": {}
+  },
+
+  "input": {
+    "encoding": "literal",
+    "submitKey": "Enter",
+    "promptAnswers": {}
+  },
+
+  "patterns": [],
+
+  "idleDetection": {
+    "method": "inactivity",
+    "inactivityMs": 999999
+  },
+
+  "defaults": {
+    "autoAnswer": []
+  }
+}

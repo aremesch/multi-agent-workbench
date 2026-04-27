@@ -5,6 +5,11 @@
   import { untrack } from 'svelte';
   import { useT } from '$lib/client/i18n.svelte';
   import DirectoryPickerDialog from './DirectoryPickerDialog.svelte';
+  import {
+    DEFAULT_BROWSER_TARGET_URL,
+    isAnyBrowserKind,
+    parseBrowserTargetUrl
+  } from '$lib/shared/browserTarget';
 
   const t = useT();
 
@@ -103,6 +108,17 @@
     const kind = cliKinds.find((k) => k.kind === role.cli_kind);
     return kind?.optionalArgs ?? [];
   });
+
+  /** True when the currently selected role is either browser flavor.
+   *  Hides the task body field and reveals the preview URL field. */
+  const isBrowserSelected = $derived.by(() => {
+    const role = roleOptions.find((r) => r.id === selectedRoleId);
+    return !!role && isAnyBrowserKind(role.cli_kind);
+  });
+
+  // ── Browser-kind preview URL ────────────────────────────────────────────
+  let targetUrl = $state(DEFAULT_BROWSER_TARGET_URL);
+  const targetUrlValid = $derived(parseBrowserTargetUrl(targetUrl).ok);
 
   // Re-derive toggle values when the selected role (and thus CLI kind) changes.
   $effect(() => {
@@ -367,16 +383,35 @@
     </div>
 
     <label>
-      <span>{t('spawn.taskTitle')}</span>
+      <span>{isBrowserSelected ? t('spawn.sessionLabel') : t('spawn.taskTitle')}</span>
       <input name="task_title" bind:value={taskTitle} required />
-      {#if taskSlug}
+      {#if !isBrowserSelected && taskSlug}
         <span class="slug-preview">worktree: {taskSlug}/</span>
       {/if}
     </label>
-    <label>
-      <span>{t('spawn.taskBody')} <span class="muted">({t('spawn.sentAsInitialInput')})</span></span>
-      <textarea name="task_body" rows="6"></textarea>
-    </label>
+    {#if isBrowserSelected}
+      <label>
+        <span>{t('spawn.previewUrl')}</span>
+        <input
+          name="target_url"
+          type="url"
+          inputmode="url"
+          autocomplete="off"
+          bind:value={targetUrl}
+          placeholder={DEFAULT_BROWSER_TARGET_URL}
+          required
+        />
+        <span class="muted slug-preview">{t('spawn.previewUrl.help')}</span>
+        {#if !targetUrlValid && targetUrl.trim() !== ''}
+          <span class="err">{t('spawn.error.browserUrl.invalid')}</span>
+        {/if}
+      </label>
+    {:else}
+      <label>
+        <span>{t('spawn.taskBody')} <span class="muted">({t('spawn.sentAsInitialInput')})</span></span>
+        <textarea name="task_body" rows="6"></textarea>
+      </label>
+    {/if}
     {#if selectedOptionalArgs.length > 0}
       <div class="advanced-section">
         <button
@@ -424,7 +459,15 @@
       {:else}
         <a href="/" class="cancel">{t('spawn.cancel')}</a>
       {/if}
-      <button type="submit" disabled={submitting || anyInlineOpen || !selectedRoleId || !selectedRepoId || !taskSlug}>
+      <button
+        type="submit"
+        disabled={submitting ||
+          anyInlineOpen ||
+          !selectedRoleId ||
+          !selectedRepoId ||
+          !taskSlug ||
+          (isBrowserSelected && !targetUrlValid)}
+      >
         {submitting ? t('spawn.spawning') : t('spawn.spawn')}
       </button>
     </div>

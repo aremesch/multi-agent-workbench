@@ -159,6 +159,57 @@ const es: Partial<Record<TranslationKey, string>> = {
   'spawn.error.networkError': 'Error de red',
   'spawn.advanced': 'Avanzado',
 
+  // ── Campos de spawn para agente browser ────────────────────────
+  'spawn.sessionLabel': 'Etiqueta de sesión',
+  'spawn.previewUrl': 'URL de vista previa',
+  'spawn.previewUrl.help':
+    'http://localhost:<puerto> — mismo host que MAW. El proxy reenvía a 127.0.0.1.',
+  'spawn.error.browserUrl.empty': 'La URL de vista previa es obligatoria',
+  'spawn.error.browserUrl.invalid': 'La URL de vista previa no es válida',
+  'spawn.error.browserUrl.scheme':
+    'La URL de vista previa debe usar http:// (no https://)',
+  'spawn.error.browserUrl.host':
+    'El host de la URL debe ser localhost o 127.0.0.1',
+  'spawn.error.browserUrl.port':
+    'La URL de vista previa debe incluir un puerto (p. ej. :5173)',
+
+  // ── Vista de agente browser ────────────────────────────────────
+  'browser.iframeTitle': 'Iframe de vista previa',
+  'browser.reload': 'Recargar vista previa',
+  'browser.openExternal': 'Abrir en nueva pestaña',
+  'browser.rotate': 'Rotar viewport',
+  'browser.viewport.label': 'Tamaño de viewport',
+  'browser.viewport.width': 'Ancho',
+  'browser.viewport.height': 'Alto',
+  'browser.preset.mobile': 'Móvil',
+  'browser.preset.tablet': 'Tablet',
+  'browser.preset.desktop': 'Escritorio',
+  'browser.preset.fit': 'Ajustar',
+  'browser.preset.custom': 'Personalizado',
+  'browser.unreachable.title': 'Servidor de desarrollo no accesible',
+  'browser.unreachable.body':
+    'No se pudo conectar a {url} — inicia tu servidor de desarrollo y reintenta.',
+  'browser.unreachable.retry': 'Reintentar',
+  'browser.stop.title': 'Detener sesión del navegador',
+  'browser.stop.label': 'Detener',
+  'browser.stop.confirmTitle': 'Confirmar detención — mueve el agente al archivo',
+  'browser.stop.confirmLabel': 'Confirmar',
+  'browser.stop.stopping': 'Deteniendo…',
+  'browser.stop.cancel': 'Cancelar',
+  'browser.stop.error': 'No se pudo detener: {message}',
+  'browser.target.urlLabel': 'URL de vista previa',
+  'browser.target.apply': 'Aplicar',
+  'browser.target.commonPorts': 'Puertos rápidos',
+  'browser.target.saveFailed': 'No se pudo guardar la URL',
+
+  // ── Vista de stream renderizada en el servidor ─────────────────
+  'stream.back': 'Atrás',
+  'stream.forward': 'Adelante',
+  'stream.reload': 'Recargar',
+  'stream.go': 'Ir',
+  'stream.connecting': 'Conectando al navegador…',
+  'stream.imageAlt': 'Vista previa del navegador renderizada en el servidor',
+
   // ── Agent card / terminal ────────────────────────────────────────
   'agent.openTerminal': 'Abrir terminal para {roleName}',
   'agent.tmuxGone': '(sesi\u00f3n tmux finalizada)',

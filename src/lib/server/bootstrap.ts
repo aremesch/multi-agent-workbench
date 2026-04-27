@@ -16,9 +16,19 @@ import { ulid } from 'ulid';
 import { getConfig } from './config.js';
 import { getDb } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
-import { countUsers, insertUser } from './db/queries.js';
+import {
+  countUsers,
+  findRoleByCliKind,
+  insertRole,
+  insertUser,
+  listUserIds
+} from './db/queries.js';
 import { AdapterRegistry } from './agents/adapters/AdapterRegistry.js';
-import { AgentSupervisor } from './agents/AgentSupervisor.js';
+import {
+  AgentSupervisor,
+  BROWSER_KIND,
+  BROWSER_STREAM_KIND
+} from './agents/AgentSupervisor.js';
 import { PushService } from './push/PushService.js';
 import { hashPassword } from './auth/password.js';
 import { Tmux } from './tmux/TmuxSession.js';
@@ -58,6 +68,34 @@ export function bootstrap(): Promise<void> {
       console.log(
         `[maw] bootstrap user '${cfg.bootstrapUsername}' created — change password after first login`
       );
+    }
+
+    // 2a. Seed the built-in browser roles for every user that doesn't have
+    // them yet. Both flavors need a role row (FK on agents.role_id) but
+    // nothing the user needs to configure — system prompt and tool config
+    // are unused by the iframe runtime AND the Playwright stream runtime.
+    // Idempotent; runs on every boot so existing installs pick up new roles
+    // when the adapter ships.
+    const seedRole = (
+      userId: string,
+      kind: string,
+      name: string
+    ): void => {
+      if (findRoleByCliKind(userId, kind)) return;
+      insertRole({
+        id: ulid(),
+        user_id: userId,
+        name,
+        system_prompt: '',
+        cli_kind: kind,
+        default_args_json: '[]',
+        tool_config_json: '{}',
+        repo_scope_json: '[]'
+      });
+    };
+    for (const userId of listUserIds()) {
+      seedRole(userId, BROWSER_KIND, 'Browser');
+      seedRole(userId, BROWSER_STREAM_KIND, 'Browser (stream)');
     }
 
     // 3. Push service (before supervisor so alerts can fire immediately).

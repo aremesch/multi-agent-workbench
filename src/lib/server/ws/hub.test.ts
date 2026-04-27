@@ -52,7 +52,31 @@ vi.mock('../config.js', () => ({
 }));
 vi.mock('../db/queries.js', () => ({
   getLatestTerminalSeq: (...a: unknown[]) => mocks.getLatestTerminalSeq(...a),
-  listTerminalChunksSince: (...a: unknown[]) => mocks.listTerminalChunksSince(...a)
+  listTerminalChunksSince: (...a: unknown[]) => mocks.listTerminalChunksSince(...a),
+  // Tests in this file exclusively cover the CLI-agent runtime path; the
+  // browser-stream branch (added in v0.3) keys on getAgent/isStreamKind to
+  // route /ws subscribes to a Playwright session manager. Returning
+  // undefined here makes handleSubscribe fall through to its existing
+  // runtime-based logic — the same behavior these tests have always asserted.
+  getAgent: () => undefined
+}));
+vi.mock('../agents/AgentSupervisor.js', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../agents/AgentSupervisor.js')>();
+  return {
+    ...orig,
+    // Force false so handleSubscribe stays on the runtime branch even if
+    // a future change to getAgent's mock returns a non-undefined row.
+    isStreamKind: () => false
+  };
+});
+vi.mock('../preview/PlaywrightSessionManager.js', () => ({
+  getPlaywrightSessions: () => ({
+    get: () => undefined,
+    start: async () => {
+      throw new Error('not used in this test');
+    },
+    stop: async () => {}
+  })
 }));
 
 import { WsHub, getWsHub } from './hub.js';

@@ -12,7 +12,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
       id: agent.id,
       cli_kind: agent.cli_kind,
       status: agent.status,
-      tmux_session: agent.tmux_session
+      tmux_session: agent.tmux_session,
+      target_url: agent.target_url
     }
   };
 };

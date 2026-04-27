@@ -130,7 +130,8 @@
           id: openAgent.id,
           cli_kind: openAgent.cli_kind,
           status: openAgent.status,
-          tmux_session: openAgent.tmux_session
+          tmux_session: openAgent.tmux_session,
+          target_url: openAgent.target_url
         }}
         onStatusChange={(s) => (openAgentStatus = s)}
       />

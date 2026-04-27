@@ -1,0 +1,37 @@
+{
+  "$schema": "../schemas/adapter.schema.json",
+  "kind": "browser-stream",
+  "displayName": "Browser (server-rendered stream)",
+
+  // browser-stream agents drive a real Chromium on the MAW host via Playwright
+  // and stream JPEG frames over WebSocket to the dashboard. The supervisor
+  // short-circuits every CLI/tmux touchpoint when the kind is browser-stream;
+  // the fields below exist only so the adapter registry treats the kind as
+  // known. No spawn command is ever executed.
+  "createWorktree": false,
+
+  "mobileQuickKeys": [],
+
+  "spawn": {
+    "command": "/bin/true",
+    "args": [],
+    "env": {}
+  },
+
+  "input": {
+    "encoding": "literal",
+    "submitKey": "Enter",
+    "promptAnswers": {}
+  },
+
+  "patterns": [],
+
+  "idleDetection": {
+    "method": "inactivity",
+    "inactivityMs": 999999
+  },
+
+  "defaults": {
+    "autoAnswer": []
+  }
+}

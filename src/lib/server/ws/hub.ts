@@ -28,7 +28,10 @@ import { getConfig } from '../config.js';
 import { getSupervisor } from '../bootstrap.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import type { AgentRuntime } from '../agents/AgentRuntime.js';
-import { getLatestTerminalSeq, listTerminalChunksSince } from '../db/queries.js';
+import { getAgent, getLatestTerminalSeq, listTerminalChunksSince } from '../db/queries.js';
+import { isStreamKind } from '../agents/AgentSupervisor.js';
+import { getPlaywrightSessions } from '../preview/PlaywrightSessionManager.js';
+import type { PlaywrightSession, StreamFrame } from '../preview/PlaywrightSession.js';
 import type { Cookies } from '@sveltejs/kit';
 
 interface Subscription {
@@ -40,8 +43,21 @@ interface Subscription {
   offAlert: () => void;
 }
 
+interface StreamSubscription {
+  agentId: string;
+  session: PlaywrightSession;
+  offFrame: () => void;
+  offUrl: () => void;
+  offError: () => void;
+  offReady: () => void;
+}
+
 class HubClient {
   private subs = new Map<string, Subscription>();
+  /** Browser-stream subscriptions live in their own map because they wire
+   *  to a Playwright session, not an AgentRuntime, and the message types
+   *  flowing in/out are different. */
+  private streamSubs = new Map<string, StreamSubscription>();
 
   constructor(
     private readonly ws: WebSocket,
@@ -82,6 +98,7 @@ class HubClient {
         break;
       case 'unsubscribe_agent':
         this.handleUnsubscribe(msg.agentId);
+        this.handleStreamUnsubscribe(msg.agentId);
         break;
       case 'send_input':
         this.handleSendInput(msg.agentId, msg.text, msg.submit);
@@ -101,6 +118,30 @@ class HubClient {
       case 'assign_task':
         this.handleAssignTask(msg.agentId, msg.task);
         break;
+      case 'stream_pointer':
+        this.handleStreamPointer(msg.agentId, msg.kind, msg.x, msg.y, msg.button, msg.buttons);
+        break;
+      case 'stream_wheel':
+        this.handleStreamWheel(msg.agentId, msg.x, msg.y, msg.deltaX, msg.deltaY);
+        break;
+      case 'stream_key':
+        this.handleStreamKey(msg.agentId, msg.kind, msg.key, msg.code, msg.modifiers);
+        break;
+      case 'stream_text':
+        this.handleStreamText(msg.agentId, msg.text);
+        break;
+      case 'stream_viewport':
+        this.handleStreamViewport(msg.agentId, msg.width, msg.height, msg.deviceScaleFactor);
+        break;
+      case 'stream_frame_ack':
+        this.handleStreamFrameAck(msg.agentId, msg.sessionId);
+        break;
+      case 'stream_navigate':
+        this.handleStreamNavigate(msg.agentId, msg.url);
+        break;
+      case 'stream_history':
+        this.handleStreamHistory(msg.agentId, msg.action);
+        break;
       default: {
         const _exhaustive: never = msg;
         void _exhaustive;
@@ -109,6 +150,15 @@ class HubClient {
   }
 
   private handleSubscribe(agentId: string): void {
+    // Browser-stream agents have no AgentRuntime; route to the Playwright
+    // session handler. Detect via the DB row's cli_kind so a stale runtime
+    // map doesn't accidentally get queried for a stream agent.
+    const row = getAgent(agentId);
+    if (row && row.user_id === this.userId && isStreamKind(row.cli_kind)) {
+      this.handleStreamSubscribe(agentId);
+      return;
+    }
+
     if (this.subs.has(agentId)) return;
     const runtime = getSupervisor().get(agentId);
     if (!runtime) {
@@ -288,9 +338,162 @@ class HubClient {
     runtime.enqueueInput(task.body, true).catch(() => {});
   }
 
+  // ─────────── browser-stream (Playwright) subscriptions ──────────────
+
+  private handleStreamSubscribe(agentId: string): void {
+    if (this.streamSubs.has(agentId)) return;
+    const session = getPlaywrightSessions().get(agentId);
+    if (!session) {
+      this.send({ type: 'stream_error', agentId, message: 'session not running' });
+      return;
+    }
+
+    const onFrame = (f: StreamFrame): void => {
+      this.send({
+        type: 'stream_frame',
+        agentId,
+        sessionId: f.sessionId,
+        b64: f.b64,
+        width: f.width,
+        height: f.height
+      });
+    };
+    const onUrl = (url: string): void => {
+      this.send({ type: 'stream_url', agentId, url });
+    };
+    const onError = (msg: string): void => {
+      this.send({ type: 'stream_error', agentId, message: msg });
+    };
+    const onReady = (url: string): void => {
+      this.send({ type: 'stream_ready', agentId, url });
+    };
+
+    session.on('frame', onFrame);
+    session.on('url', onUrl);
+    session.on('error', onError);
+    session.on('ready', onReady);
+
+    this.streamSubs.set(agentId, {
+      agentId,
+      session,
+      offFrame: () => session.off('frame', onFrame),
+      offUrl: () => session.off('url', onUrl),
+      offError: () => session.off('error', onError),
+      offReady: () => session.off('ready', onReady)
+    });
+
+    // The session is already running by the time we subscribe (spawn awaits
+    // start()). Send an immediate `stream_ready` so the client can paint
+    // its toolbar URL bar without waiting for a navigation event.
+    this.send({ type: 'stream_ready', agentId, url: session.url });
+
+    // Replay the most recent CDP frame so the StreamView paints immediately.
+    // Without this, a subscriber that connects after Chromium already
+    // rendered the page (e.g. spawn → navigate → /agents/<id>) would sit on
+    // the "Connecting…" placeholder until the next visible change, since
+    // CDP only emits frames on page mutation.
+    const last = session.lastFrame;
+    if (last) {
+      this.send({
+        type: 'stream_frame',
+        agentId,
+        sessionId: last.sessionId,
+        b64: last.b64,
+        width: last.width,
+        height: last.height
+      });
+    }
+  }
+
+  private streamSession(agentId: string): PlaywrightSession | null {
+    const sub = this.streamSubs.get(agentId);
+    if (!sub) return null;
+    return sub.session;
+  }
+
+  private handleStreamPointer(
+    agentId: string,
+    kind: 'move' | 'down' | 'up',
+    x: number,
+    y: number,
+    button: number,
+    buttons: number
+  ): void {
+    const session = this.streamSession(agentId);
+    if (!session) return;
+    void session.dispatchPointer(kind, x, y, button, buttons);
+  }
+
+  private handleStreamWheel(agentId: string, x: number, y: number, dx: number, dy: number): void {
+    const session = this.streamSession(agentId);
+    if (!session) return;
+    void session.dispatchWheel(x, y, dx, dy);
+  }
+
+  private handleStreamKey(
+    agentId: string,
+    kind: 'down' | 'up',
+    key: string,
+    code: string,
+    modifiers: { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean }
+  ): void {
+    const session = this.streamSession(agentId);
+    if (!session) return;
+    void session.dispatchKey(kind, key, code, modifiers);
+  }
+
+  private handleStreamText(agentId: string, text: string): void {
+    const session = this.streamSession(agentId);
+    if (!session) return;
+    void session.dispatchText(text);
+  }
+
+  private handleStreamViewport(
+    agentId: string,
+    width: number,
+    height: number,
+    deviceScaleFactor?: number
+  ): void {
+    const session = this.streamSession(agentId);
+    if (!session) return;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 100 || height < 100) return;
+    void session.setViewport(Math.floor(width), Math.floor(height), deviceScaleFactor ?? 1);
+  }
+
+  private handleStreamFrameAck(agentId: string, sessionId: number): void {
+    const session = this.streamSession(agentId);
+    if (!session) return;
+    void session.ackFrame(sessionId);
+  }
+
+  private handleStreamNavigate(agentId: string, url: string): void {
+    const session = this.streamSession(agentId);
+    if (!session) return;
+    void session.navigate(url);
+  }
+
+  private handleStreamHistory(agentId: string, action: 'reload' | 'back' | 'forward'): void {
+    const session = this.streamSession(agentId);
+    if (!session) return;
+    void session.historyAction(action);
+  }
+
+  private handleStreamUnsubscribe(agentId: string): void {
+    const sub = this.streamSubs.get(agentId);
+    if (!sub) return;
+    sub.offFrame();
+    sub.offUrl();
+    sub.offError();
+    sub.offReady();
+    this.streamSubs.delete(agentId);
+  }
+
   private cleanup(): void {
     for (const id of Array.from(this.subs.keys())) {
       this.handleUnsubscribe(id);
+    }
+    for (const id of Array.from(this.streamSubs.keys())) {
+      this.handleStreamUnsubscribe(id);
     }
   }
 }

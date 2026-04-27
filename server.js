@@ -18,6 +18,10 @@ import { WebSocketServer } from 'ws';
 import { handler } from './build/handler.js';
 import { bootstrap, getSupervisor } from './src/lib/server/bootstrap.ts';
 import { getWsHub } from './src/lib/server/ws/hub.ts';
+import {
+  handlePreviewRequest,
+  handlePreviewUpgrade
+} from './src/lib/server/preview/proxy.ts';
 
 async function main() {
   await bootstrap();
@@ -39,6 +43,11 @@ async function main() {
       );
       return;
     }
+    // Browser-agent preview reverse proxy. Catches /preview/<agentId>/*
+    // and forwards to 127.0.0.1:<target_port> after auth. Returns true
+    // when the request was claimed (forwarded or rejected); we fall
+    // through to SvelteKit only on a miss.
+    if (handlePreviewRequest(req, res)) return;
     handler(req, res);
   });
   const wss = new WebSocketServer({ noServer: true });
@@ -46,13 +55,16 @@ async function main() {
   server.on('upgrade', (req, socket, head) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
-      if (url.pathname !== '/ws') {
-        socket.destroy();
+      if (url.pathname === '/ws') {
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          getWsHub().attach(ws, req);
+        });
         return;
       }
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        getWsHub().attach(ws, req);
-      });
+      // Forward browser-agent preview WS upgrades (e.g. Vite HMR socket)
+      // to the same dev server the HTTP proxy points at.
+      if (handlePreviewUpgrade(req, socket, head)) return;
+      socket.destroy();
     } catch {
       socket.destroy();
     }

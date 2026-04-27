@@ -3,6 +3,7 @@
   import { invalidateAll } from '$app/navigation';
   import type { AgentCardRow } from '$lib/shared/types';
   import { ansiToHtml, stripAnsi } from '$lib/client/ansi';
+  import { isAnyBrowserKind, BROWSER_STREAM_CLI_KIND } from '$lib/shared/browserTarget';
   import { useT } from '$lib/client/i18n.svelte';
 
   const t = useT();
@@ -17,6 +18,9 @@
     agent: AgentCardRow;
     onOpen: (agent: AgentCardRow) => void;
   } = $props();
+
+  const isBrowser = $derived(isAnyBrowserKind(agent.cli_kind));
+  const isStream = $derived(agent.cli_kind === BROWSER_STREAM_CLI_KIND);
 
   let snapshotHtml = $state<string>('');
   let hasContent = $state<boolean>(false);
@@ -139,7 +143,9 @@
   }
 
   onMount(() => {
-    void tick();
+    // Browser agents have no tmux pane to snapshot — skip the polling loop
+    // entirely. The card just shows a static "browser preview" placeholder.
+    if (!isBrowser) void tick();
     if (bodyEl) {
       resizeObserver = new ResizeObserver((entries) => {
         const e = entries[0];
@@ -208,7 +214,12 @@
     onkeydown={onKey}
     aria-label={t('agent.openTerminal', { roleName: agent.role_name })}
   >
-    {#if !alive}
+    {#if isBrowser}
+      <div class="browser-thumb">
+        <span class="browser-icon" aria-hidden="true">{isStream ? '🎥' : '🌐'}</span>
+        <span class="browser-target">{agent.target_url ?? ''}</span>
+      </div>
+    {:else if !alive}
       <div class="placeholder">{t('agent.tmuxGone')}</div>
     {:else if !hasContent}
       <div class="placeholder">{loading ? t('agent.loading') : t('agent.empty')}</div>
@@ -323,5 +334,27 @@
   .placeholder {
     color: #4b5563;
     font-style: italic;
+  }
+  .browser-thumb {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    height: 100%;
+    color: #93c5fd;
+    text-align: center;
+    padding: 0.5rem;
+  }
+  .browser-icon {
+    font-size: 2rem;
+    line-height: 1;
+  }
+  .browser-target {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.8rem;
+    color: #9ca3af;
+    word-break: break-all;
   }
 </style>

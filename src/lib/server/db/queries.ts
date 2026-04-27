@@ -67,6 +67,12 @@ export function countUsers(): number {
   return row?.n ?? 0;
 }
 
+export function listUserIds(): string[] {
+  return prep<[], { id: string }>('SELECT id FROM users ORDER BY created_at')
+    .all()
+    .map((r) => r.id);
+}
+
 export function updateUserPasswordHash(userId: string, hash: string): void {
   const ts = now();
   prep<[string, number, number, string]>(
@@ -314,6 +320,12 @@ export function getRole(id: string): RoleRow | undefined {
   return prep<[string], RoleRow>('SELECT * FROM roles WHERE id = ?').get(id);
 }
 
+export function findRoleByCliKind(userId: string, cliKind: string): RoleRow | undefined {
+  return prep<[string, string], RoleRow>(
+    'SELECT * FROM roles WHERE user_id = ? AND cli_kind = ? ORDER BY created_at LIMIT 1'
+  ).get(userId, cliKind);
+}
+
 export function insertRole(row: {
   id: string;
   user_id: string;
@@ -439,6 +451,8 @@ export function insertAgent(row: {
   cli_session_id: string | null;
   base_sha?: string | null;
   committer_email?: string | null;
+  target_url?: string | null;
+  target_port?: number | null;
 }): void {
   const ts = now();
   prep<
@@ -454,14 +468,17 @@ export function insertAgent(row: {
       string | null,
       string | null,
       string | null,
+      string | null,
+      number | null,
       number,
       number
     ]
   >(
     `INSERT INTO agents
        (id, user_id, role_id, repo_id, worktree_id, cli_kind, tmux_session, status,
-        cli_session_id, base_sha, committer_email, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        cli_session_id, base_sha, committer_email, target_url, target_port,
+        created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     row.id,
     row.user_id,
@@ -474,6 +491,8 @@ export function insertAgent(row: {
     row.cli_session_id,
     row.base_sha ?? null,
     row.committer_email ?? null,
+    row.target_url ?? null,
+    row.target_port ?? null,
     ts,
     ts
   );
@@ -505,6 +524,46 @@ export function updateAgentCurrentTask(id: string, taskId: string | null): void 
   prep<[string | null, number, string]>(
     'UPDATE agents SET current_task_id = ?, updated_at = ? WHERE id = ?'
   ).run(taskId, now(), id);
+}
+
+/**
+ * Owner-scoped update of a browser agent's target URL + port. Used by the
+ * BrowserView toolbar's "change port / URL" affordance. Returns the number
+ * of rows affected — 0 means the agent doesn't exist or doesn't belong to
+ * the caller, which the API route surfaces as 404 / 403 respectively.
+ */
+export function updateAgentTarget(
+  id: string,
+  userId: string,
+  target_url: string,
+  target_port: number
+): number {
+  return prep<[string, number, number, string, string], void>(
+    'UPDATE agents SET target_url = ?, target_port = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+  ).run(target_url, target_port, now(), id, userId).changes;
+}
+
+/**
+ * Look up the target port for a browser agent. Used by the `/preview/<id>/*`
+ * reverse proxy on every request to resolve where to forward to. Returns
+ * undefined if the agent doesn't exist, isn't owned by the caller, isn't a
+ * browser agent, or has no target_port set.
+ */
+export function getAgentTargetForProxy(
+  agentId: string,
+  userId: string
+): { target_port: number; target_url: string } | undefined {
+  const row = prep<
+    [string, string],
+    { cli_kind: string; target_port: number | null; target_url: string | null }
+  >(
+    `SELECT cli_kind, target_port, target_url FROM agents
+     WHERE id = ? AND user_id = ?`
+  ).get(agentId, userId);
+  if (!row) return undefined;
+  if (row.cli_kind !== 'browser') return undefined;
+  if (row.target_port == null || row.target_url == null) return undefined;
+  return { target_port: row.target_port, target_url: row.target_url };
 }
 
 // --------------- agent runs ---------------

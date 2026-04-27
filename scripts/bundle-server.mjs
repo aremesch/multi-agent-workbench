@@ -54,6 +54,11 @@ await build({
     'zod',
     'web-push',
     '@sveltejs/kit',
+    // playwright pulls in chromium-bidi via dynamic require which esbuild
+    // can't statically resolve — keep the entire package external so
+    // Node's loader handles the chain at runtime.
+    'playwright',
+    'playwright-core',
   ],
 
   // Drop unused code; keep stack traces readable.

@@ -17,12 +17,20 @@ import type { RequestHandler } from './$types';
 import { getAgent } from '$lib/server/db/queries';
 import { Tmux } from '$lib/server/tmux/TmuxSession';
 import { getSupervisor } from '$lib/server/bootstrap';
+import { isBrowserKind } from '$lib/server/agents/AgentSupervisor';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
   if (!locals.user) throw error(401, 'Unauthorized');
   const agent = getAgent(params.id);
   if (!agent) throw error(404, 'Agent not found');
   if (agent.user_id !== locals.user.id) throw error(403, 'Forbidden');
+
+  // Browser agents never have a tmux pane; AgentCard skips polling for them
+  // anyway, but guard here too so any stragglers (cached HTML, hand-crafted
+  // requests) don't get a 410 that the dashboard would interpret as crashed.
+  if (isBrowserKind(agent.cli_kind)) {
+    return json({ text: '', ts: Math.floor(Date.now() / 1000), alive: true });
+  }
 
   const alive = await Tmux.hasSession(agent.tmux_session);
   if (!alive) {

@@ -22,7 +22,11 @@ import type {
   ServerMessage,
   SC_Output,
   SC_PaneSnapshot,
-  SC_AgentEvent
+  SC_AgentEvent,
+  SC_StreamFrame,
+  SC_StreamReady,
+  SC_StreamUrl,
+  SC_StreamError
 } from '$shared/protocol';
 
 export interface AgentHandlers {
@@ -30,6 +34,12 @@ export interface AgentHandlers {
   onPaneSnapshot: (msg: SC_PaneSnapshot) => void;
   onEvent: (msg: SC_AgentEvent) => void;
   onState: (status: string) => void;
+  // Browser-stream callbacks. Optional — the iframe AgentTerminalPanel
+  // doesn't need them; StreamView wires them up.
+  onStreamFrame?: (msg: SC_StreamFrame) => void;
+  onStreamReady?: (msg: SC_StreamReady) => void;
+  onStreamUrl?: (msg: SC_StreamUrl) => void;
+  onStreamError?: (msg: SC_StreamError) => void;
 }
 
 export type ConnectionState = 'open' | 'closed' | 'reconnecting';
@@ -157,6 +167,47 @@ export class MawWsClient {
     this.send({ type: 'resize', agentId, cols, rows });
   }
 
+  // ---------- browser-stream input forwarding ----------
+
+  sendStreamPointer(
+    agentId: string,
+    kind: 'move' | 'down' | 'up',
+    x: number,
+    y: number,
+    button: number,
+    buttons: number
+  ): void {
+    this.send({ type: 'stream_pointer', agentId, kind, x, y, button, buttons });
+  }
+  sendStreamWheel(agentId: string, x: number, y: number, deltaX: number, deltaY: number): void {
+    this.send({ type: 'stream_wheel', agentId, x, y, deltaX, deltaY });
+  }
+  sendStreamKey(
+    agentId: string,
+    kind: 'down' | 'up',
+    key: string,
+    code: string,
+    modifiers: { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean }
+  ): void {
+    this.send({ type: 'stream_key', agentId, kind, key, code, modifiers });
+  }
+  sendStreamText(agentId: string, text: string): void {
+    if (!text) return;
+    this.send({ type: 'stream_text', agentId, text });
+  }
+  sendStreamViewport(agentId: string, width: number, height: number, deviceScaleFactor?: number): void {
+    this.send({ type: 'stream_viewport', agentId, width, height, deviceScaleFactor });
+  }
+  sendStreamFrameAck(agentId: string, sessionId: number): void {
+    this.send({ type: 'stream_frame_ack', agentId, sessionId });
+  }
+  sendStreamNavigate(agentId: string, url: string): void {
+    this.send({ type: 'stream_navigate', agentId, url });
+  }
+  sendStreamHistory(agentId: string, action: 'reload' | 'back' | 'forward'): void {
+    this.send({ type: 'stream_history', agentId, action });
+  }
+
   addConnectionListener(cb: (s: ConnectionState) => void): () => void {
     this.connectionListeners.add(cb);
     cb(this.connectionState);
@@ -225,6 +276,22 @@ export class MawWsClient {
       case 'agent_state': {
         for (const cb of this.globalStateListeners) cb(msg.agentId, msg.status);
         this.subs.get(msg.agentId)?.handlers.onState(msg.status);
+        break;
+      }
+      case 'stream_frame': {
+        this.subs.get(msg.agentId)?.handlers.onStreamFrame?.(msg);
+        break;
+      }
+      case 'stream_ready': {
+        this.subs.get(msg.agentId)?.handlers.onStreamReady?.(msg);
+        break;
+      }
+      case 'stream_url': {
+        this.subs.get(msg.agentId)?.handlers.onStreamUrl?.(msg);
+        break;
+      }
+      case 'stream_error': {
+        this.subs.get(msg.agentId)?.handlers.onStreamError?.(msg);
         break;
       }
       case 'pong':
