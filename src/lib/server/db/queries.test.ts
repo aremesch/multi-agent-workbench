@@ -26,33 +26,30 @@ import {
   deleteAgent,
   updateRepo,
   deletePushSubByEndpoint,
-  deleteSession,
-  deleteSessionsForUserExcept,
-  deleteExpiredSessions,
   findWorktreeByPath,
   getAgent,
   getLatestRunForAgent,
   getLatestTerminalSeq,
+  getMustChangePasswordById,
   getProject,
   getRepo,
   getRole,
-  getSessionById,
   getSpawnDefaults,
   getSpawnDefaultsAll,
   getUserById,
-  getUserByUsername,
   getUserSetting,
   getWorktree,
   insertAgent,
   insertAgentRun,
   insertAlert,
   insertAuthEvent,
+  insertBetterAuthCredentialAccount,
+  insertBetterAuthUser,
   insertEvent,
   insertMessage,
   insertProject,
   insertRepo,
   insertRole,
-  insertSession,
   insertTask,
   insertTerminalChunk,
   insertUser,
@@ -85,7 +82,6 @@ import {
   updateAgentCommitSnapshot,
   updateAgentCurrentTask,
   updateAgentStatus,
-  updateUserPasswordHash,
   updateWorktreeStatus,
   upsertPushSub
 } from './queries.js';
@@ -188,17 +184,17 @@ function seedFullStack(): void {
 // ----- users --------------------------------------------------------------
 
 describe('users', () => {
-  it('insertUser + getUserByUsername round-trip', () => {
+  it('insertUser + getUserById round-trip', () => {
     seedUser('u1', 'alice');
-    const row = getUserByUsername('alice');
+    const row = getUserById('u1');
     expect(row?.id).toBe('u1');
+    expect(row?.username).toBe('alice');
     expect(row?.password_hash).toBe('hash-u1');
     expect(row?.must_change_password).toBe(0);
   });
 
-  it('getUserById resolves by id', () => {
+  it('getUserById returns undefined for unknown id', () => {
     seedUser('u1', 'bob');
-    expect(getUserById('u1')?.username).toBe('bob');
     expect(getUserById('missing')).toBeUndefined();
   });
 
@@ -209,20 +205,42 @@ describe('users', () => {
     expect(countUsers()).toBe(2);
   });
 
-  it('updateUserPasswordHash updates the hash and timestamps', () => {
+  it('setMustChangePassword + getMustChangePasswordById flip the flag', () => {
     seedUser('u1');
-    updateUserPasswordHash('u1', 'new-hash');
-    const u = getUserById('u1');
-    expect(u?.password_hash).toBe('new-hash');
-    expect(u?.password_updated_at).toBeGreaterThan(0);
+    expect(getMustChangePasswordById('u1')).toBe(0);
+    setMustChangePassword('u1', true);
+    expect(getMustChangePasswordById('u1')).toBe(1);
+    setMustChangePassword('u1', false);
+    expect(getMustChangePasswordById('u1')).toBe(0);
   });
 
-  it('setMustChangePassword flips the flag in both directions', () => {
-    seedUser('u1');
-    setMustChangePassword('u1', true);
-    expect(getUserById('u1')?.must_change_password).toBe(1);
-    setMustChangePassword('u1', false);
-    expect(getUserById('u1')?.must_change_password).toBe(0);
+  it('getMustChangePasswordById returns 0 for unknown user', () => {
+    expect(getMustChangePasswordById('missing')).toBe(0);
+  });
+
+  it('insertBetterAuthUser + insertBetterAuthCredentialAccount mirror to better-auth tables', () => {
+    seedUser('u1', 'alice');
+    insertBetterAuthUser({
+      id: 'u1',
+      name: 'alice',
+      email: 'alice@maw.local',
+      email_verified: true
+    });
+    insertBetterAuthCredentialAccount({
+      id: 'u1-cred',
+      user_id: 'u1',
+      password_hash: 'argon2:abc'
+    });
+    const userRow = db!
+      .prepare('SELECT id, name, email, emailVerified FROM user WHERE id = ?')
+      .get('u1') as { id: string; name: string; email: string; emailVerified: number };
+    expect(userRow.email).toBe('alice@maw.local');
+    expect(userRow.emailVerified).toBe(1);
+    const acct = db!
+      .prepare('SELECT providerId, password FROM account WHERE userId = ?')
+      .get('u1') as { providerId: string; password: string };
+    expect(acct.providerId).toBe('credential');
+    expect(acct.password).toBe('argon2:abc');
   });
 });
 
@@ -251,54 +269,6 @@ describe('auth events', () => {
     const rows = listRecentAuthEvents(1);
     expect(rows[0]?.user_id).toBeNull();
     expect(rows[0]?.ip).toBeNull();
-  });
-});
-
-// ----- sessions -----------------------------------------------------------
-
-describe('sessions', () => {
-  const FUTURE = Math.floor(Date.now() / 1000) + 3600;
-  const PAST = Math.floor(Date.now() / 1000) - 3600;
-
-  beforeEach(() => {
-    seedUser('u1');
-  });
-
-  it('insertSession + getSessionById round-trip', () => {
-    insertSession({
-      id: 'sess-1',
-      user_id: 'u1',
-      expires_at: FUTURE,
-      user_agent: 'Mozilla/5.0'
-    });
-    const row = getSessionById('sess-1');
-    expect(row?.user_id).toBe('u1');
-    expect(row?.expires_at).toBe(FUTURE);
-    expect(row?.user_agent).toBe('Mozilla/5.0');
-  });
-
-  it('deleteSession removes the row', () => {
-    insertSession({ id: 'sess-1', user_id: 'u1', expires_at: FUTURE, user_agent: null });
-    deleteSession('sess-1');
-    expect(getSessionById('sess-1')).toBeUndefined();
-  });
-
-  it('deleteExpiredSessions removes only past-expiry rows', () => {
-    insertSession({ id: 'fresh', user_id: 'u1', expires_at: FUTURE, user_agent: null });
-    insertSession({ id: 'stale', user_id: 'u1', expires_at: PAST, user_agent: null });
-    expect(deleteExpiredSessions()).toBe(1);
-    expect(getSessionById('fresh')).toBeDefined();
-    expect(getSessionById('stale')).toBeUndefined();
-  });
-
-  it('deleteSessionsForUserExcept preserves the caller session', () => {
-    insertSession({ id: 'a', user_id: 'u1', expires_at: FUTURE, user_agent: null });
-    insertSession({ id: 'b', user_id: 'u1', expires_at: FUTURE, user_agent: null });
-    insertSession({ id: 'c', user_id: 'u1', expires_at: FUTURE, user_agent: null });
-    deleteSessionsForUserExcept('u1', 'b');
-    expect(getSessionById('a')).toBeUndefined();
-    expect(getSessionById('b')).toBeDefined();
-    expect(getSessionById('c')).toBeUndefined();
   });
 });
 

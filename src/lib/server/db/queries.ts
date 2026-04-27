@@ -28,7 +28,6 @@ import type {
   PushSubscriptionRow,
   RepoRow,
   RoleRow,
-  SessionRow,
   TaskRow,
   TaskStatus,
   TerminalLogRow,
@@ -53,10 +52,6 @@ function prep<P extends unknown[], R = unknown>(sql: string): Statement<P, R> {
 const now = (): number => Math.floor(Date.now() / 1000);
 
 // --------------- users ---------------
-
-export function getUserByUsername(username: string): UserRow | undefined {
-  return prep<[string], UserRow>('SELECT * FROM users WHERE username = ?').get(username);
-}
 
 export function getUserById(id: string): UserRow | undefined {
   return prep<[string], UserRow>('SELECT * FROM users WHERE id = ?').get(id);
@@ -84,6 +79,47 @@ export function setMustChangePassword(userId: string, value: boolean): void {
   prep<[number, number, string]>(
     'UPDATE users SET must_change_password = ?, updated_at = ? WHERE id = ?'
   ).run(value ? 1 : 0, now(), userId);
+}
+
+/** Read just the must_change_password flag for the given user — called from
+ *  hooks.server.ts on every authenticated request. better-auth doesn't
+ *  carry this column on its `user` table, so it stays on the legacy
+ *  `users` table for now. */
+export function getMustChangePasswordById(userId: string): number {
+  const row = prep<[string], { v: number }>(
+    'SELECT must_change_password AS v FROM users WHERE id = ?'
+  ).get(userId);
+  return row?.v ?? 0;
+}
+
+// --------------- better-auth tables (mirrored at bootstrap) ---------------
+
+/** Insert a row into better-auth's `user` table. Used at bootstrap to
+ *  mirror the seed user. better-auth manages the table afterwards. */
+export function insertBetterAuthUser(row: {
+  id: string;
+  name: string;
+  email: string;
+  email_verified: boolean;
+}): void {
+  const ts = now();
+  prep<[string, string, string, number, number, number]>(
+    'INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(row.id, row.name, row.email, row.email_verified ? 1 : 0, ts, ts);
+}
+
+/** Insert a credential-provider account row mirroring the user's password
+ *  hash. accountId = userId is the convention for credential accounts. */
+export function insertBetterAuthCredentialAccount(row: {
+  id: string;
+  user_id: string;
+  password_hash: string;
+}): void {
+  const ts = now();
+  prep<[string, string, string, string, string, number, number]>(
+    `INSERT INTO account (id, userId, accountId, providerId, password, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(row.id, row.user_id, row.user_id, 'credential', row.password_hash, ts, ts);
 }
 
 export function insertUser(row: {
@@ -144,40 +180,6 @@ export function listRecentAuthEvents(limit = 100): AuthEventRow[] {
   return prep<[number], AuthEventRow>(
     'SELECT * FROM auth_events ORDER BY ts DESC LIMIT ?'
   ).all(limit);
-}
-
-// --------------- sessions ---------------
-
-export function getSessionById(id: string): SessionRow | undefined {
-  return prep<[string], SessionRow>('SELECT * FROM sessions WHERE id = ?').get(id);
-}
-
-export function insertSession(row: {
-  id: string;
-  user_id: string;
-  expires_at: number;
-  user_agent: string | null;
-}): void {
-  const ts = now();
-  prep<[string, string, number, string | null, number, number]>(
-    'INSERT INTO sessions (id, user_id, expires_at, user_agent, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(row.id, row.user_id, row.expires_at, row.user_agent, ts, ts);
-}
-
-export function deleteSession(id: string): void {
-  prep<[string]>('DELETE FROM sessions WHERE id = ?').run(id);
-}
-
-export function deleteSessionsForUserExcept(userId: string, keepSessionId: string): void {
-  prep<[string, string]>('DELETE FROM sessions WHERE user_id = ? AND id != ?').run(
-    userId,
-    keepSessionId
-  );
-}
-
-export function deleteExpiredSessions(): number {
-  const info = prep<[number]>('DELETE FROM sessions WHERE expires_at < ?').run(now());
-  return info.changes;
 }
 
 // --------------- projects ---------------

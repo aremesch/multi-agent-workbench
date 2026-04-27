@@ -52,7 +52,11 @@ export const TABLES_IN_TEARDOWN_ORDER = [
   'repos',
   'projects',
   'user_settings',
-  'sessions',
+  // better-auth tables — drop before legacy `users` so userId FKs cascade cleanly
+  'verification',
+  'account',
+  'session',
+  'user',
   'auth_events',
   'users'
 ] as const;

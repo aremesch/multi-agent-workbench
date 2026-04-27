@@ -32,10 +32,10 @@ const es: Partial<Record<TranslationKey, string>> = {
 
   // ── Login ────────────────────────────────────────────────────────
   'login.title': 'Iniciar sesi\u00f3n',
-  'login.username': 'Nombre de usuario',
+  'login.email': 'Correo electr\u00f3nico',
   'login.password': 'Contrase\u00f1a',
   'login.submit': 'Iniciar sesi\u00f3n',
-  'login.error.required': 'Nombre de usuario y contrase\u00f1a requeridos',
+  'login.error.required': 'Correo electr\u00f3nico y contrase\u00f1a requeridos',
   'login.error.invalid': 'Credenciales inv\u00e1lidas',
 
   // ── Account ──────────────────────────────────────────────────────

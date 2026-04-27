@@ -90,7 +90,7 @@ describe('runMigrations', () => {
     expect(second.total).toBe(migrationFiles().length);
   });
 
-  it('creates the core schema tables (users, sessions, agents, auth_events)', () => {
+  it('creates the core schema tables (users, agents, auth_events, better-auth)', () => {
     runMigrations();
     const names = new Set(
       db!
@@ -102,12 +102,18 @@ describe('runMigrations', () => {
         .map((r) => r.name)
     );
     expect(names.has('users')).toBe(true);
-    expect(names.has('sessions')).toBe(true);
     expect(names.has('agents')).toBe(true);
     // Landed by migration 005.
     expect(names.has('auth_events')).toBe(true);
     // Landed by migration 002.
     expect(names.has('user_settings')).toBe(true);
+    // Landed by migration 007 — better-auth's canonical tables.
+    // The legacy `sessions` table is dropped by the same migration.
+    expect(names.has('user')).toBe(true);
+    expect(names.has('session')).toBe(true);
+    expect(names.has('account')).toBe(true);
+    expect(names.has('verification')).toBe(true);
+    expect(names.has('sessions')).toBe(false);
   });
 
   it('restores FKs to ON after the FK-pragma dance', () => {

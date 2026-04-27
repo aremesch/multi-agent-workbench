@@ -1,11 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { hashPassword, verifyPassword } from '$lib/server/auth/password';
-import {
-  deleteSessionsForUserExcept,
-  setMustChangePassword,
-  updateUserPasswordHash
-} from '$lib/server/db/queries';
+import { auth, forwardCookiesFromResponse } from '$lib/server/auth/betterAuth';
+import { setMustChangePassword } from '$lib/server/db/queries';
 import { logAuth } from '$lib/server/auth/authLog';
 import { clientIp } from '$lib/server/net/clientIp';
 import { t } from '$lib/i18n';
@@ -18,7 +14,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 export const actions: Actions = {
   changePassword: async (event) => {
     const { request, locals } = event;
-    if (!locals.user || !locals.session) {
+    if (!locals.user) {
       return fail(401, { error: t(locals.locale, 'account.error.notSignedIn') });
     }
     const ip = clientIp(event);
@@ -43,22 +39,40 @@ export const actions: Actions = {
       return fail(400, { error: t(locals.locale, 'account.error.samePw') });
     }
 
-    const ok = await verifyPassword(locals.user.password_hash, current);
-    if (!ok) {
-      logAuth('pwchange_fail', {
-        userId,
-        username,
-        ip,
-        userAgent: ua,
-        detail: 'wrong-current'
-      });
-      return fail(401, { error: t(locals.locale, 'account.error.wrongCurrent') });
+    // asResponse:true so we can forward Set-Cookie headers (better-auth
+    // refreshes the session on a successful password change). With
+    // asResponse, errors come back as non-OK responses (NOT thrown
+    // APIErrors) — check resp.ok and inspect the body's `code` field.
+    // See betterAuth.ts header comment for why we don't use the
+    // sveltekitCookies plugin.
+    const resp = await auth.api.changePassword({
+      body: { currentPassword: current, newPassword: next, revokeOtherSessions: true },
+      headers: request.headers,
+      asResponse: true
+    });
+    forwardCookiesFromResponse(resp, event.cookies);
+
+    if (!resp.ok) {
+      const body = (await resp
+        .json()
+        .catch(() => null)) as { code?: string; message?: string } | null;
+      // INVALID_PASSWORD is better-auth's wrong-current-password code.
+      // PASSWORD_TOO_SHORT/_LONG are already validated by the form above —
+      // they only land here on direct API hits and stay generic 400s.
+      if (body?.code === 'INVALID_PASSWORD') {
+        logAuth('pwchange_fail', {
+          userId,
+          username,
+          ip,
+          userAgent: ua,
+          detail: 'wrong-current'
+        });
+        return fail(401, { error: t(locals.locale, 'account.error.wrongCurrent') });
+      }
+      return fail(400, { error: t(locals.locale, 'account.error.allRequired') });
     }
 
-    const hash = await hashPassword(next);
-    updateUserPasswordHash(userId, hash);
     setMustChangePassword(userId, false);
-    deleteSessionsForUserExcept(userId, locals.session.id);
     logAuth('pwchange_ok', { userId, username, ip, userAgent: ua });
 
     return { success: true };

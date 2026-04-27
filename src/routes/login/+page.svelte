@@ -9,8 +9,14 @@
   <h1>{t('login.title')}</h1>
   <form method="post" action="?/login">
     <label>
-      <span>{t('login.username')}</span>
-      <input name="username" autocomplete="username" value={form?.username ?? ''} required />
+      <span>{t('login.email')}</span>
+      <input
+        name="email"
+        type="email"
+        autocomplete="username"
+        value={form?.email ?? ''}
+        required
+      />
     </label>
     <label>
       <span>{t('login.password')}</span>
