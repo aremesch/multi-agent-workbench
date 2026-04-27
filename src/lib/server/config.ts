@@ -103,7 +103,7 @@ export function getConfig(): MawConfig {
     terminalLogBudgetBytes: Number(env.MAW_TERMINAL_LOG_BYTES ?? 4 * 1024 * 1024),
     trustProxy: env.MAW_TRUST_PROXY === '1',
     authLogPath:
-      env.MAW_AUTH_LOG_PATH ??
+      env.MAW_AUTH_LOG_PATH ||
       resolve(env.MAW_DATA_DIR ?? `${env.HOME ?? ''}/.local/share/maw-dev`, 'auth.log'),
     loginRateLimit: parseRateLimit(env.MAW_LOGIN_RATE_LIMIT),
     publicOrigin: env.MAW_PUBLIC_ORIGIN ?? null,
