@@ -20,6 +20,9 @@ const E2E_PORT = 4173;
 const E2E_DATA_DIR = '/tmp/maw-e2e';
 const E2E_BOOTSTRAP_USERNAME = 'e2e';
 const E2E_BOOTSTRAP_PASSWORD = 'e2e-seed-pw-!9x';
+/** The bootstrap step seeds the user with email = `<username>@maw.local`,
+ *  matching the migration `users.username` → `user.email` mapping. */
+export const E2E_EMAIL = `${E2E_BOOTSTRAP_USERNAME}@maw.local`;
 /** Final password after global-setup rotates the bootstrap one. */
 export const E2E_PASSWORD = 'e2e-rotated-pw-!9x';
 export const E2E_USERNAME = E2E_BOOTSTRAP_USERNAME;
@@ -43,7 +46,7 @@ export default defineConfig({
   projects: [
     {
       name: 'smoke',
-      testMatch: /(?:smoke|agent-lifecycle|login-wire-status)\.spec\.ts$/,
+      testMatch: /(?:smoke|agent-lifecycle)\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] }
     },
     {

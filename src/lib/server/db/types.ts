@@ -42,15 +42,6 @@ export interface AuthEventRow {
   detail: string | null;
 }
 
-export interface SessionRow {
-  id: string;
-  user_id: string;
-  expires_at: number;
-  user_agent: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
 export interface ProjectRow {
   id: string;
   user_id: string;

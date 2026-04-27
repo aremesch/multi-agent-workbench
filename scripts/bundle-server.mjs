@@ -41,10 +41,15 @@ await build({
   },
 
   // Keep native addons and npm packages external — they resolve from
-  // node_modules at runtime.
+  // node_modules at runtime. better-auth ships pre-compiled chunks that
+  // pin to zod@4 (`.meta(…)`); inlining them here would resolve `import
+  // 'zod'` to the app's top-level zod@3 and crash. Externalizing lets
+  // Node's resolver hand better-auth its own zod@4 from its sub-tree.
   external: [
     'better-sqlite3',
     '@node-rs/argon2',
+    'better-auth',
+    'better-auth/cookies',
     'ws',
     'execa',
     'chokidar',

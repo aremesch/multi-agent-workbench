@@ -21,7 +21,7 @@ import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '$shared/protocol';
 import { PROTOCOL_VERSION } from '$shared/protocol';
-import { resolveSession, SESSION_COOKIE } from '../auth/session.js';
+import { auth } from '../auth/betterAuth.js';
 import { logAuth } from '../auth/authLog.js';
 import { clientIpFromRaw } from '../net/clientIp.js';
 import { getConfig } from '../config.js';
@@ -29,7 +29,6 @@ import { getSupervisor } from '../bootstrap.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import type { AgentRuntime } from '../agents/AgentRuntime.js';
 import { getLatestTerminalSeq, listTerminalChunksSince } from '../db/queries.js';
-import type { Cookies } from '@sveltejs/kit';
 
 interface Subscription {
   agentId: string;
@@ -315,40 +314,36 @@ export class WsHub {
       return;
     }
 
-    // Cheap cookie-based auth: parse the Cookie header and resolve via the
-    // same helper routes use. Upgrade requests always carry the request
-    // cookie header so this works identically in dev and prod.
-    const cookieHeader = req.headers.cookie ?? '';
-    const sid = extractCookie(cookieHeader, SESSION_COOKIE);
-    if (!sid) {
+    // Async session lookup via better-auth. handleUpgrade()'s callback is
+    // sync, so we kick the lookup off and close the socket on rejection
+    // from inside the promise chain.
+    void this.attachAsync(ws, req).catch((err) => {
+      console.error('[ws] attach error:', err);
+      try {
+        ws.close(4500, 'internal');
+      } catch {
+        // socket already closed
+      }
+    });
+  }
+
+  private async attachAsync(ws: WebSocket, req: IncomingMessage): Promise<void> {
+    // Build a Headers from the raw upgrade-request headers so better-auth
+    // can read the (signed) session cookie out of the Cookie header.
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (typeof v === 'string') headers.set(k, v);
+      else if (Array.isArray(v)) headers.set(k, v.join(', '));
+    }
+    const sess = await auth.api.getSession({ headers });
+    if (!sess) {
       ws.close(4401, 'unauthenticated');
       return;
     }
-
-    // Build a minimal Cookies-like shim that resolveSession accepts.
-    const shim: Pick<Cookies, 'get'> = {
-      get: (name: string): string | undefined =>
-        name === SESSION_COOKIE ? sid : extractCookie(cookieHeader, name)
-    };
-    const { user } = resolveSession(shim as Cookies);
-    if (!user) {
-      ws.close(4401, 'session expired');
-      return;
-    }
-
-    const client = new HubClient(ws, user.id);
+    const client = new HubClient(ws, sess.user.id);
     this.clients.add(client);
     ws.on('close', () => this.clients.delete(client));
   }
-}
-
-function extractCookie(header: string, name: string): string | undefined {
-  if (!header) return undefined;
-  for (const part of header.split(';')) {
-    const [k, ...rest] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(rest.join('='));
-  }
-  return undefined;
 }
 
 // globalThis-backed so the esbuild-bundled server.js and SvelteKit's chunk

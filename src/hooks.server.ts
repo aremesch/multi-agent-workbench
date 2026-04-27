@@ -4,38 +4,53 @@
  * Responsibilities:
  *   1. Await bootstrap() — idempotent, safe to call per-request; the guard
  *      inside bootstrap.ts makes the second call a no-op.
- *   2. Populate event.locals with the resolved user/session + supervisor.
+ *   2. Ask better-auth for the session and adapt it to event.locals.user /
+ *      event.locals.session shapes the rest of the app expects.
  *   3. Issue a CSRF token cookie the first time a visitor shows up.
+ *   4. Enforce the must_change_password redirect on bootstrap users.
+ *   5. Apply security response headers.
+ *
+ * The /api/auth/* routes are handled by src/routes/api/auth/[...all]/+server.ts
+ * which calls auth.handler() directly — this hook just runs around them.
  */
 
 import { redirect, type Handle } from '@sveltejs/kit';
-import { sequence } from '@sveltejs/kit/hooks';
 import { bootstrap, getSupervisor } from '$lib/server/bootstrap';
-import { resolveSession } from '$lib/server/auth/session';
+import { auth } from '$lib/server/auth/betterAuth';
 import { ensureCsrfCookie } from '$lib/server/auth/csrf';
-import { getUserSetting } from '$lib/server/db/queries';
+import { getMustChangePasswordById, getUserSetting } from '$lib/server/db/queries';
 import { DEFAULT_THEME, THEME_SETTING_KEY, parseTheme } from '$lib/shared/dashboard';
-import { DEFAULT_LOCALE, LOCALE_SETTING_KEY, detectLocale, parseLocale } from '$lib/i18n';
+import { LOCALE_SETTING_KEY, detectLocale, parseLocale } from '$lib/i18n';
 
 await bootstrap();
 
-const baseHandle: Handle = async ({ event, resolve }) => {
-  const { user, session } = resolveSession(event.cookies);
-  event.locals.user = user;
-  event.locals.session = session;
+export const handle: Handle = async ({ event, resolve }) => {
+  const sess = await auth.api.getSession({ headers: event.request.headers });
+
+  event.locals.user = sess
+    ? {
+        id: sess.user.id,
+        // Display name = email's local-part. For the migrated bootstrap user
+        // (admin@maw.local) this matches the historic users.username value.
+        username: sess.user.email.split('@')[0] ?? sess.user.email,
+        must_change_password: getMustChangePasswordById(sess.user.id) ? 1 : 0
+      }
+    : null;
+  event.locals.session = sess ? { id: sess.session.id, userId: sess.session.userId } : null;
   event.locals.supervisor = getSupervisor();
 
   ensureCsrfCookie(event.cookies);
 
   // Force a seeded-password user through /account before they can touch
-  // anything else. Allowlist the change-password page itself, the login +
-  // logout flow, and the service-worker / static assets.
-  if (user?.must_change_password) {
+  // anything else. Allowlist /account itself, the login/logout flow, the
+  // /api/auth/* endpoints, and the service-worker / static assets.
+  if (event.locals.user?.must_change_password) {
     const p = event.url.pathname;
     const allow =
       p === '/account' ||
       p === '/login' ||
       p === '/logout' ||
+      p.startsWith('/api/auth/') ||
       p.startsWith('/_app/') ||
       p.startsWith('/static/') ||
       p === '/service-worker.js' ||
@@ -46,6 +61,7 @@ const baseHandle: Handle = async ({ event, resolve }) => {
 
   // Inject the user's active theme into <html data-theme="..."> so the
   // first paint already uses the right token set (no FOUC).
+  const user = event.locals.user;
   const theme = user ? parseTheme(getUserSetting(user.id, THEME_SETTING_KEY)) : DEFAULT_THEME;
 
   // Resolve locale: saved preference for authenticated users, Accept-Language for guests.
@@ -77,47 +93,3 @@ const baseHandle: Handle = async ({ event, resolve }) => {
 
   return response;
 };
-
-// SvelteKit form actions pin the wire status at 200 when the client takes
-// the JSON-action path (Accept negotiates application/json — true for the
-// default `Accept: */*` of curl / fetch / bots, since the kit lists JSON
-// first in its priority array). The fail() status only survives in the
-// response body. Browsers prioritise text/html and already get the right
-// wire status. This hook re-emits body.status onto the wire so non-browser
-// clients see real 4xx codes — important for HTTP-status-based monitoring
-// and WAF rules. fail2ban is unaffected (it parses MAW's own auth.log).
-const honestActionStatus: Handle = async ({ event, resolve }) => {
-  const response = await resolve(event);
-
-  if (
-    event.request.method !== 'POST' ||
-    response.status !== 200 ||
-    !response.headers.get('content-type')?.startsWith('application/json')
-  ) {
-    return response;
-  }
-
-  const text = await response.clone().text();
-  let parsed: { type?: string; status?: number } | null = null;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return response;
-  }
-
-  if (
-    parsed?.type === 'failure' &&
-    typeof parsed.status === 'number' &&
-    parsed.status >= 400 &&
-    parsed.status < 600
-  ) {
-    return new Response(text, {
-      status: parsed.status,
-      headers: response.headers
-    });
-  }
-
-  return response;
-};
-
-export const handle = sequence(baseHandle, honestActionStatus);

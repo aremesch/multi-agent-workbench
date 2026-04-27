@@ -32,10 +32,10 @@ const de: Partial<Record<TranslationKey, string>> = {
 
   // ── Login ────────────────────────────────────────────────────────
   'login.title': 'Anmelden',
-  'login.username': 'Benutzername',
+  'login.email': 'E-Mail',
   'login.password': 'Passwort',
   'login.submit': 'Anmelden',
-  'login.error.required': 'Benutzername und Passwort erforderlich',
+  'login.error.required': 'E-Mail und Passwort erforderlich',
   'login.error.invalid': 'Ung\u00fcltige Anmeldedaten',
 
   // ── Account ──────────────────────────────────────────────────────

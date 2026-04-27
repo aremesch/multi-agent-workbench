@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => {
     sendKey: vi.fn(),
     capturePane: vi.fn(),
     // --- auth / config ---
-    resolveSession: vi.fn(),
+    getSession: vi.fn(),
     logAuth: vi.fn(),
     config: { publicOrigin: null as string | null },
     // --- db ---
@@ -37,13 +37,13 @@ vi.mock('../tmux/TmuxSession.js', () => ({
     capturePane: (...a: unknown[]) => mocks.capturePane(...a)
   }
 }));
-vi.mock('../auth/session.js', async () => {
-  const actual = await vi.importActual<typeof import('../auth/session.js')>('../auth/session.js');
-  return {
-    ...actual,
-    resolveSession: (...a: unknown[]) => mocks.resolveSession(...a)
-  };
-});
+vi.mock('../auth/betterAuth.js', () => ({
+  auth: {
+    api: {
+      getSession: (...a: unknown[]) => mocks.getSession(...a)
+    }
+  }
+}));
 vi.mock('../auth/authLog.js', () => ({
   logAuth: (...a: unknown[]) => mocks.logAuth(...a)
 }));
@@ -56,8 +56,17 @@ vi.mock('../db/queries.js', () => ({
 }));
 
 import { WsHub, getWsHub } from './hub.js';
-import { SESSION_COOKIE } from '../auth/session.js';
 import { PROTOCOL_VERSION } from '$shared/protocol';
+
+/** Cookie name used in the WS upgrade Cookie header. The actual name is owned
+ *  by better-auth — this is just a placeholder for tests since the auth.api
+ *  mock returns whatever session we want regardless of the header content. */
+const SESSION_COOKIE_HEADER = 'maw_session';
+
+/** Flush all pending microtasks so attachAsync's `await getSession` settles. */
+async function flush(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 // -----------------------------------------------------------------------------
 // Fakes
@@ -110,18 +119,21 @@ function makeRuntime(overrides: Partial<{
   return rt;
 }
 
-/** Shortcut: run attach() with a pre-validated session (userId === 'u1'). */
-function attachAuthedClient(agentOwnerId = 'u1'): { hub: WsHub; ws: FakeWs } {
-  mocks.resolveSession.mockReturnValue({
+/** Shortcut: run attach() with a pre-validated session (userId === 'u1').
+ *  Awaits a microtask flush so the welcome frame and HubClient registration
+ *  inside attachAsync have fired before the caller asserts on `ws`. */
+async function attachAuthedClient(agentOwnerId = 'u1'): Promise<{ hub: WsHub; ws: FakeWs }> {
+  mocks.getSession.mockResolvedValue({
     user: { id: agentOwnerId },
-    session: { id: 'sess' }
+    session: { id: 'sess', userId: agentOwnerId, token: 't', expiresAt: Date.now() + 1000 }
   });
   const hub = new WsHub();
   const ws = new FakeWs();
   hub.attach(
     ws as unknown as import('ws').WebSocket,
-    fakeReq({ cookie: `${SESSION_COOKIE}=abc`, origin: 'http://localhost:5173' })
+    fakeReq({ cookie: `${SESSION_COOKIE_HEADER}=abc`, origin: 'http://localhost:5173' })
   );
+  await flush();
   return { hub, ws };
 }
 
@@ -146,7 +158,7 @@ afterEach(() => {
 // -----------------------------------------------------------------------------
 
 describe('hub re-exports', () => {
-  it('getWsHub returns a singleton WsHub', () => {
+  it('getWsHub returns a singleton WsHub', async () => {
     expect(getWsHub()).toBeInstanceOf(WsHub);
     expect(getWsHub()).toBe(getWsHub());
   });
@@ -157,34 +169,24 @@ describe('hub re-exports', () => {
 // -----------------------------------------------------------------------------
 
 describe('WsHub.attach — authentication gateway', () => {
-  it('rejects a connection missing the session cookie with code 4401', () => {
+  it('rejects a connection without a session (no cookie / expired)', async () => {
+    mocks.getSession.mockResolvedValue(null);
     const hub = new WsHub();
     const ws = new FakeWs();
     hub.attach(ws as unknown as import('ws').WebSocket, fakeReq());
+    await flush();
     expect(ws.closeCode).toBe(4401);
     expect(ws.closeReason).toBe('unauthenticated');
   });
 
-  it('rejects a connection whose session no longer resolves (expired) with code 4401', () => {
-    mocks.resolveSession.mockReturnValue({ user: null, session: null });
-    const hub = new WsHub();
-    const ws = new FakeWs();
-    hub.attach(
-      ws as unknown as import('ws').WebSocket,
-      fakeReq({ cookie: `${SESSION_COOKIE}=expired` })
-    );
-    expect(ws.closeCode).toBe(4401);
-    expect(ws.closeReason).toBe('session expired');
-  });
-
-  it('rejects a cross-origin upgrade when publicOrigin is set', () => {
+  it('rejects a cross-origin upgrade when publicOrigin is set', async () => {
     mocks.config.publicOrigin = 'https://maw.example';
     const hub = new WsHub();
     const ws = new FakeWs();
     hub.attach(
       ws as unknown as import('ws').WebSocket,
       fakeReq({
-        cookie: `${SESSION_COOKIE}=x`,
+        cookie: `${SESSION_COOKIE_HEADER}=x`,
         origin: 'https://attacker.example',
         'user-agent': 'evil'
       })
@@ -196,27 +198,35 @@ describe('WsHub.attach — authentication gateway', () => {
     );
   });
 
-  it('allows a matching-origin request to proceed', () => {
+  it('allows a matching-origin request to proceed', async () => {
     mocks.config.publicOrigin = 'https://maw.example';
-    mocks.resolveSession.mockReturnValue({ user: { id: 'u1' }, session: { id: 's' } });
+    mocks.getSession.mockResolvedValue({
+      user: { id: 'u1' },
+      session: { id: 's', userId: 'u1', token: 't', expiresAt: Date.now() + 1000 }
+    });
     const hub = new WsHub();
     const ws = new FakeWs();
     hub.attach(
       ws as unknown as import('ws').WebSocket,
-      fakeReq({ cookie: `${SESSION_COOKIE}=x`, origin: 'https://maw.example' })
+      fakeReq({ cookie: `${SESSION_COOKIE_HEADER}=x`, origin: 'https://maw.example' })
     );
+    await flush();
     expect(ws.closeCode).toBeNull();
   });
 
-  it('skips the origin check when no Origin header is present (non-browser client)', () => {
+  it('skips the origin check when no Origin header is present (non-browser client)', async () => {
     mocks.config.publicOrigin = 'https://maw.example';
-    mocks.resolveSession.mockReturnValue({ user: { id: 'u1' }, session: { id: 's' } });
+    mocks.getSession.mockResolvedValue({
+      user: { id: 'u1' },
+      session: { id: 's', userId: 'u1', token: 't', expiresAt: Date.now() + 1000 }
+    });
     const hub = new WsHub();
     const ws = new FakeWs();
     hub.attach(
       ws as unknown as import('ws').WebSocket,
-      fakeReq({ cookie: `${SESSION_COOKIE}=x` })
+      fakeReq({ cookie: `${SESSION_COOKIE_HEADER}=x` })
     );
+    await flush();
     expect(ws.closeCode).toBeNull();
   });
 });
@@ -226,8 +236,8 @@ describe('WsHub.attach — authentication gateway', () => {
 // -----------------------------------------------------------------------------
 
 describe('HubClient — handshake + ping', () => {
-  it('sends a `welcome` frame with the current PROTOCOL_VERSION on connect', () => {
-    const { ws } = attachAuthedClient();
+  it('sends a `welcome` frame with the current PROTOCOL_VERSION on connect', async () => {
+    const { ws } = await attachAuthedClient();
     expect(ws.sentMessages()[0]).toEqual({
       type: 'welcome',
       serverVersion: PROTOCOL_VERSION,
@@ -235,14 +245,14 @@ describe('HubClient — handshake + ping', () => {
     });
   });
 
-  it('replies to `ping` with `pong` carrying the same ts', () => {
-    const { ws } = attachAuthedClient();
+  it('replies to `ping` with `pong` carrying the same ts', async () => {
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'ping', ts: 12345 });
     expect(ws.lastMessage()).toEqual({ type: 'pong', ts: 12345 });
   });
 
-  it('silently accepts `hello` (no duplicate welcome)', () => {
-    const { ws } = attachAuthedClient();
+  it('silently accepts `hello` (no duplicate welcome)', async () => {
+    const { ws } = await attachAuthedClient();
     const before = ws.sent.length;
     ws.deliver({ type: 'hello', clientVersion: PROTOCOL_VERSION });
     expect(ws.sent.length).toBe(before);
@@ -254,8 +264,8 @@ describe('HubClient — handshake + ping', () => {
 // -----------------------------------------------------------------------------
 
 describe('HubClient — defensive parsing', () => {
-  it('returns a `bad_json` error frame for malformed JSON and stays open', () => {
-    const { ws } = attachAuthedClient();
+  it('returns a `bad_json` error frame for malformed JSON and stays open', async () => {
+    const { ws } = await attachAuthedClient();
     // Directly emit invalid bytes — ws.deliver would have JSON.stringify'd.
     ws['emit']('message', Buffer.from('{not json', 'utf8'));
     const err = ws.sentMessages().find((m) => (m as { type?: string }).type === 'error') as {
@@ -271,18 +281,18 @@ describe('HubClient — defensive parsing', () => {
 // -----------------------------------------------------------------------------
 
 describe('HubClient — subscribe_agent', () => {
-  it('returns `not_found` when the supervisor has no runtime for that agent', () => {
+  it('returns `not_found` when the supervisor has no runtime for that agent', async () => {
     mocks.supervisor.get.mockReturnValue(undefined);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'missing' });
     const last = ws.lastMessage() as { type: string; code?: string };
     expect(last.type).toBe('error');
     expect(last.code).toBe('not_found');
   });
 
-  it('returns `forbidden` when the runtime belongs to a different user', () => {
+  it('returns `forbidden` when the runtime belongs to a different user', async () => {
     mocks.supervisor.get.mockReturnValue(makeRuntime({ userId: 'other-user' }));
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     const err = ws.sentMessages().find((m) => (m as { type?: string }).type === 'error') as {
       code: string;
@@ -295,7 +305,7 @@ describe('HubClient — subscribe_agent', () => {
     mocks.supervisor.get.mockReturnValue(rt);
     mocks.getLatestTerminalSeq.mockReturnValue(42);
     mocks.capturePane.mockResolvedValue('\x1b[2J\x1b[H$ ready\r\n');
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
 
     await vi.waitFor(() =>
@@ -322,7 +332,7 @@ describe('HubClient — subscribe_agent', () => {
       { seq: 6, chunk: Buffer.from('x', 'utf8') },
       { seq: 7, chunk: Buffer.from('y', 'utf8') }
     ]);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
 
     await vi.waitFor(() =>
@@ -353,7 +363,7 @@ describe('HubClient — subscribe_agent', () => {
     mocks.supervisor.get.mockReturnValue(rt);
     mocks.getLatestTerminalSeq.mockReturnValue(3);
     mocks.capturePane.mockRejectedValue(new Error('tmux kaboom'));
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
 
     await vi.waitFor(() =>
@@ -369,10 +379,10 @@ describe('HubClient — subscribe_agent', () => {
     expect(snap.seq).toBe(3);
   });
 
-  it('fans out runtime `output` events as output frames (live stream)', () => {
+  it('fans out runtime `output` events as output frames (live stream)', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     // Listener registration is synchronous within handleSubscribe, so a
     // live output event landing BEFORE the async snapshot resolves still
@@ -386,10 +396,10 @@ describe('HubClient — subscribe_agent', () => {
     expect(Buffer.from(out.b64, 'base64').toString('utf8')).toBe('hello');
   });
 
-  it('fans out runtime `state` events as agent_state frames', () => {
+  it('fans out runtime `state` events as agent_state frames', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     rt.emit('state', 'WAITING_PROMPT');
     const st = ws.sentMessages().find((m) => (m as { type?: string }).type === 'agent_state') as {
@@ -398,10 +408,10 @@ describe('HubClient — subscribe_agent', () => {
     expect(st.status).toBe('WAITING_PROMPT');
   });
 
-  it('is idempotent — subscribing twice does not double-attach listeners', () => {
+  it('is idempotent — subscribing twice does not double-attach listeners', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     rt.emit('output', { seq: 1, chunk: Buffer.from('x') });
@@ -420,7 +430,7 @@ describe('HubClient — subscribe_agent', () => {
         releaseCapture = r;
       })
     );
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     // Unsubscribe while the snapshot is still pending.
     ws.deliver({ type: 'unsubscribe_agent', agentId: 'a1' });
@@ -438,20 +448,20 @@ describe('HubClient — subscribe_agent', () => {
 // -----------------------------------------------------------------------------
 
 describe('HubClient — unsubscribe + cleanup', () => {
-  it('detaches runtime listeners on unsubscribe_agent', () => {
+  it('detaches runtime listeners on unsubscribe_agent', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     const before = rt.listenerCount('output');
     ws.deliver({ type: 'unsubscribe_agent', agentId: 'a1' });
     expect(rt.listenerCount('output')).toBe(before - 1);
   });
 
-  it('cleanup on ws close removes every subscription', () => {
+  it('cleanup on ws close removes every subscription', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     ws.emit('close');
     expect(rt.listenerCount('output')).toBe(0);
@@ -463,79 +473,79 @@ describe('HubClient — unsubscribe + cleanup', () => {
 // send_input / send_keys / resize / answer_prompt / control
 // -----------------------------------------------------------------------------
 
-describe('HubClient — input + control dispatch', () => {
-  it('send_input routes to runtime.enqueueInput', () => {
+describe('HubClient — input + control dispatch', async () => {
+  it('send_input routes to runtime.enqueueInput', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'send_input', agentId: 'a1', text: 'hi', submit: true });
     expect(rt.enqueueInput).toHaveBeenCalledWith('hi', true);
   });
 
-  it('send_input is dropped when runtime belongs to another user', () => {
+  it('send_input is dropped when runtime belongs to another user', async () => {
     mocks.supervisor.get.mockReturnValue(makeRuntime({ userId: 'other' }));
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'send_input', agentId: 'a1', text: 'x', submit: false });
     // enqueueInput never called — no easy way to assert on a foreign runtime's
     // mock, but the attempt should not throw and no output frames are emitted.
     expect(ws.sentMessages().find((m) => (m as { type?: string }).type === 'error')).toBeUndefined();
   });
 
-  it('send_keys base64-decodes and forwards bytes', () => {
+  it('send_keys base64-decodes and forwards bytes', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     const b64 = Buffer.from('\x1b[A', 'utf8').toString('base64');
     ws.deliver({ type: 'send_keys', agentId: 'a1', b64 });
     expect(rt.enqueueRawKeys).toHaveBeenCalledWith('\x1b[A');
   });
 
-  it('resize ignores non-finite or sub-1 dims', () => {
+  it('resize ignores non-finite or sub-1 dims', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'resize', agentId: 'a1', cols: 0, rows: 24 });
     ws.deliver({ type: 'resize', agentId: 'a1', cols: Number.NaN, rows: 24 });
     expect(rt.resize).not.toHaveBeenCalled();
   });
 
-  it('resize forwards valid dims to runtime.resize', () => {
+  it('resize forwards valid dims to runtime.resize', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'resize', agentId: 'a1', cols: 80, rows: 24 });
     expect(rt.resize).toHaveBeenCalledWith(80, 24);
   });
 
-  it('answer_prompt routes to runtime.enqueueAnswer', () => {
+  it('answer_prompt routes to runtime.enqueueAnswer', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'answer_prompt', agentId: 'a1', choice: 'yes' });
     expect(rt.enqueueAnswer).toHaveBeenCalledWith('yes');
   });
 
-  it('control:sigint sends C-c via Tmux.sendKey', () => {
+  it('control:sigint sends C-c via Tmux.sendKey', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'control', agentId: 'a1', action: 'sigint' });
     expect(mocks.sendKey).toHaveBeenCalledWith('maw-agent-a1', 'C-c');
   });
 
-  it('control:stop calls supervisor.kill', () => {
+  it('control:stop calls supervisor.kill', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
     mocks.supervisor.kill.mockResolvedValue(undefined);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'control', agentId: 'a1', action: 'stop' });
     expect(mocks.supervisor.kill).toHaveBeenCalledWith('a1');
   });
 
-  it('control:restart emits a not_implemented error (v0.1 stub)', () => {
+  it('control:restart emits a not_implemented error (v0.1 stub)', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'control', agentId: 'a1', action: 'restart' });
     const err = ws.sentMessages().find((m) => (m as { type?: string }).type === 'error') as {
       code: string;
@@ -543,10 +553,10 @@ describe('HubClient — input + control dispatch', () => {
     expect(err.code).toBe('not_implemented');
   });
 
-  it('assign_task forwards task body to runtime.enqueueInput with submit=true', () => {
+  it('assign_task forwards task body to runtime.enqueueInput with submit=true', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    const { ws } = attachAuthedClient();
+    const { ws } = await attachAuthedClient();
     ws.deliver({
       type: 'assign_task',
       agentId: 'a1',

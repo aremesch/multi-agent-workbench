@@ -1,7 +1,7 @@
 import { chromium, type FullConfig } from '@playwright/test';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { E2E_BOOTSTRAP, E2E_PASSWORD } from '../../playwright.config';
+import { E2E_BOOTSTRAP, E2E_EMAIL, E2E_PASSWORD } from '../../playwright.config';
 
 /**
  * One-time setup for the Playwright hydration smoke suite.
@@ -41,9 +41,11 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     const context = await browser.newContext({ baseURL });
     const page = await context.newPage();
 
-    // 1. Sign in with the bootstrap creds.
+    // 1. Sign in with the bootstrap creds. The bootstrap user's email is
+    //    derived from the username (`<username>@maw.local`) — see
+    //    src/lib/server/bootstrap.ts.
     await page.goto('/login');
-    await page.fill('input[name="username"]', E2E_BOOTSTRAP.username);
+    await page.fill('input[name="email"]', E2E_EMAIL);
     await page.fill('input[name="password"]', E2E_BOOTSTRAP.password);
     await page.click('button[type="submit"]');
     try {

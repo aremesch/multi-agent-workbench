@@ -42,10 +42,10 @@ const en = {
 
   // ── Login ────────────────────────────────────────────────────────
   'login.title': 'Sign in',
-  'login.username': 'Username',
+  'login.email': 'Email',
   'login.password': 'Password',
   'login.submit': 'Sign in',
-  'login.error.required': 'Username and password required',
+  'login.error.required': 'Email and password required',
   'login.error.invalid': 'Invalid credentials',
   'login.error.rateLimited': 'Too many attempts — wait a minute and try again',
 

@@ -16,7 +16,12 @@ import { ulid } from 'ulid';
 import { getConfig } from './config.js';
 import { getDb } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
-import { countUsers, insertUser } from './db/queries.js';
+import {
+  countUsers,
+  insertBetterAuthCredentialAccount,
+  insertBetterAuthUser,
+  insertUser
+} from './db/queries.js';
 import { AdapterRegistry } from './agents/adapters/AdapterRegistry.js';
 import { AgentSupervisor } from './agents/AgentSupervisor.js';
 import { PushService } from './push/PushService.js';
@@ -47,16 +52,32 @@ export function bootstrap(): Promise<void> {
     console.log(`[maw] migrations: ${applied}/${total} applied`);
 
     // 2. Bootstrap user (single-user MVP).
+    //    The same id lives in (a) legacy `users` (FK anchor for ~30 domain
+    //    tables) and (b) better-auth's `user` + `account` tables, so the
+    //    domain FKs keep resolving while better-auth owns sign-in.
     if (countUsers() === 0) {
+      const id = ulid();
       const hash = await hashPassword(cfg.bootstrapPassword);
+      const email = `${cfg.bootstrapUsername}@maw.local`;
       insertUser({
-        id: ulid(),
+        id,
         username: cfg.bootstrapUsername,
         password_hash: hash,
         must_change_password: true
       });
+      insertBetterAuthUser({
+        id,
+        name: cfg.bootstrapUsername,
+        email,
+        email_verified: true
+      });
+      insertBetterAuthCredentialAccount({
+        id: `${id}-cred`,
+        user_id: id,
+        password_hash: hash
+      });
       console.log(
-        `[maw] bootstrap user '${cfg.bootstrapUsername}' created — change password after first login`
+        `[maw] bootstrap user '${cfg.bootstrapUsername}' created (login email: ${email}) — change password after first login`
       );
     }
 
