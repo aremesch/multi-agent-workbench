@@ -20,9 +20,8 @@
 import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http';
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
-import type { Cookies } from '@sveltejs/kit';
 import { getAgentTargetForProxy } from '../db/queries.js';
-import { resolveSession, SESSION_COOKIE } from '../auth/session.js';
+import { auth } from '../auth/betterAuth.js';
 
 const PREVIEW_PREFIX = '/preview/';
 
@@ -82,30 +81,25 @@ function refererPreviewAgentId(req: IncomingMessage): string | null {
   return parsed?.agentId ?? null;
 }
 
-function extractCookie(header: string | undefined, name: string): string | undefined {
-  if (!header) return undefined;
-  for (const part of header.split(';')) {
-    const [k, ...rest] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(rest.join('='));
+/** Fold a Node IncomingHttpHeaders into a Fetch-API `Headers` so better-auth
+ *  can read the (signed) session cookie out of the Cookie header. Same
+ *  pattern as `WsHub.attachAsync`. */
+function toFetchHeaders(req: IncomingMessage): Headers {
+  const out = new Headers();
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (typeof v === 'string') out.set(k, v);
+    else if (Array.isArray(v)) out.set(k, v.join(', '));
   }
-  return undefined;
+  return out;
 }
 
-function resolveAuthorizedAgent(
+async function resolveAuthorizedAgent(
   req: IncomingMessage,
   agentId: string
-): { target_port: number; target_url: string } | { error: 401 | 403 | 404 } {
-  const cookieHeader = Array.isArray(req.headers.cookie)
-    ? req.headers.cookie.join('; ')
-    : req.headers.cookie ?? '';
-  const sid = extractCookie(cookieHeader, SESSION_COOKIE);
-  if (!sid) return { error: 401 };
-  const shim: Pick<Cookies, 'get'> = {
-    get: (name) => (name === SESSION_COOKIE ? sid : extractCookie(cookieHeader, name))
-  };
-  const { user } = resolveSession(shim as Cookies);
-  if (!user) return { error: 401 };
-  const target = getAgentTargetForProxy(agentId, user.id);
+): Promise<{ target_port: number; target_url: string } | { error: 401 | 403 | 404 }> {
+  const sess = await auth.api.getSession({ headers: toFetchHeaders(req) });
+  if (!sess) return { error: 401 };
+  const target = getAgentTargetForProxy(agentId, sess.user.id);
   if (!target) return { error: 404 };
   return target;
 }
@@ -251,6 +245,11 @@ function rewriteLocationHeader(
  * Handle an incoming HTTP request. Returns true when the request was a
  * preview-route request (and was handled — either forwarded or rejected);
  * false when the caller should continue with its normal handler chain.
+ *
+ * The boolean is decided synchronously (path / Referer match) so callers
+ * in `server.js` and `vite.config.ts` can chain `if (claimed) return;`
+ * cleanly. The actual auth lookup + upstream forwarding happen in an
+ * async IIFE — the response is written from inside it.
  */
 export function handlePreviewRequest(req: IncomingMessage, res: ServerResponse): boolean {
   let parsed = parsePreviewPath(req.url ?? '');
@@ -302,20 +301,40 @@ export function handlePreviewRequest(req: IncomingMessage, res: ServerResponse):
     parsed = { agentId: refAgentId, rest: req.url ?? '/' };
   }
 
-  const auth = resolveAuthorizedAgent(req, parsed.agentId);
-  if ('error' in auth) {
-    if (auth.error === 401) denyHttp(res, 401, 'preview: not authenticated');
-    else if (auth.error === 403) denyHttp(res, 403, 'preview: forbidden');
-    else denyHttp(res, 404, 'preview: agent not found');
-    return true;
-  }
+  // Claim the request. Auth + upstream forwarding run async; if anything
+  // fails, the IIFE writes the error response itself.
+  const claimed = parsed;
+  void (async () => {
+    const authResult = await resolveAuthorizedAgent(req, claimed.agentId);
+    if ('error' in authResult) {
+      if (authResult.error === 401) denyHttp(res, 401, 'preview: not authenticated');
+      else if (authResult.error === 403) denyHttp(res, 403, 'preview: forbidden');
+      else denyHttp(res, 404, 'preview: agent not found');
+      return;
+    }
+    forwardHttp(req, res, claimed.agentId, claimed.rest, authResult.target_port, authResult.target_url);
+  })().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[preview-proxy] http handler error:', err);
+    if (!res.headersSent) denyHttp(res, 502, 'preview: internal error');
+  });
+  return true;
+}
 
+function forwardHttp(
+  req: IncomingMessage,
+  res: ServerResponse,
+  agentId: string,
+  rest: string,
+  upstreamPort: number,
+  upstreamUrl: string
+): void {
   const upstreamReq = http.request(
     {
       host: '127.0.0.1',
-      port: auth.target_port,
+      port: upstreamPort,
       method: req.method,
-      path: parsed.rest,
+      path: rest,
       headers: filterRequestHeaders(req.headers)
     },
     (upstreamRes) => {
@@ -328,12 +347,7 @@ export function handlePreviewRequest(req: IncomingMessage, res: ServerResponse):
       const status = upstreamRes.statusCode ?? 502;
       let outHeaders = stripFramingHeaders(upstreamRes.headers);
       if (status >= 300 && status < 400) {
-        outHeaders = rewriteLocationHeader(
-          outHeaders,
-          parsed.agentId,
-          '127.0.0.1',
-          auth.target_port
-        );
+        outHeaders = rewriteLocationHeader(outHeaders, agentId, '127.0.0.1', upstreamPort);
       }
       res.writeHead(status, outHeaders);
       upstreamRes.pipe(res);
@@ -354,14 +368,13 @@ export function handlePreviewRequest(req: IncomingMessage, res: ServerResponse):
     // "dev server not reachable" placeholder instead of a stuck spinner.
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ECONNREFUSED' || code === 'ECONNRESET') {
-      denyHttp(res, 502, `preview: dev server not reachable on ${auth.target_url}`);
+      denyHttp(res, 502, `preview: dev server not reachable on ${upstreamUrl}`);
     } else {
       denyHttp(res, 502, `preview: upstream error: ${(err as Error).message}`);
     }
   });
 
   req.pipe(upstreamReq);
-  return true;
 }
 
 /**
@@ -389,25 +402,44 @@ export function handlePreviewUpgrade(
     if (!refAgentId) return false;
     parsed = { agentId: refAgentId, rest: req.url ?? '/' };
   }
-  const auth = resolveAuthorizedAgent(req, parsed.agentId);
-  if ('error' in auth) {
-    // No structured response on raw socket — just close. Legitimate clients
-    // (the iframe loaded by an authed user) don't hit this path; only
-    // accidental probes do.
-    socket.destroy();
-    return true;
-  }
 
+  const claimed = parsed;
+  void (async () => {
+    const authResult = await resolveAuthorizedAgent(req, claimed.agentId);
+    if ('error' in authResult) {
+      // No structured response on raw socket — just close. Legitimate
+      // clients (the iframe loaded by an authed user) don't hit this path;
+      // only accidental probes do.
+      socket.destroy();
+      return;
+    }
+    forwardUpgrade(req, socket, head, claimed.agentId, claimed.rest, authResult.target_port);
+  })().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[preview-proxy] upgrade handler error:', err);
+    try { socket.destroy(); } catch { /* ignore */ }
+  });
+  return true;
+}
+
+function forwardUpgrade(
+  req: IncomingMessage,
+  socket: Duplex,
+  head: Buffer,
+  agentId: string,
+  rest: string,
+  upstreamPort: number
+): void {
   // Open a parallel TCP connection to the upstream and replay the HTTP
   // upgrade handshake as raw bytes. Re-using `http.request({ method, headers,
   // path })` would re-encode the request line and lose the `Upgrade` /
   // `Connection` headers we explicitly want to forward.
-  const upstream = net.connect({ host: '127.0.0.1', port: auth.target_port });
+  const upstream = net.connect({ host: '127.0.0.1', port: upstreamPort });
 
   upstream.on('error', (err) => {
     // eslint-disable-next-line no-console
     console.warn(
-      `[preview-proxy] upstream WS error for agent ${parsed.agentId}: ${(err as Error).message}`
+      `[preview-proxy] upstream WS error for agent ${agentId}: ${(err as Error).message}`
     );
     try { socket.destroy(); } catch { /* ignore */ }
   });
@@ -420,7 +452,7 @@ export function handlePreviewUpgrade(
     // The `host` header is rewritten to localhost:<port> so the upstream
     // sees a request that looks local; everything else is preserved.
     const lines: string[] = [];
-    lines.push(`${req.method ?? 'GET'} ${parsed.rest} HTTP/${req.httpVersion ?? '1.1'}`);
+    lines.push(`${req.method ?? 'GET'} ${rest} HTTP/${req.httpVersion ?? '1.1'}`);
     const headers = filterRequestHeaders(req.headers);
     for (const [k, v] of Object.entries(headers)) {
       if (Array.isArray(v)) {
@@ -429,7 +461,7 @@ export function handlePreviewUpgrade(
         lines.push(`${k}: ${v}`);
       }
     }
-    lines.push(`host: 127.0.0.1:${auth.target_port}`);
+    lines.push(`host: 127.0.0.1:${upstreamPort}`);
     // Re-add the hop-by-hop bits we deliberately strip in HTTP forwarding;
     // they're meaningful for the upgrade handshake.
     if (req.headers.upgrade) lines.push(`upgrade: ${req.headers.upgrade}`);
@@ -440,6 +472,4 @@ export function handlePreviewUpgrade(
     upstream.pipe(socket);
     socket.pipe(upstream);
   });
-
-  return true;
 }
