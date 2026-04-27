@@ -5,18 +5,18 @@
  * Emergency-only tool for local dev / self-hosted recovery — the normal flow
  * is the /settings UI's "change password" form. Rehashes with the same
  * argon2id parameters the app uses, clears `must_change_password`, and
- * bumps `password_updated_at`.
+ * bumps `updatedAt` on the better-auth `user` table.
  *
  * Usage:
  *
- *   node scripts/reset-password.mjs --username <name> --password <plain> \
+ *   node scripts/reset-password.mjs --email <email> --password <plain> \
  *     [--db <path>]
  *
  *   # Example (local dev):
- *   node scripts/reset-password.mjs --username ar --password Alex1234
+ *   node scripts/reset-password.mjs --email ar@maw.local --password Alex1234
  *
  *   # Example (custom DB):
- *   node scripts/reset-password.mjs --username ar --password secret \
+ *   node scripts/reset-password.mjs --email ar@maw.local --password secret \
  *     --db /var/lib/maw/maw.db
  *
  * The DB path defaults to `$MAW_DATA_DIR/maw.db` (reading `.env` is not
@@ -37,8 +37,8 @@ function parseArgs(args) {
   for (let i = 2; i < args.length; i++) {
     const key = args[i];
     const val = args[i + 1];
-    if (key === '--username') {
-      out.username = val;
+    if (key === '--email') {
+      out.email = val;
       i++;
     } else if (key === '--password') {
       out.password = val;
@@ -58,13 +58,13 @@ function parseArgs(args) {
 
 function printUsage() {
   console.error(
-    'Usage: node scripts/reset-password.mjs --username <name> --password <plain> [--db <path>]'
+    'Usage: node scripts/reset-password.mjs --email <email> --password <plain> [--db <path>]'
   );
 }
 
 const args = parseArgs(argv);
 
-if (args.help || !args.username || !args.password) {
+if (args.help || !args.email || !args.password) {
   printUsage();
   exit(args.help ? 0 : 1);
 }
@@ -72,9 +72,7 @@ if (args.help || !args.username || !args.password) {
 const dbPath =
   args.db ?? (env.MAW_DATA_DIR ? join(env.MAW_DATA_DIR, 'maw.db') : null);
 if (!dbPath) {
-  console.error(
-    'No DB path. Set MAW_DATA_DIR or pass --db <path>.'
-  );
+  console.error('No DB path. Set MAW_DATA_DIR or pass --db <path>.');
   exit(1);
 }
 if (!existsSync(dbPath)) {
@@ -82,7 +80,7 @@ if (!existsSync(dbPath)) {
   exit(1);
 }
 
-// Must match src/lib/server/auth/password.ts. Keep these in sync.
+// Must match argon2Options in src/lib/server/auth/betterAuth.ts. Keep in sync.
 const newHash = await hash(args.password, {
   memoryCost: 19456,
   timeCost: 2,
@@ -92,16 +90,30 @@ const newHash = await hash(args.password, {
 
 const db = new Database(dbPath);
 const now = Math.floor(Date.now() / 1000);
-const info = db
-  .prepare(
-    'UPDATE users SET password_hash = ?, password_updated_at = ?, updated_at = ?, must_change_password = 0 WHERE username = ?'
-  )
-  .run(newHash, now, now, args.username);
-db.close();
 
-if (info.changes === 0) {
-  console.error(`No user found with username '${args.username}'.`);
+// Resolve the user id from the better-auth `user` table by email.
+const userRow = db.prepare('SELECT id FROM user WHERE email = ?').get(args.email);
+if (!userRow) {
+  console.error(`No user found with email '${args.email}'.`);
+  db.close();
   exit(1);
 }
 
-console.log(`Password reset for user '${args.username}' (${dbPath}).`);
+db.transaction(() => {
+  // Update password in better-auth account table (credential provider).
+  db.prepare(
+    "UPDATE account SET password = ? WHERE userId = ? AND providerId = 'credential'"
+  ).run(newHash, userRow.id);
+
+  // Bump updatedAt on the better-auth user row.
+  db.prepare('UPDATE user SET updatedAt = ? WHERE id = ?').run(now, userRow.id);
+
+  // Clear must_change_password on the legacy users table (same id).
+  db.prepare(
+    'UPDATE users SET must_change_password = 0, updated_at = ? WHERE id = ?'
+  ).run(now, userRow.id);
+})();
+
+db.close();
+
+console.log(`Password reset for '${args.email}' (${dbPath}).`);
