@@ -18,13 +18,13 @@ const mocks = vi.hoisted(() => {
     // --- tmux shim ---
     sendKey: vi.fn(),
     capturePane: vi.fn(),
+    getCursorPosition: vi.fn(),
     // --- auth / config ---
     getSession: vi.fn(),
     logAuth: vi.fn(),
     config: { publicOrigin: null as string | null },
     // --- db ---
-    getLatestTerminalSeq: vi.fn(),
-    listTerminalChunksSince: vi.fn()
+    getLatestTerminalSeq: vi.fn()
   };
 });
 
@@ -34,7 +34,8 @@ vi.mock('../bootstrap.js', () => ({
 vi.mock('../tmux/TmuxSession.js', () => ({
   Tmux: {
     sendKey: (...a: unknown[]) => mocks.sendKey(...a),
-    capturePane: (...a: unknown[]) => mocks.capturePane(...a)
+    capturePane: (...a: unknown[]) => mocks.capturePane(...a),
+    getCursorPosition: (...a: unknown[]) => mocks.getCursorPosition(...a)
   }
 }));
 vi.mock('../auth/betterAuth.js', () => ({
@@ -52,7 +53,6 @@ vi.mock('../config.js', () => ({
 }));
 vi.mock('../db/queries.js', () => ({
   getLatestTerminalSeq: (...a: unknown[]) => mocks.getLatestTerminalSeq(...a),
-  listTerminalChunksSince: (...a: unknown[]) => mocks.listTerminalChunksSince(...a),
   // Tests in this file exclusively cover the CLI-agent runtime path; the
   // browser-stream branch (added in v0.3) keys on getAgent/isStreamKind to
   // route /ws subscribes to a Playwright session manager. Returning
@@ -168,8 +168,8 @@ beforeEach(() => {
   mocks.supervisor.kill.mockReset();
   mocks.sendKey.mockReset().mockResolvedValue(undefined);
   mocks.capturePane.mockReset().mockResolvedValue('');
+  mocks.getCursorPosition.mockReset().mockResolvedValue(null);
   mocks.getLatestTerminalSeq.mockReset().mockReturnValue(0);
-  mocks.listTerminalChunksSince.mockReset().mockReturnValue([]);
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
@@ -301,7 +301,7 @@ describe('HubClient — defensive parsing', () => {
 });
 
 // -----------------------------------------------------------------------------
-// subscribe_agent — pane snapshot + catch-up (protocol v5)
+// subscribe_agent — pane snapshot (protocol v5)
 // -----------------------------------------------------------------------------
 
 describe('HubClient — subscribe_agent', () => {
@@ -324,11 +324,12 @@ describe('HubClient — subscribe_agent', () => {
     expect(err.code).toBe('forbidden');
   });
 
-  it('ships the tmux pane state as a `pane_snapshot` with the current seq watermark', async () => {
+  it('ships the tmux pane state as a `pane_snapshot` with the post-capture seq watermark', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
     mocks.getLatestTerminalSeq.mockReturnValue(42);
     mocks.capturePane.mockResolvedValue('\x1b[2J\x1b[H$ ready\r\n');
+    mocks.getCursorPosition.mockResolvedValue(null);
     const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
 
@@ -347,39 +348,129 @@ describe('HubClient — subscribe_agent', () => {
     expect(snap.seq).toBe(42);
   });
 
-  it('follows the snapshot with a catch-up of terminal_log chunks newer than the snapshot seq', async () => {
+  it('reads the seq watermark AFTER capture-pane resolves (no double-paint via stale catch-up)', async () => {
     const rt = makeRuntime();
     mocks.supervisor.get.mockReturnValue(rt);
-    mocks.getLatestTerminalSeq.mockReturnValue(5);
-    mocks.capturePane.mockResolvedValue('');
-    mocks.listTerminalChunksSince.mockReturnValue([
-      { seq: 6, chunk: Buffer.from('x', 'utf8') },
-      { seq: 7, chunk: Buffer.from('y', 'utf8') }
-    ]);
+    const callOrder: string[] = [];
+    mocks.capturePane.mockImplementation(async () => {
+      callOrder.push('capturePane');
+      return '$ ready\r\n';
+    });
+    mocks.getLatestTerminalSeq.mockImplementation(() => {
+      callOrder.push('getLatestTerminalSeq');
+      return 7;
+    });
     const { ws } = await attachAuthedClient();
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
 
     await vi.waitFor(() =>
       expect(
-        ws.sentMessages().filter((m) => (m as { type?: string }).type === 'output').length
-      ).toBe(2)
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
     );
-    expect(mocks.listTerminalChunksSince).toHaveBeenCalledWith('a1', 5);
-    const outs = ws
-      .sentMessages()
-      .filter((m) => (m as { type?: string }).type === 'output') as Array<{
-      seq: number;
-      b64: string;
-    }>;
-    expect(outs.map((o) => o.seq)).toEqual([6, 7]);
-    expect(Buffer.from(outs[0]!.b64, 'base64').toString('utf8')).toBe('x');
-    expect(Buffer.from(outs[1]!.b64, 'base64').toString('utf8')).toBe('y');
-    // Wire order: snapshot before catch-up.
+    expect(callOrder).toEqual(['capturePane', 'getLatestTerminalSeq']);
+  });
+
+  it('appends a CSI Cursor Position escape so xterm anchors at tmux\'s cursor cell', async () => {
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    // tmux cursor at row 0, col 38 — right after a fresh bash `$ ` prompt.
+    mocks.getCursorPosition.mockResolvedValue({ x: 38, y: 0 });
+    mocks.capturePane.mockResolvedValue('$ ready');
+    const { ws } = await attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
+    );
+    const snap = ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot') as {
+      ansi: string;
+    };
+    // 1-based: row 0 → 1, col 38 → 39.
+    expect(snap.ansi).toBe('$ ready\x1b[1;39H');
+  });
+
+  it('skips the cursor anchor when `getCursorPosition` returns null (transient tmux failure)', async () => {
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getCursorPosition.mockResolvedValue(null);
+    mocks.capturePane.mockResolvedValue('$ ready');
+    const { ws } = await attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
+    );
+    const snap = ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot') as {
+      ansi: string;
+    };
+    expect(snap.ansi).toBe('$ ready');
+  });
+
+  it('does NOT replay terminal_log on subscribe — snapshot is authoritative, no catch-up frames', async () => {
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getLatestTerminalSeq.mockReturnValue(5);
+    mocks.capturePane.mockResolvedValue('$ ready\r\n');
+    const { ws } = await attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
+    );
+    // No `output` frames after the snapshot — the only output frames in the
+    // wire trace would come from runtime.emit('output', ...) live forwards.
     const frames = ws.sentMessages() as Array<{ type: string }>;
     const snapIdx = frames.findIndex((f) => f.type === 'pane_snapshot');
-    const firstOutIdx = frames.findIndex((f) => f.type === 'output');
-    expect(snapIdx).toBeGreaterThanOrEqual(0);
-    expect(firstOutIdx).toBeGreaterThan(snapIdx);
+    const trailingOutputs = frames.slice(snapIdx + 1).filter((f) => f.type === 'output');
+    expect(trailingOutputs).toEqual([]);
+  });
+
+  it('regression — bash double-prompt: live byte during capture-pane is forwarded once, no replay after snapshot', async () => {
+    // Reproduces the screenshot scenario:
+    //   t0: subscribe arrives, listener registered
+    //   t1: capture-pane awaiting; bash flushes its prompt → live `output` fires
+    //   t2: capture-pane resolves with the prompt rendered at row 0 + blanks
+    //   t3: snapshotSeq read AFTER capture-pane (covers seq 1) → no catch-up
+    // Expected wire trace: output(seq=1) → pane_snapshot. No second output.
+    const rt = makeRuntime();
+    mocks.supervisor.get.mockReturnValue(rt);
+    mocks.getCursorPosition.mockResolvedValue({ x: 38, y: 0 });
+    let releaseCapture: (v: string) => void = () => {};
+    mocks.capturePane.mockReturnValue(
+      new Promise<string>((r) => {
+        releaseCapture = r;
+      })
+    );
+    // Watermark read AFTER capture-pane — by then the live prompt chunk is in DB.
+    mocks.getLatestTerminalSeq.mockReturnValue(1);
+
+    const { ws } = await attachAuthedClient();
+    ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
+    // Live byte arrives mid-await (this is the bash prompt going through pipe-pane).
+    rt.emit('output', { seq: 1, chunk: Buffer.from('$ ', 'utf8') });
+    // Now capture-pane resolves with the rendered grid containing the prompt.
+    releaseCapture('$ \r\n\r\n');
+    await vi.waitFor(() =>
+      expect(
+        ws.sentMessages().find((m) => (m as { type?: string }).type === 'pane_snapshot')
+      ).toBeDefined()
+    );
+
+    const frames = ws.sentMessages() as Array<{ type: string; seq?: number }>;
+    const outIdxs = frames
+      .map((f, i) => (f.type === 'output' ? i : -1))
+      .filter((i) => i >= 0);
+    const snapIdx = frames.findIndex((f) => f.type === 'pane_snapshot');
+    // Exactly one live output (the live forward), no catch-up after the snapshot.
+    expect(outIdxs).toHaveLength(1);
+    expect(outIdxs[0]).toBeLessThan(snapIdx);
   });
 
   it('emits an empty-ansi snapshot (with console.warn) when capture-pane fails', async () => {
@@ -410,7 +501,8 @@ describe('HubClient — subscribe_agent', () => {
     ws.deliver({ type: 'subscribe_agent', agentId: 'a1' });
     // Listener registration is synchronous within handleSubscribe, so a
     // live output event landing BEFORE the async snapshot resolves still
-    // reaches the client (client dedup handles overlap with catch-up).
+    // reaches the client. The client wipes it on `term.reset()` and the
+    // snapshot ansi (which captured the same bytes) repaints them once.
     rt.emit('output', { seq: 42, chunk: Buffer.from('hello', 'utf8') });
     const out = ws.sentMessages().find((m) => (m as { type?: string }).type === 'output') as {
       seq: number;

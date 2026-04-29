@@ -221,6 +221,36 @@ export class Tmux {
     }
   }
 
+  /**
+   * Live cursor coordinates for the pane (0-based: top-left is `{x:0,y:0}`).
+   *
+   * `tmux capture-pane` paints the rendered grid as text but doesn't position
+   * xterm's cursor — after writing N rows of CRLF-terminated content xterm's
+   * cursor sits at the bottom of the pane, not where tmux thinks the cursor
+   * is. The reconnect snapshot tail uses this to append a CSI Cursor Position
+   * escape so xterm lands the cursor on the right cell.
+   *
+   * Returns `null` (not throws) on any tmux failure — a transient hiccup
+   * mustn't drop the snapshot; the caller silently skips the cursor anchor
+   * and the worst case is xterm's cursor being a few rows off.
+   */
+  static async getCursorPosition(session: string): Promise<{ x: number; y: number } | null> {
+    try {
+      const { stdout } = await execa('tmux', t([
+        'display-message',
+        '-t',
+        session,
+        '-p',
+        '#{cursor_x},#{cursor_y}'
+      ]));
+      const match = /^(\d+),(\d+)$/.exec(stdout.trim());
+      if (!match) return null;
+      return { x: Number(match[1]), y: Number(match[2]) };
+    } catch {
+      return null;
+    }
+  }
+
   static async killSession(session: string): Promise<void> {
     try {
       await execa('tmux', t(['kill-session', '-t', session]));

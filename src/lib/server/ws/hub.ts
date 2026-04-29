@@ -4,14 +4,17 @@
  * Wiring:
  *   - Every incoming ws connection is wrapped in a HubClient.
  *   - HubClient.subscribe(agentId) captures the tmux pane's currently
- *     rendered grid via `tmux capture-pane -p -e -S 0`, ships it as a
- *     `pane_snapshot`, then forwards live output/event/state fan-out.
- *     A catch-up pass queries `terminal_log` for any bytes written after
- *     the snapshot seq so the (rare) window between reading the watermark
- *     and the listener going live is covered; client dedup handles
- *     overlap. This replaces the pre-v5 byte-log replay, which stacked
- *     redraw banners on TUI CLIs without alt-screen. See
- *     docs/plans/v0.2-terminal-pane-snapshot.md.
+ *     rendered grid via `tmux capture-pane -p -e -S 0`, anchors xterm's
+ *     cursor to tmux's actual cursor cell with a trailing CSI escape, and
+ *     ships the result as a `pane_snapshot`. The watermark on the snapshot
+ *     is read AFTER capture-pane resolves so it covers every chunk already
+ *     represented in the captured grid — bytes that beat the snapshot to
+ *     the wire via the live `output` listener are wiped by `term.reset()`
+ *     on the client and re-painted by the snapshot itself. From there the
+ *     live output/event/state fan-out streams forward. This replaces the
+ *     pre-v5 byte-log replay, which stacked redraw banners on TUI CLIs
+ *     without alt-screen. See docs/plans/v0.2-terminal-pane-snapshot.md
+ *     and docs/plans/v0.2-fix-pane-snapshot-double-prompt.md.
  *   - Inputs from the client go through AgentRuntime's serialized queue.
  *
  * The hub is a singleton (same bootstrap that owns the supervisor).
@@ -28,7 +31,7 @@ import { getConfig } from '../config.js';
 import { getSupervisor } from '../bootstrap.js';
 import { Tmux } from '../tmux/TmuxSession.js';
 import type { AgentRuntime } from '../agents/AgentRuntime.js';
-import { getAgent, getLatestTerminalSeq, listTerminalChunksSince } from '../db/queries.js';
+import { getAgent, getLatestTerminalSeq } from '../db/queries.js';
 import { isStreamKind } from '../agents/AgentSupervisor.js';
 import { getPlaywrightSessions } from '../preview/PlaywrightSessionManager.js';
 import type { PlaywrightSession, StreamFrame } from '../preview/PlaywrightSession.js';
@@ -170,14 +173,16 @@ class HubClient {
       return;
     }
 
-    // Register the fan-out listeners SYNCHRONOUSLY and capture the
-    // terminal_log watermark before awaiting anything. That way any output
-    // bytes emitted during the capture-pane await are forwarded live (client
-    // dedup via seq handles overlap with the catch-up replay below) and
-    // never lost to a race between reading the watermark and the listener
-    // going live.
-    const snapshotSeq = getLatestTerminalSeq(agentId);
-
+    // Register the fan-out listeners SYNCHRONOUSLY before awaiting anything,
+    // so output bytes emitted during the capture-pane await are forwarded
+    // live and won't be lost to a race against listener attachment. The
+    // terminal_log watermark is read AFTER capture-pane resolves (in the
+    // async tail below) so it covers every chunk already represented in the
+    // captured grid; live bytes that beat the snapshot to the wire are
+    // wiped by `term.reset()` on the client and re-painted by the snapshot
+    // ansi itself (tmux pipe-pane fires from the same screen-update event
+    // that updates the pane buffer, so a byte in the FIFO is also in the
+    // captured grid).
     const onOutput = (payload: { seq: number; chunk: Buffer }): void => {
       this.send({
         type: 'output',
@@ -226,10 +231,12 @@ class HubClient {
     };
     this.subs.set(agentId, sub);
 
-    // Async tail: capture the current pane grid, ship it, then re-emit any
-    // chunks that landed in terminal_log after snapshotSeq (covers bytes
-    // persisted while capture-pane was in flight — client dedup makes the
-    // overlap harmless).
+    // Async tail: capture the current pane grid, anchor xterm's cursor to
+    // tmux's actual cursor cell (so live bytes after the snapshot land on
+    // the right row/col instead of the bottom-left of an empty pane), then
+    // ship the snapshot. The watermark is read AFTER capture-pane resolves
+    // so the snapshot's `seq` covers every chunk already in the captured
+    // grid; the client uses it to dedup future live `output` frames.
     void (async () => {
       let ansi = '';
       try {
@@ -245,24 +252,23 @@ class HubClient {
       // so the snapshot lands aligned; the pattern `\r?\n` makes the
       // rewrite idempotent if a future tmux build ever adds CRs.
       if (ansi.length > 0) ansi = ansi.replace(/\r?\n/g, '\r\n');
+      // Anchor xterm's cursor at tmux's actual cursor cell. Without this,
+      // writing the captured grid (rows of CRLF-terminated text) leaves
+      // xterm's cursor at the bottom of the pane — and any live byte that
+      // arrives next paints there instead of where the running program
+      // expects (e.g. right after a bash `$ ` prompt at row 0).
+      if (ansi.length > 0) {
+        const cursor = await Tmux.getCursorPosition(runtime.tmuxSession);
+        if (cursor) ansi += `\x1b[${cursor.y + 1};${cursor.x + 1}H`;
+      }
+      // Read AFTER capture-pane resolves so the watermark covers every
+      // chunk already represented in the captured grid (no double-paint
+      // via a catch-up replay; the snapshot is authoritative).
+      const snapshotSeq = getLatestTerminalSeq(agentId);
       // Short-circuit if the client unsubscribed (or the ws closed) while
       // capture-pane was resolving — no need to ship stale snapshots.
       if (this.subs.get(agentId) !== sub) return;
       this.send({ type: 'pane_snapshot', agentId, ansi, seq: snapshotSeq });
-      try {
-        const rows = listTerminalChunksSince(agentId, snapshotSeq);
-        for (const r of rows) {
-          if (this.subs.get(agentId) !== sub) return;
-          this.send({
-            type: 'output',
-            agentId,
-            seq: r.seq,
-            b64: r.chunk.toString('base64')
-          });
-        }
-      } catch (err) {
-        console.warn(`[hub] catch-up replay failed for ${agentId}:`, err);
-      }
     })();
   }
 

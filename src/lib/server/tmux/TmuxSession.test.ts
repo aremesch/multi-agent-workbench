@@ -210,6 +210,34 @@ describe('Tmux.capturePane', () => {
   });
 });
 
+describe('Tmux.getCursorPosition', () => {
+  it('parses `display-message` cursor coordinates as 0-based ints', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '38,0\n' });
+    const cursor = await Tmux.getCursorPosition('sid');
+    expect(cursor).toEqual({ x: 38, y: 0 });
+    const args = execaMock.mock.calls[0][1];
+    expect(args).toContain('display-message');
+    expect(args).toContain('-p');
+    expect(args).toContain('#{cursor_x},#{cursor_y}');
+    expect(args[args.indexOf('-t') + 1]).toBe('sid');
+  });
+
+  it('handles non-zero cursor row/col', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '0,5' });
+    expect(await Tmux.getCursorPosition('sid')).toEqual({ x: 0, y: 5 });
+  });
+
+  it('returns null when stdout does not match `<x>,<y>`', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: 'garbage' });
+    expect(await Tmux.getCursorPosition('sid')).toBeNull();
+  });
+
+  it('returns null on tmux failure — never throws (snapshot must still ship)', async () => {
+    execaMock.mockRejectedValueOnce(execaError('no such session'));
+    expect(await Tmux.getCursorPosition('sid')).toBeNull();
+  });
+});
+
 describe('Tmux — session lifecycle', () => {
   it('killSession swallows "can\'t find session" (idempotent)', async () => {
     execaMock.mockRejectedValueOnce(execaError("can't find session: sid"));
