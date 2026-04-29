@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/adapter.schema.json",
   "kind": "shell",
-  "displayName": "Shell (bash smoke test)",
+  "displayName": "bash",
 
   // Run directly in the repo root on whatever branch is already checked
   // out — no disposable `maw/<agentId>` worktree. The smoke adapter is a
