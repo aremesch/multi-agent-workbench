@@ -31,11 +31,19 @@ interface CompiledPattern {
   re: RegExp;
 }
 
+/**
+ * Same shape as the {@link subst} regex inside `buildSpawnSpec`, used at
+ * construction time to detect whether the adapter references the special
+ * `{{agent.cliSessionId}}` template — see the `needsCliSessionId` getter.
+ */
+const CLI_SESSION_ID_REF = /\{\{\s*agent\.cliSessionId\s*\}\}/;
+
 export class ConfigDrivenAdapter implements CliAdapter {
   readonly kind: string;
   readonly displayName: string;
   readonly createWorktree: boolean;
   readonly mobileQuickKeys: MobileQuickKey[];
+  readonly needsCliSessionId: boolean;
   readonly input: InputEncoding;
 
   private readonly cfg: AdapterConfig;
@@ -54,6 +62,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
     this.displayName = cfg.displayName;
     this.createWorktree = cfg.createWorktree;
     this.mobileQuickKeys = cfg.mobileQuickKeys;
+    this.needsCliSessionId = scanForCliSessionIdRef(cfg);
     this.patterns = cfg.patterns.map((p) => ({
       cfg: p,
       re: new RegExp(p.regex, p.flags ?? '')
@@ -160,7 +169,8 @@ export class ConfigDrivenAdapter implements CliAdapter {
       'role.toolConfig': JSON.stringify(opts.role.toolConfig ?? {}),
       'task.title': opts.task?.title ?? '',
       'task.body': opts.task?.body ?? '',
-      'agent.id': opts.agent.id
+      'agent.id': opts.agent.id,
+      'agent.cliSessionId': opts.agent.cliSessionId ?? ''
     };
     for (const [k, v] of Object.entries(opts.env)) {
       vars[`env.${k}`] = v;
@@ -227,4 +237,14 @@ export class ConfigDrivenAdapter implements CliAdapter {
     }
     return '';
   }
+}
+
+function scanForCliSessionIdRef(cfg: AdapterConfig): boolean {
+  const haystacks: string[] = [
+    cfg.spawn.command,
+    ...cfg.spawn.args,
+    ...Object.values(cfg.spawn.env),
+    cfg.spawn.initialInput ?? ''
+  ];
+  return haystacks.some((s) => CLI_SESSION_ID_REF.test(s));
 }

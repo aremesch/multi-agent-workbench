@@ -64,7 +64,7 @@ export interface BuildSpawnSpecOpts {
   task: { title: string; body: string } | null;
   env: Record<string, string>;
   /** Identity vars exposed to adapter `{{agent.*}}` template substitutions. */
-  agent: { id: string };
+  agent: { id: string; cliSessionId?: string | null };
   /** Per-spawn toggle overrides keyed by optionalArg id. */
   optionalArgs?: Record<string, boolean>;
 }
@@ -84,6 +84,13 @@ export interface CliAdapter {
    * out; the UI just hides the row. See {@link MobileQuickKey}.
    */
   readonly mobileQuickKeys: MobileQuickKey[];
+  /**
+   * True if any spawn-config string references `{{agent.cliSessionId}}` —
+   * the signal AgentSupervisor uses to mint and persist a UUID that will
+   * be both fed to the CLI (e.g. `claude --session-id <uuid>`) and stored
+   * in `agents.cli_session_id` so JSONL transcript paths are reproducible.
+   */
+  readonly needsCliSessionId: boolean;
   buildSpawnSpec(opts: BuildSpawnSpecOpts): SpawnSpec;
   ingest(chunk: Buffer): AdapterEvent[];
   input: InputEncoding;

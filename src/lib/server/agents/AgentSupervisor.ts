@@ -6,6 +6,7 @@
  * fresh FIFO + pipe-pane) or marks it crashed.
  */
 
+import { randomUUID } from 'node:crypto';
 import { ulid } from 'ulid';
 import { AgentRuntime } from './AgentRuntime.js';
 import { AdapterRegistry } from './adapters/AdapterRegistry.js';
@@ -514,6 +515,12 @@ export class AgentSupervisor {
 
     const adapter = this.registry.create(role.cli_kind);
     const agentId = args.agentId;
+    // Mint a CLI-side session UUID only when the adapter advertises that it
+    // wants one (i.e. its spawn config references {{agent.cliSessionId}}).
+    // For claude-code this gets fed to `claude --session-id <uuid>` so the
+    // JSONL transcript path is reproducible from the DB alone — see
+    // ClaudeJsonlTokens.ts and the archive token-summary call sites.
+    const cliSessionId = adapter.needsCliSessionId ? randomUUID() : null;
     const spec = adapter.buildSpawnSpec({
       role: {
         systemPrompt: role.system_prompt,
@@ -526,7 +533,7 @@ export class AgentSupervisor {
         OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
         GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? ''
       },
-      agent: { id: agentId },
+      agent: { id: agentId, cliSessionId },
       optionalArgs: args.optionalArgs
     });
 
@@ -556,7 +563,7 @@ export class AgentSupervisor {
       cli_kind: role.cli_kind,
       tmux_session: tmuxSession,
       status: 'spawning',
-      cli_session_id: null,
+      cli_session_id: cliSessionId,
       base_sha: args.baseSha,
       committer_email: committerEmail,
       hook_token: hookToken

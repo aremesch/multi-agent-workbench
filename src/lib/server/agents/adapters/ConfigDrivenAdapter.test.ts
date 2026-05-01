@@ -363,6 +363,81 @@ describe('ConfigDrivenAdapter', () => {
       const spec = a.buildSpawnSpec(opts());
       expect(spec.initialInput).toBeUndefined();
     });
+
+    it('substitutes {{agent.cliSessionId}} when supplied', () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({
+          spawn: {
+            command: 'claude',
+            args: ['--session-id', '{{agent.cliSessionId}}']
+          }
+        })
+      );
+      const spec = a.buildSpawnSpec(
+        opts({ agent: { id: 'agent-xyz', cliSessionId: 'abc-123' } })
+      );
+      expect(spec.args).toEqual(['--session-id', 'abc-123']);
+    });
+
+    it('omitted cliSessionId substitutes to empty string', () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({
+          spawn: {
+            command: 'claude',
+            args: ['--session-id', '{{agent.cliSessionId}}']
+          }
+        })
+      );
+      const spec = a.buildSpawnSpec(opts());
+      expect(spec.args).toEqual(['--session-id', '']);
+    });
+  });
+
+  describe('needsCliSessionId — auto-detection', () => {
+    it('true when args reference {{agent.cliSessionId}}', () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({
+          spawn: { command: 'claude', args: ['--session-id', '{{agent.cliSessionId}}'] }
+        })
+      );
+      expect(a.needsCliSessionId).toBe(true);
+    });
+
+    it('true when env value references {{agent.cliSessionId}}', () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({
+          spawn: { command: 'x', env: { SID: '{{agent.cliSessionId}}' } }
+        })
+      );
+      expect(a.needsCliSessionId).toBe(true);
+    });
+
+    it('true when initialInput references {{agent.cliSessionId}}', () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({
+          spawn: { command: 'x', initialInput: 'session={{agent.cliSessionId}}' }
+        })
+      );
+      expect(a.needsCliSessionId).toBe(true);
+    });
+
+    it('tolerates whitespace inside braces (matches subst regex)', () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({
+          spawn: { command: 'x', args: ['{{ agent.cliSessionId }}'] }
+        })
+      );
+      expect(a.needsCliSessionId).toBe(true);
+    });
+
+    it('false when no spawn-config string references it', () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({
+          spawn: { command: 'bash', args: ['--cwd', '{{worktree}}'], env: { X: '{{agent.id}}' } }
+        })
+      );
+      expect(a.needsCliSessionId).toBe(false);
+    });
   });
 
   describe('input.encode / input.answerPrompt', () => {

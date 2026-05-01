@@ -18,7 +18,12 @@
   // sessions with `pnpm test:adapter cli-adapters/claude-code.jsonc <session.txt>`.
   "spawn": {
     "command": "claude",
-    "args": [],
+    // `--session-id <uuid>` makes the JSONL transcript path deterministic
+    // from spawn time (~/.claude/projects/<encoded-cwd>/<uuid>.jsonl), which
+    // is what `summarizeTokenUsage` in ClaudeJsonlTokens.ts reads to surface
+    // tokens on the archive page. Presence of {{agent.cliSessionId}} is the
+    // signal AgentSupervisor uses to mint and persist the UUID at spawn.
+    "args": ["--session-id", "{{agent.cliSessionId}}"],
     "optionalArgs": [
       {
         "id": "skip-permissions",
