@@ -361,7 +361,13 @@ const en = {
   'picker.error.mkdirInvalidName':
     'Invalid folder name. Use letters, digits, spaces, dot, dash or underscore.',
   'picker.error.mkdirExists': 'A folder with that name already exists.',
-  'picker.error.mkdirFailed': 'Failed to create folder: {message}'
+  'picker.error.mkdirFailed': 'Failed to create folder: {message}',
+
+  // ── Foreground alert toasts ──────────────────────────────────────
+  'toast.openAgent': 'Open agent',
+  'toast.dismiss': 'Dismiss',
+  'toast.permissionNeeded': 'Permission needed',
+  'toast.taskComplete': 'Task complete'
 } as const;
 
 export type TranslationKey = keyof typeof en;

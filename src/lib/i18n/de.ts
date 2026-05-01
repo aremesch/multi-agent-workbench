@@ -324,7 +324,13 @@ const de: Partial<Record<TranslationKey, string>> = {
   'picker.error.mkdirInvalidName':
     'Ung\u00fcltiger Ordnername. Verwende Buchstaben, Ziffern, Leerzeichen, Punkt, Bindestrich oder Unterstrich.',
   'picker.error.mkdirExists': 'Ein Ordner mit diesem Namen existiert bereits.',
-  'picker.error.mkdirFailed': 'Ordner konnte nicht erstellt werden: {message}'
+  'picker.error.mkdirFailed': 'Ordner konnte nicht erstellt werden: {message}',
+
+  // ── Foreground alert toasts ──────────────────────────────────────
+  'toast.openAgent': 'Agent öffnen',
+  'toast.dismiss': 'Schließen',
+  'toast.permissionNeeded': 'Zustimmung erforderlich',
+  'toast.taskComplete': 'Aufgabe abgeschlossen'
 };
 
 export default de;

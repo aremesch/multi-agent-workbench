@@ -104,6 +104,7 @@ export interface AgentRow {
   commits_snapshotted_at: number | null;
   target_url: string | null;
   target_port: number | null;
+  hook_token: string | null;
   created_at: number;
   updated_at: number;
 }

@@ -9,9 +9,24 @@
   import AgentTerminalPanel from '$lib/client/components/AgentTerminalPanel.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
   import SpawnAgentForm from '$lib/client/components/SpawnAgentForm.svelte';
+  import { dismissToastsForAgent } from '$lib/client/stores/alertToasts';
   import { useT } from '$lib/client/i18n.svelte';
 
   const t = useT();
+
+  /**
+   * Fire-and-forget: ack any unacked alerts for the agent the user just
+   * opened, and clear matching foreground toasts. Runs every time the
+   * `?agent=` effect resolves, including when the user switches between
+   * agents inside the same dashboard view. Failures are silent — the
+   * route is idempotent and a network blip shouldn't block the modal.
+   */
+  function ackAgentAlerts(agentId: string): void {
+    dismissToastsForAgent(agentId);
+    apiFetch(`/api/agents/${encodeURIComponent(agentId)}/alerts/ack`, {
+      method: 'POST'
+    }).catch(() => {});
+  }
 
   let { data }: { data: PageData } = $props();
 
@@ -23,6 +38,7 @@
     openAgent = agent;
     openAgentStatus = agent.status;
     syncAgentParam(agent.id);
+    ackAgentAlerts(agent.id);
   }
   function closeModal(): void {
     openAgent = null;
@@ -62,6 +78,9 @@
     if (match) {
       openAgent = match;
       openAgentStatus = match.status;
+      // Deep-link land (push notification, sidebar click) — same ack/toast
+      // dismissal as the in-app onOpen path so foreground UX converges.
+      ackAgentAlerts(match.id);
     }
   });
 

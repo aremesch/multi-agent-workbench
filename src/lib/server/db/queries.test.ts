@@ -20,7 +20,9 @@ vi.mock('./index.js', () => ({
 }));
 
 import {
+  acknowledgeAgentAlerts,
   acknowledgeAlert,
+  getAgentByHookToken,
   closeAgentRun,
   countUsers,
   deleteAgent,
@@ -873,6 +875,80 @@ describe('alerts', () => {
     acknowledgeAlert('a1');
     const rows = listRecentAlerts('agent-1', 0);
     expect(rows[0]?.acknowledged_at).toBeGreaterThan(0);
+  });
+
+  it('acknowledgeAgentAlerts bulk-flips every unacked alert for one agent', () => {
+    insertAlert({
+      id: 'a1',
+      user_id: 'user-1',
+      agent_id: 'agent-1',
+      severity: 'info',
+      reason: 'one',
+      payload_json: '{}',
+      ts: 1
+    });
+    insertAlert({
+      id: 'a2',
+      user_id: 'user-1',
+      agent_id: 'agent-1',
+      severity: 'warning',
+      reason: 'two',
+      payload_json: '{}',
+      ts: 2
+    });
+
+    const acked = acknowledgeAgentAlerts('agent-1', 'user-1');
+    expect(acked).toBe(2);
+
+    const rows = listRecentAlerts('agent-1', 0);
+    expect(rows).toHaveLength(2);
+    for (const r of rows) expect(r.acknowledged_at).toBeGreaterThan(0);
+
+    // Idempotent — re-running on already-acked rows changes nothing.
+    expect(acknowledgeAgentAlerts('agent-1', 'user-1')).toBe(0);
+  });
+
+  it('acknowledgeAgentAlerts is owner-scoped — does not touch other users alerts', () => {
+    // Seed a second user + agent; reuse the existing repo since it only
+    // requires user_id matching, not exclusivity.
+    insertAlert({
+      id: 'a1',
+      user_id: 'user-1',
+      agent_id: 'agent-1',
+      severity: 'info',
+      reason: 'mine',
+      payload_json: '{}',
+      ts: 1
+    });
+
+    // Misaddressed call (wrong user) acks nothing.
+    expect(acknowledgeAgentAlerts('agent-1', 'someone-else')).toBe(0);
+    const rows = listRecentAlerts('agent-1', 0);
+    expect(rows[0]?.acknowledged_at).toBeNull();
+  });
+});
+
+describe('getAgentByHookToken', () => {
+  beforeEach(() => {
+    seedFullStack();
+  });
+
+  it('returns the matching agent row for a known token', () => {
+    seedAgent('agent-2', 'user-1', { hook_token: 'tok-secret' });
+    const row = getAgentByHookToken('tok-secret');
+    expect(row?.id).toBe('agent-2');
+    expect(row?.hook_token).toBe('tok-secret');
+  });
+
+  it('returns undefined for an unknown token', () => {
+    seedAgent('agent-2', 'user-1', { hook_token: 'tok-secret' });
+    expect(getAgentByHookToken('not-a-token')).toBeUndefined();
+  });
+
+  it('does not match agents whose hook_token is null', () => {
+    // The default seedAgent has no hook_token override — column stays null.
+    expect(getAgentByHookToken('')).toBeUndefined();
+    expect(getAgentByHookToken('null')).toBeUndefined();
   });
 });
 

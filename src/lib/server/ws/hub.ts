@@ -30,9 +30,10 @@ import { clientIpFromRaw } from '../net/clientIp.js';
 import { getConfig } from '../config.js';
 import { getSupervisor } from '../bootstrap.js';
 import { Tmux } from '../tmux/TmuxSession.js';
-import type { AgentRuntime } from '../agents/AgentRuntime.js';
+import type { AgentRuntime, AlertPayload } from '../agents/AgentRuntime.js';
 import { getAgent, getLatestTerminalSeq } from '../db/queries.js';
 import { isStreamKind } from '../agents/AgentSupervisor.js';
+import { getAlertBus } from '../agents/AlertBus.js';
 import { getPlaywrightSessions } from '../preview/PlaywrightSessionManager.js';
 import type { PlaywrightSession, StreamFrame } from '../preview/PlaywrightSession.js';
 import type { Cookies } from '@sveltejs/kit';
@@ -61,6 +62,10 @@ class HubClient {
    *  to a Playwright session, not an AgentRuntime, and the message types
    *  flowing in/out are different. */
   private streamSubs = new Map<string, StreamSubscription>();
+  /** User-scoped alert subscription. One per HubClient — subscribing twice
+   *  is a no-op. The unsubscribe closure is stashed so cleanup can call it
+   *  without holding the original handler reference. */
+  private userAlertOff: (() => void) | null = null;
 
   constructor(
     private readonly ws: WebSocket,
@@ -145,6 +150,12 @@ class HubClient {
       case 'stream_history':
         this.handleStreamHistory(msg.agentId, msg.action);
         break;
+      case 'subscribe_user_alerts':
+        this.handleSubscribeUserAlerts();
+        break;
+      case 'unsubscribe_user_alerts':
+        this.handleUnsubscribeUserAlerts();
+        break;
       default: {
         const _exhaustive: never = msg;
         void _exhaustive;
@@ -205,14 +216,16 @@ class HubClient {
     const onState = (status: string): void => {
       this.send({ type: 'agent_state', agentId, status });
     };
-    const onAlert = (alert: { id: string; agentId: string; severity: string; reason: string }): void => {
+    const onAlert = (alert: AlertPayload): void => {
       this.send({
         type: 'alert',
         id: alert.id,
         agentId: alert.agentId,
-        severity: alert.severity as import('$shared/protocol').SC_Alert['severity'],
+        severity: alert.severity,
         reason: alert.reason,
-        ts: Math.floor(Date.now() / 1000)
+        body: alert.body,
+        url: alert.url,
+        ts: alert.ts
       });
     };
 
@@ -494,6 +507,40 @@ class HubClient {
     this.streamSubs.delete(agentId);
   }
 
+  /**
+   * Subscribe this client to alert events from any of the user's agents.
+   * Filters on `userId` inside the bus listener so cross-user alerts
+   * never leak. Idempotent — re-subscribing while already wired is a
+   * no-op. The handler does not de-dup against per-agent `subscribe_agent`
+   * subscriptions: a client that's both `subscribe_agent`-ed AND
+   * `subscribe_user_alerts`-ed will receive the same alert twice. The
+   * dashboard dedupes by `alertId` in the toast store.
+   */
+  private handleSubscribeUserAlerts(): void {
+    if (this.userAlertOff) return;
+    const myUserId = this.userId;
+    const off = getAlertBus().onUserAlert((uid, payload) => {
+      if (uid !== myUserId) return;
+      this.send({
+        type: 'alert',
+        id: payload.id,
+        agentId: payload.agentId,
+        severity: payload.severity,
+        reason: payload.reason,
+        body: payload.body,
+        url: payload.url,
+        ts: payload.ts
+      });
+    });
+    this.userAlertOff = off;
+  }
+
+  private handleUnsubscribeUserAlerts(): void {
+    if (!this.userAlertOff) return;
+    this.userAlertOff();
+    this.userAlertOff = null;
+  }
+
   private cleanup(): void {
     for (const id of Array.from(this.subs.keys())) {
       this.handleUnsubscribe(id);
@@ -501,6 +548,7 @@ class HubClient {
     for (const id of Array.from(this.streamSubs.keys())) {
       this.handleStreamUnsubscribe(id);
     }
+    this.handleUnsubscribeUserAlerts();
   }
 }
 

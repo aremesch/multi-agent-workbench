@@ -363,6 +363,44 @@ export function getAgent(id: string): AgentRow | undefined {
   return prep<[string], AgentRow>('SELECT * FROM agents WHERE id = ?').get(id);
 }
 
+/**
+ * Bulk-ack every unacked alert for an agent. Called when the user
+ * opens the agent's terminal modal — both as a UX polish (the foreground
+ * toast disappears) AND a correctness fix: the 30-second alert dedup
+ * window in `AgentRuntime.maybeAlert` skips firing if any unacked alert
+ * with the same `patternId` exists, so leaving stale alerts unacked
+ * silently suppresses legitimate follow-ups.
+ *
+ * Owner-scoped (`user_id`) so a tab open by user A can't ack user B's
+ * alerts even if A guesses an agent id. Returns the number of rows
+ * touched — 0 means nothing was unacked.
+ *
+ * Idempotent: re-calling for an already-acked agent is a no-op.
+ */
+export function acknowledgeAgentAlerts(agentId: string, userId: string): number {
+  const ts = now();
+  const res = prep<[number, number, string, string], void>(
+    `UPDATE alerts
+       SET acknowledged_at = ?, updated_at = ?
+     WHERE agent_id = ? AND user_id = ? AND acknowledged_at IS NULL`
+  ).run(ts, ts, agentId, userId);
+  return res.changes;
+}
+
+/**
+ * Look up an agent by its per-agent hook bearer token. Used by the
+ * loopback-only `/api/internal/claude-hook` route to authenticate hook
+ * POSTs from claude-code's `Notification`/`PreToolUse` hooks. The token
+ * is set at spawn time (random 32-byte hex) and never rotates for the
+ * lifetime of the agent row. Returns undefined for unknown tokens; the
+ * route surfaces that as 401 with a constant-time response shape.
+ */
+export function getAgentByHookToken(token: string): AgentRow | undefined {
+  return prep<[string], AgentRow>(
+    'SELECT * FROM agents WHERE hook_token = ?'
+  ).get(token);
+}
+
 export function listAgentsForUser(userId: string): AgentRow[] {
   return prep<[string], AgentRow>(
     'SELECT * FROM agents WHERE user_id = ? ORDER BY created_at DESC'
@@ -455,6 +493,7 @@ export function insertAgent(row: {
   committer_email?: string | null;
   target_url?: string | null;
   target_port?: number | null;
+  hook_token?: string | null;
 }): void {
   const ts = now();
   prep<
@@ -472,6 +511,7 @@ export function insertAgent(row: {
       string | null,
       string | null,
       number | null,
+      string | null,
       number,
       number
     ]
@@ -479,8 +519,8 @@ export function insertAgent(row: {
     `INSERT INTO agents
        (id, user_id, role_id, repo_id, worktree_id, cli_kind, tmux_session, status,
         cli_session_id, base_sha, committer_email, target_url, target_port,
-        created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        hook_token, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     row.id,
     row.user_id,
@@ -495,6 +535,7 @@ export function insertAgent(row: {
     row.committer_email ?? null,
     row.target_url ?? null,
     row.target_port ?? null,
+    row.hook_token ?? null,
     ts,
     ts
   );
@@ -693,6 +734,16 @@ export function listTasksForAgent(agentId: string): TaskRow[] {
   return prep<[string], TaskRow>(
     'SELECT * FROM tasks WHERE agent_id = ? ORDER BY created_at DESC'
   ).all(agentId);
+}
+
+/**
+ * Single-task lookup. Used by AgentRuntime when formatting alert titles —
+ * the task's `title` is the human-readable name the user typed at spawn
+ * (e.g. "Implement notifications") and is far more useful in a push
+ * notification than `cli_kind`. Returns undefined for unknown ids.
+ */
+export function getTask(id: string): TaskRow | undefined {
+  return prep<[string], TaskRow>('SELECT * FROM tasks WHERE id = ?').get(id);
 }
 
 // --------------- terminal log ---------------

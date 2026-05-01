@@ -17,6 +17,15 @@ export interface PushPayload {
     alertId: string;
     /** Deep-link URL the PWA opens on tap. */
     url: string;
+    /**
+     * Human-readable agent identifier (task title or cli_kind fallback).
+     * Carried so the SW + foreground toast can render without a DB lookup
+     * and so OS-level grouping/replacement keys can include it.
+     */
+    agentTitle?: string;
+    /** Severity floor — drives notification icon / colour + auto-dismiss
+     *  behaviour. Defaults to `info` if absent. */
+    severity?: 'info' | 'warning' | 'error' | 'critical';
   };
 }
 

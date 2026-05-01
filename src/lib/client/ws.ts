@@ -23,6 +23,7 @@ import type {
   SC_Output,
   SC_PaneSnapshot,
   SC_AgentEvent,
+  SC_Alert,
   SC_StreamFrame,
   SC_StreamReady,
   SC_StreamUrl,
@@ -60,6 +61,20 @@ export class MawWsClient {
   private connectionState: ConnectionState = 'closed';
   private connectionListeners = new Set<(s: ConnectionState) => void>();
   private globalStateListeners = new Set<(agentId: string, status: string) => void>();
+  /**
+   * User-scoped alert listeners — fire on every `SC_Alert` message that
+   * arrives over the user-alerts channel (`subscribe_user_alerts`). Used
+   * by the dashboard's foreground toast layer. Distinct from per-agent
+   * alert handling (`subscribe_agent`'s alert messages route to the same
+   * dispatch but go to all listeners; the toast store dedupes by
+   * `alertId` so a client subscribed to both channels for the same agent
+   * still only shows one toast).
+   */
+  private userAlertListeners = new Set<(msg: SC_Alert) => void>();
+  /** Whether the server-side user-alerts subscription is active. We keep
+   *  it true across reconnects (auto-resubscribe in `onopen`) until
+   *  `unsubscribeUserAlerts` is called. */
+  private wantUserAlerts = false;
 
   connect(): void {
     if (typeof window === 'undefined') return;
@@ -78,6 +93,11 @@ export class MawWsClient {
       // re-seeds the dedup watermark.
       for (const sub of this.subs.values()) {
         this.send({ type: 'subscribe_agent', agentId: sub.agentId });
+      }
+      // Auto-resubscribe to the user-alerts channel after a reconnect so
+      // the dashboard toast keeps working without each layout re-mounting.
+      if (this.wantUserAlerts) {
+        this.send({ type: 'subscribe_user_alerts' });
       }
       this.startHeartbeat();
     };
@@ -228,6 +248,30 @@ export class MawWsClient {
     };
   }
 
+  /**
+   * Subscribe a callback to the user-scoped alert channel. Returns an
+   * unsubscribe function. The first listener kicks off the server-side
+   * subscription; the last one tears it down. Survives reconnects.
+   *
+   * The callback receives the full `SC_Alert` (including `body`, `url`,
+   * `severity`) — the toast store renders directly from it without a
+   * round-trip to the alerts API.
+   */
+  subscribeUserAlerts(cb: (msg: SC_Alert) => void): () => void {
+    this.userAlertListeners.add(cb);
+    if (!this.wantUserAlerts) {
+      this.wantUserAlerts = true;
+      this.send({ type: 'subscribe_user_alerts' });
+    }
+    return () => {
+      this.userAlertListeners.delete(cb);
+      if (this.userAlertListeners.size === 0 && this.wantUserAlerts) {
+        this.wantUserAlerts = false;
+        this.send({ type: 'unsubscribe_user_alerts' });
+      }
+    };
+  }
+
   // ---------- internals ----------
 
   private send(msg: ClientMessage): void {
@@ -294,9 +338,12 @@ export class MawWsClient {
         this.subs.get(msg.agentId)?.handlers.onStreamError?.(msg);
         break;
       }
+      case 'alert': {
+        for (const cb of this.userAlertListeners) cb(msg);
+        break;
+      }
       case 'pong':
       case 'ack':
-      case 'alert':
       case 'message':
       case 'error':
         break;

@@ -115,8 +115,18 @@ self.addEventListener('push', (event) => {
 	const payload = event.data.json() as {
 		title: string;
 		body: string;
-		data: { agentId: string; alertId: string; url: string };
+		data: {
+			agentId: string;
+			alertId: string;
+			url: string;
+			agentTitle?: string;
+			severity?: 'info' | 'warning' | 'error' | 'critical';
+		};
 	};
+	// Replace any existing notification for this agent in the OS shelf — a
+	// rapid-fire alert sequence shouldn't stack up. `renotify: true` makes
+	// the OS sound/vibrate even when a same-tag notification was already
+	// visible.
 	event.waitUntil(
 		self.registration.showNotification(payload.title, {
 			body: payload.body,

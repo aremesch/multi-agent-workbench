@@ -15,6 +15,7 @@ import {
   getRepo,
   getRole,
   getUserSetting,
+  getWorktree,
   insertAgent,
   insertAgentRun,
   insertAlert,
@@ -29,6 +30,13 @@ import { snapshotAgentCommits } from '../git/commitSnapshot.js';
 import { getConfig } from '../config.js';
 import { resolveGitIdentityForUser } from '../user/gitIdentity.js';
 import { getPlaywrightSessions } from '../preview/PlaywrightSessionManager.js';
+import { generateHookToken, writeClaudeHookSettings } from './claudeHooks.js';
+import { getAlertBus } from './AlertBus.js';
+
+/** CLI kinds for which we register Claude Code hook settings at spawn /
+ *  reattach. Keep this restrictive — only kinds that share Claude Code's
+ *  hook contract belong here. Other adapters use the regex pipeline. */
+const CLAUDE_HOOK_KINDS = new Set(['claude-code']);
 
 export interface SpawnAgentArgs {
   /**
@@ -251,8 +259,32 @@ export class AgentSupervisor {
           crashed++;
           continue;
         }
+        // Refresh the hook settings file in case the port changed since
+        // spawn. Idempotent — same content if nothing moved. Skipped for
+        // non-claude-code kinds and for legacy rows that pre-date the
+        // hook_token column (it'll be null).
+        if (CLAUDE_HOOK_KINDS.has(row.cli_kind) && row.hook_token) {
+          try {
+            // Look up the worktree path via the same join the rest of the
+            // supervisor uses. Cheaper than carrying it through args.
+            const wt = getWorktree(row.worktree_id);
+            if (wt) {
+              writeClaudeHookSettings({
+                worktreePath: wt.path,
+                hookToken: row.hook_token,
+                mawUrl: `http://127.0.0.1:${cfg.port}`
+              });
+            }
+          } catch (err) {
+            console.warn(
+              `[AgentSupervisor] reattach: failed to refresh claude hook settings for ${row.id}:`,
+              err
+            );
+          }
+        }
         const adapter = this.registry.create(row.cli_kind);
         const runtime = new AgentRuntime(row, adapter, cfg.fifoDir);
+        this.wireAlertBus(runtime);
         await runtime.start();
         this.runtimes.set(row.id, runtime);
         this.startExitWatcher(row.id, row.tmux_session);
@@ -265,6 +297,37 @@ export class AgentSupervisor {
     }
 
     return { reattached, crashed };
+  }
+
+  /**
+   * Pipe a Claude Code hook payload (from `/api/internal/claude-hook`) into
+   * the matching agent's runtime. No-op if the agent has no live runtime
+   * (e.g. it exited between the hook firing and the request landing).
+   */
+  ingestClaudeHook(agentId: string, payload: Record<string, unknown>): void {
+    const runtime = this.runtimes.get(agentId);
+    if (!runtime) return;
+    runtime.ingestHookEvent(payload);
+  }
+
+  /**
+   * Hook every alert this runtime emits onto the process-wide AlertBus,
+   * tagged with the runtime's `userId`. The hub fans those out to any
+   * `subscribe_user_alerts` listeners owned by the same user, so the
+   * dashboard's foreground toast layer can react regardless of which
+   * terminal panel is currently subscribed.
+   *
+   * Invoked exactly once per runtime — at spawn() and at the reattach
+   * branch in init() — both immediately after `new AgentRuntime`. Safe to
+   * call before runtime.start(); EventEmitter buffers handlers across
+   * the start boundary.
+   */
+  private wireAlertBus(runtime: AgentRuntime): void {
+    const userId = runtime.agent.user_id;
+    const bus = getAlertBus();
+    runtime.on('alert', (payload) => {
+      bus.emitUserAlert(userId, payload);
+    });
   }
 
   async shutdown(): Promise<void> {
@@ -476,6 +539,14 @@ export class AgentSupervisor {
     const committerName = `MAW-Agent-${agentId}`;
     const authorIdentity = resolveGitIdentityForUser(args.userId);
 
+    // For Claude Code: per-agent bearer token authenticates the
+    // Notification/PreToolUse hook POSTs. Generated once at spawn and
+    // never rotated for the lifetime of the agent row. For other CLI
+    // kinds the column stays NULL; the regex pipeline owns detection.
+    const hookToken = CLAUDE_HOOK_KINDS.has(role.cli_kind)
+      ? generateHookToken()
+      : null;
+
     insertAgent({
       id: agentId,
       user_id: args.userId,
@@ -487,10 +558,35 @@ export class AgentSupervisor {
       status: 'spawning',
       cli_session_id: null,
       base_sha: args.baseSha,
-      committer_email: committerEmail
+      committer_email: committerEmail,
+      hook_token: hookToken
     });
 
+    // Write the worktree's .claude/settings.local.json so claude-code's
+    // hooks fire into MAW. Always loopback (`127.0.0.1:<port>`) regardless
+    // of the server's HOST bind, because the spawned agent runs on the
+    // same machine. Failure here is non-fatal — the regex fallback in
+    // ConfigDrivenAdapter still detects prompts, just less richly.
+    const mawLoopback = `http://127.0.0.1:${cfg.port}`;
+    if (hookToken) {
+      try {
+        writeClaudeHookSettings({
+          worktreePath: args.worktreePath,
+          hookToken,
+          mawUrl: mawLoopback
+        });
+      } catch (err) {
+        console.warn(
+          `[AgentSupervisor] failed to write claude hook settings for ${agentId}:`,
+          err
+        );
+      }
+    }
+
     // Merge env: our agent-id/url identity vars go alongside the adapter's.
+    // MAW_AGENT_TOKEN is exposed for any future hook variants that prefer
+    // env to the literal-substituted curl command (the shipped command
+    // bakes the token in at write-time).
     const env: Record<string, string> = {
       ...spec.env,
       MAW_AGENT_ID: agentId,
@@ -500,6 +596,9 @@ export class AgentSupervisor {
       GIT_AUTHOR_NAME: authorIdentity.name,
       GIT_AUTHOR_EMAIL: authorIdentity.email
     };
+    if (hookToken) {
+      env.MAW_AGENT_TOKEN = hookToken;
+    }
 
     await Tmux.newSession({
       session: tmuxSession,
@@ -511,6 +610,7 @@ export class AgentSupervisor {
 
     const row = getAgent(agentId)!;
     const runtime = new AgentRuntime(row, adapter, cfg.fifoDir);
+    this.wireAlertBus(runtime);
     await runtime.start();
     this.runtimes.set(agentId, runtime);
     this.startExitWatcher(agentId, tmuxSession);

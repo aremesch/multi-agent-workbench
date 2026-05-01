@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import RepoTreeSidebar from '$lib/client/components/RepoTreeSidebar.svelte';
   import AboutModal from '$lib/client/components/AboutModal.svelte';
+  import AlertToastContainer from '$lib/client/components/AlertToastContainer.svelte';
   import type { SidebarRepoNode } from '$lib/shared/types';
   import type { ThemeId } from '$lib/shared/dashboard';
   import { getMawWsClient } from '$lib/client/ws';
@@ -242,6 +243,10 @@
 </div>
 
 <AboutModal open={aboutOpen} onClose={() => (aboutOpen = false)} />
+
+{#if data.user}
+  <AlertToastContainer />
+{/if}
 
 <style>
   .git-identity-banner {

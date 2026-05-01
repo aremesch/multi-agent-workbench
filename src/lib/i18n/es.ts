@@ -328,7 +328,13 @@ const es: Partial<Record<TranslationKey, string>> = {
   'picker.error.mkdirInvalidName':
     'Nombre de carpeta inv\u00e1lido. Use letras, d\u00edgitos, espacios, punto, gui\u00f3n o gui\u00f3n bajo.',
   'picker.error.mkdirExists': 'Ya existe una carpeta con ese nombre.',
-  'picker.error.mkdirFailed': 'Error al crear la carpeta: {message}'
+  'picker.error.mkdirFailed': 'Error al crear la carpeta: {message}',
+
+  // ── Foreground alert toasts ──────────────────────────────────────
+  'toast.openAgent': 'Abrir agente',
+  'toast.dismiss': 'Descartar',
+  'toast.permissionNeeded': 'Permiso requerido',
+  'toast.taskComplete': 'Tarea completa'
 };
 
 export default es;

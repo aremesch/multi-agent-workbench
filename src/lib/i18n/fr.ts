@@ -328,7 +328,13 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'picker.error.mkdirInvalidName':
     'Nom de dossier invalide. Utilisez lettres, chiffres, espaces, point, tiret ou underscore.',
   'picker.error.mkdirExists': 'Un dossier avec ce nom existe d\u00e9j\u00e0.',
-  'picker.error.mkdirFailed': '\u00c9chec de la cr\u00e9ation du dossier\u00a0: {message}'
+  'picker.error.mkdirFailed': '\u00c9chec de la cr\u00e9ation du dossier\u00a0: {message}',
+
+  // \u2500\u2500 Foreground alert toasts \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  'toast.openAgent': 'Ouvrir l\u2019agent',
+  'toast.dismiss': 'Fermer',
+  'toast.permissionNeeded': 'Autorisation requise',
+  'toast.taskComplete': 'T\u00e2che termin\u00e9e'
 };
 
 export default fr;

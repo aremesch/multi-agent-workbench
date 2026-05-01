@@ -10,7 +10,15 @@
 
 import type { AdapterEventKind } from './adapterTypes.js';
 
-export const PROTOCOL_VERSION = 5;
+// PROTOCOL_VERSION 6 adds:
+//   - CS_SubscribeUserAlerts / CS_UnsubscribeUserAlerts — user-scoped alert
+//     channel for the dashboard's foreground toast layer.
+//   - SC_Alert.body / .url — richer payload so the toast renders without a
+//     DB round-trip and the "Open agent" button has its href.
+// Consumers reading the new fields must tolerate undefined for compatibility
+// with v5 servers; the client checks the welcome version and reconnects on
+// mismatch, so a v6 client only ever talks to a v6 server in practice.
+export const PROTOCOL_VERSION = 6;
 
 // ---------- client → server ----------
 
@@ -149,6 +157,25 @@ export interface CS_StreamHistory {
   action: 'reload' | 'back' | 'forward';
 }
 
+// ---------- client → server: user-scoped alert channel ----------
+
+/**
+ * Subscribe this WS connection to alert events from any of the user's
+ * agents — used by the dashboard's foreground toast layer. Distinct from
+ * `subscribe_agent`, which only fans out alerts when the user has the
+ * matching terminal panel open. The hub answers by streaming `SC_Alert`
+ * messages whose `agentId` may be any agent owned by the authenticated
+ * user; cross-user alerts never leak.
+ *
+ * Idempotent: re-sending while already subscribed is a no-op.
+ */
+export interface CS_SubscribeUserAlerts {
+  type: 'subscribe_user_alerts';
+}
+export interface CS_UnsubscribeUserAlerts {
+  type: 'unsubscribe_user_alerts';
+}
+
 export type ClientMessage =
   | CS_Hello
   | CS_SubscribeAgent
@@ -167,7 +194,9 @@ export type ClientMessage =
   | CS_StreamViewport
   | CS_StreamFrameAck
   | CS_StreamNavigate
-  | CS_StreamHistory;
+  | CS_StreamHistory
+  | CS_SubscribeUserAlerts
+  | CS_UnsubscribeUserAlerts;
 
 // ---------- server → client ----------
 
@@ -217,7 +246,19 @@ export interface SC_Alert {
   id: string;
   agentId: string;
   severity: 'info' | 'warning' | 'error' | 'critical';
+  /** Notification title — same string the OS push receives. */
   reason: string;
+  /**
+   * Notification body — short summary of *what* the agent is asking
+   * (Bash command, file path, plan summary, …). Truncated server-side.
+   * Optional for v5 backwards-compat; v6 servers always populate it.
+   */
+  body?: string;
+  /**
+   * Deep-link URL the foreground toast's "Open agent" button navigates
+   * to (`/repos/<repo>?agent=<id>`). Optional for v5 backwards-compat.
+   */
+  url?: string;
   payload?: Record<string, unknown>;
   ts: number;
 }
