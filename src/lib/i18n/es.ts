@@ -334,7 +334,35 @@ const es: Partial<Record<TranslationKey, string>> = {
   'toast.openAgent': 'Abrir agente',
   'toast.dismiss': 'Descartar',
   'toast.permissionNeeded': 'Permiso requerido',
-  'toast.taskComplete': 'Tarea completa'
+  'toast.taskComplete': 'Tarea completa',
+
+  // ── Agent-window kebab menu ──────────────────────────────────────
+  'agentMenu.button': 'Menú del agente',
+  'agentMenu.showPlan': 'Ver plan',
+  'agentMenu.showLog': 'Ver log',
+  'agentMenu.exitAgent': 'Salir del agente',
+
+  // ── Plan viewer modal ────────────────────────────────────────────
+  'plan.modal.title': 'Plan: {name}',
+  'plan.modal.titleEmpty': 'Plan',
+  'plan.modal.titleError': 'Plan',
+  'plan.modal.titleLoading': 'Plan',
+  'plan.modal.empty': 'No se encontraron archivos de plan en {dir}',
+  'plan.modal.switcherLabel': 'Cambiar plan',
+  'plan.modal.loading': 'Cargando plan…',
+  'plan.modal.error': 'Error al cargar el plan: {error}',
+  'plan.modal.retry': 'Reintentar',
+
+  // ── Agent log modal title ────────────────────────────────────────
+  'agent.logTitle': 'Log: {name}',
+
+  // ── Exit agent confirmation ──────────────────────────────────────
+  'exitAgent.confirm.title': 'Salir del agente',
+  'exitAgent.confirm.body':
+    '¿Detener este agente y cerrar su sesión de tmux? El proceso del CLI será terminado y se perderá cualquier estado en memoria no guardado.',
+  'exitAgent.confirm.cancel': 'Cancelar',
+  'exitAgent.confirm.confirm': 'Detener agente',
+  'exitAgent.error': 'Error al detener el agente: {error}'
 };
 
 export default es;

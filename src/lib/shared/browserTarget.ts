@@ -41,6 +41,25 @@ export function isAnyBrowserKind(kind: string): boolean {
   return kind === BROWSER_CLI_KIND || kind === BROWSER_STREAM_CLI_KIND;
 }
 
+/**
+ * The set of cli_kind strings that represent a CLI **coding** agent — one
+ * that runs inside a tmux session in its own git worktree, capable of
+ * editing files in the repo.
+ *
+ * Used to gate UI affordances that only make sense for coding agents:
+ * the agent-window kebab menu (Show Plan / Show Log / Exit) is not shown
+ * for browser agents (which have their own Stop button inside
+ * <BrowserView>) or the `shell` smoke adapter (a dev-only test fixture
+ * that runs in the repo root without a per-agent worktree).
+ *
+ * Adding a new coding adapter? Append its `kind` here.
+ */
+export const CODING_CLI_KINDS: readonly string[] = ['claude-code', 'codex', 'gemini'];
+
+export function isCodingCliKind(kind: string): boolean {
+  return CODING_CLI_KINDS.includes(kind);
+}
+
 export type BrowserTargetParseResult =
   | { ok: true; url: string; port: number }
   | { ok: false; error: 'empty' | 'invalid' | 'scheme' | 'host' | 'port' };

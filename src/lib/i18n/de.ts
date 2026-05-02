@@ -330,7 +330,35 @@ const de: Partial<Record<TranslationKey, string>> = {
   'toast.openAgent': 'Agent öffnen',
   'toast.dismiss': 'Schließen',
   'toast.permissionNeeded': 'Zustimmung erforderlich',
-  'toast.taskComplete': 'Aufgabe abgeschlossen'
+  'toast.taskComplete': 'Aufgabe abgeschlossen',
+
+  // ── Agent-window kebab menu ──────────────────────────────────────
+  'agentMenu.button': 'Agent-Menü',
+  'agentMenu.showPlan': 'Plan anzeigen',
+  'agentMenu.showLog': 'Log anzeigen',
+  'agentMenu.exitAgent': 'Agent beenden',
+
+  // ── Plan viewer modal ────────────────────────────────────────────
+  'plan.modal.title': 'Plan: {name}',
+  'plan.modal.titleEmpty': 'Plan',
+  'plan.modal.titleError': 'Plan',
+  'plan.modal.titleLoading': 'Plan',
+  'plan.modal.empty': 'Keine Plandateien in {dir} gefunden',
+  'plan.modal.switcherLabel': 'Plan wechseln',
+  'plan.modal.loading': 'Plan wird geladen…',
+  'plan.modal.error': 'Plan konnte nicht geladen werden: {error}',
+  'plan.modal.retry': 'Erneut versuchen',
+
+  // ── Agent log modal title (running-agent variant) ────────────────
+  'agent.logTitle': 'Log: {name}',
+
+  // ── Exit agent confirmation ──────────────────────────────────────
+  'exitAgent.confirm.title': 'Agent beenden',
+  'exitAgent.confirm.body':
+    'Diesen Agent stoppen und seine tmux-Sitzung schließen? Der CLI-Prozess wird beendet und nicht gespeicherter Speicherzustand geht verloren.',
+  'exitAgent.confirm.cancel': 'Abbrechen',
+  'exitAgent.confirm.confirm': 'Agent stoppen',
+  'exitAgent.error': 'Agent konnte nicht gestoppt werden: {error}'
 };
 
 export default de;
