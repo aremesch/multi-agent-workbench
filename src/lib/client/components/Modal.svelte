@@ -127,14 +127,24 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    /* Without `min-width: 0`, the flex item refuses to shrink below its
+       intrinsic min-content width — and with `white-space: nowrap`, that
+       intrinsic width is the FULL nowrap title string. On a narrow viewport
+       (mobile / Android PWA) the long h2 then pushes the right-side slot
+       (kebab + status badge + close button) off-screen. The 0 lets flex
+       shrink the title and lets `text-overflow: ellipsis` kick in. */
+    min-width: 0;
+    flex: 0 1 auto;
   }
   /* The right-side slot pushes the close button flush-right and lets the
-     title take whatever remains. */
+     title take whatever remains. `flex-shrink: 0` so the kebab/status pill
+     never get squashed when the title is long. */
   .head-right {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex: 0 0 auto;
   }
   /* When there is no headerRight snippet, give the close button its own
      auto-margin so it still hugs the right edge. */
@@ -142,6 +152,7 @@
     margin-left: auto;
   }
   .close {
+    flex: 0 0 auto;
     background: transparent;
     border: none;
     color: #9ca3af;
