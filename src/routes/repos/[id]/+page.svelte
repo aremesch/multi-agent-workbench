@@ -219,29 +219,35 @@
   {/if}
 </Modal>
 
-<PlanViewerModal
-  open={planOpen}
-  agentId={openAgent?.id ?? null}
-  onClose={() => (planOpen = false)}
-/>
+{#if planOpen}
+  <PlanViewerModal
+    open={planOpen}
+    agentId={openAgent?.id ?? null}
+    onClose={() => (planOpen = false)}
+  />
+{/if}
 
-<ArchivedAgentLogModal
-  open={logOpen}
-  agentId={openAgent?.id ?? null}
-  title={openAgent ? t('agent.logTitle', { name: openAgent.task_title ?? openAgent.id }) : ''}
-  onClose={() => (logOpen = false)}
-/>
+{#if logOpen}
+  <ArchivedAgentLogModal
+    open={logOpen}
+    agentId={openAgent?.id ?? null}
+    title={openAgent ? t('agent.logTitle', { name: openAgent.task_title ?? openAgent.id }) : ''}
+    onClose={() => (logOpen = false)}
+  />
+{/if}
 
-<ConfirmDialog
-  open={exitConfirmOpen}
-  title={t('exitAgent.confirm.title')}
-  body={t('exitAgent.confirm.body')}
-  confirmLabel={t('exitAgent.confirm.confirm')}
-  cancelLabel={t('exitAgent.confirm.cancel')}
-  tone="destructive"
-  onConfirm={confirmExitAgent}
-  onCancel={() => (exitConfirmOpen = false)}
-/>
+{#if exitConfirmOpen}
+  <ConfirmDialog
+    open={exitConfirmOpen}
+    title={t('exitAgent.confirm.title')}
+    body={t('exitAgent.confirm.body')}
+    confirmLabel={t('exitAgent.confirm.confirm')}
+    cancelLabel={t('exitAgent.confirm.cancel')}
+    tone="destructive"
+    onConfirm={confirmExitAgent}
+    onCancel={() => (exitConfirmOpen = false)}
+  />
+{/if}
 
 {#if exitErrorMsg}
   <div class="exit-error" role="alert">
