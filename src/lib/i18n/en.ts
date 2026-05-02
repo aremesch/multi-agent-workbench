@@ -367,7 +367,35 @@ const en = {
   'toast.openAgent': 'Open agent',
   'toast.dismiss': 'Dismiss',
   'toast.permissionNeeded': 'Permission needed',
-  'toast.taskComplete': 'Task complete'
+  'toast.taskComplete': 'Task complete',
+
+  // ── Agent-window kebab menu ──────────────────────────────────────
+  'agentMenu.button': 'Agent menu',
+  'agentMenu.showPlan': 'Show plan',
+  'agentMenu.showLog': 'Show log',
+  'agentMenu.exitAgent': 'Exit agent',
+
+  // ── Plan viewer modal ────────────────────────────────────────────
+  'plan.modal.title': 'Plan: {name}',
+  'plan.modal.titleEmpty': 'Plan',
+  'plan.modal.titleError': 'Plan',
+  'plan.modal.titleLoading': 'Plan',
+  'plan.modal.empty': 'No plan files found in {dir}',
+  'plan.modal.switcherLabel': 'Switch plan',
+  'plan.modal.loading': 'Loading plan…',
+  'plan.modal.error': 'Failed to load plan: {error}',
+  'plan.modal.retry': 'Retry',
+
+  // ── Agent log modal title (running-agent variant) ────────────────
+  'agent.logTitle': 'Log: {name}',
+
+  // ── Exit agent confirmation ──────────────────────────────────────
+  'exitAgent.confirm.title': 'Exit agent',
+  'exitAgent.confirm.body':
+    'Stop this agent and close its tmux session? The agent’s CLI process will be terminated and any unsaved in-memory state lost.',
+  'exitAgent.confirm.cancel': 'Cancel',
+  'exitAgent.confirm.confirm': 'Stop agent',
+  'exitAgent.error': 'Failed to stop agent: {error}'
 } as const;
 
 export type TranslationKey = keyof typeof en;

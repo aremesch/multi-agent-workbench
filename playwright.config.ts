@@ -46,7 +46,7 @@ export default defineConfig({
   projects: [
     {
       name: 'smoke',
-      testMatch: /(?:smoke|agent-lifecycle)\.spec\.ts$/,
+      testMatch: /(?:smoke|agent-lifecycle|agent-window-menu)\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] }
     },
     {

@@ -334,7 +334,35 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'toast.openAgent': 'Ouvrir l\u2019agent',
   'toast.dismiss': 'Fermer',
   'toast.permissionNeeded': 'Autorisation requise',
-  'toast.taskComplete': 'T\u00e2che termin\u00e9e'
+  'toast.taskComplete': 'T\u00e2che termin\u00e9e',
+
+  // \u2500\u2500 Agent-window kebab menu \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  'agentMenu.button': 'Menu de l\u2019agent',
+  'agentMenu.showPlan': 'Afficher le plan',
+  'agentMenu.showLog': 'Afficher le journal',
+  'agentMenu.exitAgent': 'Quitter l\u2019agent',
+
+  // \u2500\u2500 Plan viewer modal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  'plan.modal.title': 'Plan\u00a0: {name}',
+  'plan.modal.titleEmpty': 'Plan',
+  'plan.modal.titleError': 'Plan',
+  'plan.modal.titleLoading': 'Plan',
+  'plan.modal.empty': 'Aucun fichier de plan trouv\u00e9 dans {dir}',
+  'plan.modal.switcherLabel': 'Changer de plan',
+  'plan.modal.loading': 'Chargement du plan\u2026',
+  'plan.modal.error': 'Impossible de charger le plan\u00a0: {error}',
+  'plan.modal.retry': 'R\u00e9essayer',
+
+  // \u2500\u2500 Agent log modal title \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  'agent.logTitle': 'Journal\u00a0: {name}',
+
+  // \u2500\u2500 Exit agent confirmation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  'exitAgent.confirm.title': 'Quitter l\u2019agent',
+  'exitAgent.confirm.body':
+    'Arr\u00eater cet agent et fermer sa session tmux\u00a0? Le processus CLI sera termin\u00e9 et tout \u00e9tat m\u00e9moire non sauvegard\u00e9 sera perdu.',
+  'exitAgent.confirm.cancel': 'Annuler',
+  'exitAgent.confirm.confirm': 'Arr\u00eater l\u2019agent',
+  'exitAgent.error': 'Impossible d\u2019arr\u00eater l\u2019agent\u00a0: {error}'
 };
 
 export default fr;
