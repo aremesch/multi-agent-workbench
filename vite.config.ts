@@ -141,6 +141,17 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173
   },
+  // Use terser for the client bundle minifier instead of esbuild.
+  // esbuild's optimizer mishandles the ES2021 `let r; ...(r ||= {})` pattern
+  // that xterm 6.0 uses for function-scoped enum init in `requestMode` —
+  // it drops the `let r;` declaration but keeps the renamed `i = {}` assignment,
+  // producing `(void 0||(i={}))` against an undeclared `i`. In strict mode
+  // (all ESM) this throws `ReferenceError: assignment to undeclared variable i`
+  // the first time a TUI sends DECRQM, blanking the Show-Log modal.
+  // See docs/plans/v0.2-fix-xterm-minify-undeclared-i.md.
+  build: {
+    minify: 'terser'
+  },
   test: {
     passWithNoTests: true,
     coverage: {
