@@ -99,6 +99,14 @@ export default defineConfig({
       MAW_SESSION_SECRET: 'e2e-secret-not-for-prod',
       MAW_BOOTSTRAP_USERNAME: E2E_BOOTSTRAP_USERNAME,
       MAW_BOOTSTRAP_PASSWORD: E2E_BOOTSTRAP_PASSWORD,
+      // Match the dev/preview/start scripts in package.json. Each live
+      // AgentRuntime parks one libuv threadpool thread (FifoStreamer
+      // header has the full why), and stale FIFO read threads can
+      // linger past stop() — with the libuv default of 4 threads, the
+      // 5th tmux/git/argon2 op on the threadpool starves and the
+      // process appears to hang. node build/server.js (what the e2e
+      // webServer runs) inherits the env's value, not the script's.
+      UV_THREADPOOL_SIZE: '64',
       // adapter-node truncates request bodies above 512 KB by default
       // (BODY_SIZE_LIMIT=524288). The image-upload route's per-image
       // cap is 5 MB, so the e2e oversize test (5 MB + 1 byte) needs the
