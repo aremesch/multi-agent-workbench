@@ -235,6 +235,18 @@ const en = {
   'agent.loadingLog': 'Loading log\u2026',
   'agent.quickKeysLabel': 'Terminal quick keys',
 
+  // ── Agent terminal: panel + image attachments ───────────────────
+  'agentTerminal.region': 'Agent terminal',
+  'agentTerminal.image.attach': 'Attach image',
+  'agentTerminal.image.dropOverlay': 'Drop image to attach',
+  'agentTerminal.image.uploading': 'Uploading image…',
+  'agentTerminal.image.toastInjected':
+    'Image attached: {filename} — inserted {path}',
+  'agentTerminal.image.error.mime':
+    'Unsupported image format. Use PNG, JPEG, GIF, or WebP.',
+  'agentTerminal.image.error.size': 'Image too large. Maximum 5 MB.',
+  'agentTerminal.image.error.upload': 'Upload failed. Please try again.',
+
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Roles',
   'roles.newRole': 'New role',

@@ -46,7 +46,8 @@ export default defineConfig({
   projects: [
     {
       name: 'smoke',
-      testMatch: /(?:smoke|agent-lifecycle|agent-window-menu)\.spec\.ts$/,
+      testMatch:
+        /(?:smoke|agent-lifecycle|agent-window-menu|agent-image-upload)\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] }
     },
     {
@@ -97,7 +98,13 @@ export default defineConfig({
       MAW_AUTH_LOG_PATH: `${E2E_DATA_DIR}/auth.log`,
       MAW_SESSION_SECRET: 'e2e-secret-not-for-prod',
       MAW_BOOTSTRAP_USERNAME: E2E_BOOTSTRAP_USERNAME,
-      MAW_BOOTSTRAP_PASSWORD: E2E_BOOTSTRAP_PASSWORD
+      MAW_BOOTSTRAP_PASSWORD: E2E_BOOTSTRAP_PASSWORD,
+      // adapter-node truncates request bodies above 512 KB by default
+      // (BODY_SIZE_LIMIT=524288). The image-upload route's per-image
+      // cap is 5 MB, so the e2e oversize test (5 MB + 1 byte) needs the
+      // server to actually receive the full body before our route can
+      // return a `size` code rather than the truncated body's `no_file`.
+      BODY_SIZE_LIMIT: '6291456'
     }
   }
 });

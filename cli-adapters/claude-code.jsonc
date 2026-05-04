@@ -3,6 +3,12 @@
   "kind": "claude-code",
   "displayName": "Claude Code",
 
+  // Claude Code accepts image attachments via `@<path>` mentions in the
+  // prompt body (5MB max, PNG/JPEG/GIF/WebP). MAW writes pasted/dropped
+  // images into <worktree>/.maw/uploads/ and types the relative path
+  // into the prompt — see docs/plans/v0.2-image-paste-into-agent.md.
+  "acceptsImageAttachment": true,
+
   // Phone soft keyboards hide arrow keys, Esc and Shift+Tab — every one of
   // which Claude Code needs constantly (history recall, menu navigation,
   // plan/thinking tab cycling, dismissing popovers). The user asked for

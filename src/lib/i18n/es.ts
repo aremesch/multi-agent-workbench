@@ -221,6 +221,16 @@ const es: Partial<Record<TranslationKey, string>> = {
   'agent.failedLoadLog': 'Error al cargar el log: {error}',
   'agent.loadingLog': 'Cargando log\u2026',
   'agent.quickKeysLabel': 'Teclas r\u00e1pidas del terminal',
+  'agentTerminal.region': 'Terminal del agente',
+  'agentTerminal.image.attach': 'Adjuntar imagen',
+  'agentTerminal.image.dropOverlay': 'Suelta la imagen para adjuntar',
+  'agentTerminal.image.uploading': 'Subiendo imagen\u2026',
+  'agentTerminal.image.toastInjected':
+    'Imagen adjuntada: {filename} \u2014 {path} insertado',
+  'agentTerminal.image.error.mime':
+    'Formato de imagen no soportado. Usa PNG, JPEG, GIF o WebP.',
+  'agentTerminal.image.error.size': 'Imagen demasiado grande. M\u00e1ximo 5 MB.',
+  'agentTerminal.image.error.upload': 'Error al subir. Int\u00e9ntalo de nuevo.',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Roles',

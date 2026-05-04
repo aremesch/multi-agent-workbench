@@ -12,6 +12,10 @@
       "type": "boolean",
       "description": "Whether spawning this adapter creates a dedicated git worktree under <worktreeRoot>/<agentId>. Defaults to true. Set false to run directly in the repo root on whatever branch is already checked out (e.g. shell smoke adapter)."
     },
+    "acceptsImageAttachment": {
+      "type": "boolean",
+      "description": "Whether this CLI accepts image attachments via a file path in the prompt body (claude-code, codex, gemini all accept @<path> mentions). When true, MAW renders a paperclip button + paste/drop UI on the agent terminal modal that uploads the image into <worktree>/.maw/uploads/ and types the relative path into the prompt. Defaults to false."
+    },
     "mobileQuickKeys": {
       "type": "array",
       "description": "On-screen key-chord buttons rendered under xterm on touch devices. Phone soft keyboards don't expose arrow keys, Esc, Shift+Tab or Ctrl+C — declare the ones this CLI needs here. Empty by default.",

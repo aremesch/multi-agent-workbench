@@ -195,7 +195,13 @@ export default defineConfig({
           include: [
             'src/lib/server/**/*.{test,spec}.ts',
             'src/lib/shared/**/*.{test,spec}.ts',
-            'scripts/**/*.{test,spec}.ts'
+            'scripts/**/*.{test,spec}.ts',
+            // Route-handler tests collocated with `+server.ts` are
+            // semantically server-side (the handler runs in Node), and
+            // jsdom's fetch implementation rejects multipart `FormData`
+            // bodies — so route tests that exercise `request.formData()`
+            // can't run in the client project.
+            'src/routes/**/server.{test,spec}.ts'
           ]
         }
       },
@@ -218,6 +224,11 @@ export default defineConfig({
             'src/lib/components/**/*.{test,spec}.ts',
             'src/routes/**/*.{test,spec}.ts'
           ],
+          // Server-side route tests live under `src/routes/**` next to
+          // their `+server.ts` (e.g. `plan/server.test.ts`). The
+          // server-project include claims them; exclude them here so they
+          // don't double-run.
+          exclude: ['src/routes/**/server.{test,spec}.ts'],
           setupFiles: ['tests/unit/setup.client.ts']
         }
       }

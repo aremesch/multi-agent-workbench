@@ -92,6 +92,7 @@ export class AdapterRegistry {
   list(): {
     kind: string;
     displayName: string;
+    acceptsImageAttachment: boolean;
     optionalArgs: Array<{
       id: string;
       flag: string;
@@ -104,6 +105,7 @@ export class AdapterRegistry {
     return Array.from(this.entries.values()).map((e) => ({
       kind: e.config.kind,
       displayName: e.config.displayName,
+      acceptsImageAttachment: e.config.acceptsImageAttachment,
       optionalArgs: e.config.spawn.optionalArgs.map((o) => ({
         id: o.id,
         flag: o.flag,

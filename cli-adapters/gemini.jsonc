@@ -3,6 +3,10 @@
   "kind": "gemini",
   "displayName": "Gemini CLI",
 
+  // Gemini accepts `@<path>` mentions for image attachments — see
+  // docs/plans/v0.2-image-paste-into-agent.md.
+  "acceptsImageAttachment": true,
+
   // Mobile quick-keys for the phone PWA. Starter set — tune against a
   // real gemini session.
   "mobileQuickKeys": [

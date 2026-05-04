@@ -2,13 +2,15 @@
   import { onDestroy, onMount } from 'svelte';
   import { page } from '$app/state';
   import { getMawWsClient, type AgentHandlers } from '$lib/client/ws';
+  import { apiFetch } from '$lib/client/api';
   import Terminal from '$lib/client/components/Terminal.svelte';
   import BrowserView from '$lib/client/components/BrowserView.svelte';
   import StreamView from '$lib/client/components/StreamView.svelte';
   import type { MobileQuickKey } from '$lib/shared/adapterTypes';
   import {
     BROWSER_CLI_KIND,
-    BROWSER_STREAM_CLI_KIND
+    BROWSER_STREAM_CLI_KIND,
+    isCodingCliKind
   } from '$lib/shared/browserTarget';
   import { DEFAULT_MOBILE_QUICK_KEYS_MODE, type MobileQuickKeysMode } from '$lib/shared/dashboard';
   import { useT } from '$lib/client/i18n.svelte';
@@ -150,6 +152,10 @@
   }
 
   onDestroy(() => {
+    if (statusTimer) {
+      clearTimeout(statusTimer);
+      statusTimer = null;
+    }
     if (isAnyBrowser) return;
     if (resizeTimer) clearTimeout(resizeTimer);
     getMawWsClient().unsubscribe(agent.id);
@@ -188,6 +194,191 @@
     getMawWsClient().sendKeys(agent.id, keys);
     term?.focus();
   }
+
+  // ── Image / screenshot attachment ──────────────────────────────────
+  // Three input surfaces — paste (Ctrl/Cmd+V anywhere in the modal),
+  // drag-and-drop, and a paperclip button — all funnel into one helper
+  // that uploads the bytes to the agent's worktree and types the
+  // resulting `@<rel>` reference into the agent's prompt via the same
+  // `send_keys` channel as keystrokes. The CLI then attaches the image
+  // when the user submits the line. See docs/plans/v0.2-image-paste-into-agent.md.
+  //
+  // Gating is a *client-side* hint: the route only checks user/owner.
+  // We hide the affordances for adapters that can't actually use the
+  // path (browsers / shell smoke) so the UX stays clean.
+
+  // Mirror the server limits so oversized files fail before the network
+  // round-trip. Kept in sync with MAX_BYTES + ALLOWED_MIME in
+  // src/lib/server/uploads/agentImageUploads.ts.
+  const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+  const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+  const imagesEnabled = $derived<boolean>(
+    !isAnyBrowser &&
+      isCodingCliKind(agent.cli_kind) &&
+      (page.data.cliKinds?.find(
+        (k: { kind: string; acceptsImageAttachment?: boolean }) => k.kind === agent.cli_kind
+      )?.acceptsImageAttachment ?? false)
+  );
+
+  type UploadStatus =
+    | { kind: 'ok'; filename: string; relativePath: string }
+    | { kind: 'err'; message: string }
+    | { kind: 'uploading' }
+    | null;
+
+  let uploadStatus = $state<UploadStatus>(null);
+  let dragDepth = $state(0);
+  const dragActive = $derived(dragDepth > 0);
+  let fileInput: HTMLInputElement | undefined = $state();
+  let statusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function setStatus(next: UploadStatus, autoDismissMs?: number): void {
+    if (statusTimer) {
+      clearTimeout(statusTimer);
+      statusTimer = null;
+    }
+    uploadStatus = next;
+    if (autoDismissMs && autoDismissMs > 0) {
+      statusTimer = setTimeout(() => {
+        uploadStatus = null;
+        statusTimer = null;
+      }, autoDismissMs);
+    }
+  }
+
+  async function uploadAndInjectImage(file: File): Promise<void> {
+    if (!imagesEnabled) return;
+    if (!IMAGE_MIMES.has(file.type)) {
+      setStatus({ kind: 'err', message: t('agentTerminal.image.error.mime') }, 6000);
+      return;
+    }
+    if (file.size <= 0 || file.size > IMAGE_MAX_BYTES) {
+      setStatus({ kind: 'err', message: t('agentTerminal.image.error.size') }, 6000);
+      return;
+    }
+
+    setStatus({ kind: 'uploading' });
+
+    const fd = new FormData();
+    fd.set('file', file);
+    let res: Response;
+    try {
+      res = await apiFetch(`/api/agents/${agent.id}/upload-image`, {
+        method: 'POST',
+        body: fd
+      });
+    } catch {
+      setStatus({ kind: 'err', message: t('agentTerminal.image.error.upload') }, 6000);
+      return;
+    }
+
+    if (!res.ok) {
+      let code: string | null = null;
+      try {
+        const body = (await res.json()) as { code?: string };
+        code = body.code ?? null;
+      } catch {
+        /* swallow — fall through to generic */
+      }
+      const msg =
+        code === 'mime'
+          ? t('agentTerminal.image.error.mime')
+          : code === 'size'
+            ? t('agentTerminal.image.error.size')
+            : t('agentTerminal.image.error.upload');
+      setStatus({ kind: 'err', message: msg }, 6000);
+      return;
+    }
+
+    const body = (await res.json()) as {
+      relativePath: string;
+      filename: string;
+    };
+    // Spaces around the `@<path>` preserve word boundaries with whatever
+    // the user already has on the prompt line. Bare path also works for
+    // claude-code; the `@` prefix matches the documented mention syntax
+    // across claude-code / codex / gemini.
+    getMawWsClient().sendKeys(agent.id, ` @${body.relativePath} `);
+    term?.focus();
+    setStatus(
+      { kind: 'ok', filename: body.filename, relativePath: body.relativePath },
+      4000
+    );
+  }
+
+  function onModalPasteCapture(ev: ClipboardEvent): void {
+    if (!imagesEnabled) return;
+    const items = ev.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]!;
+      if (it.kind === 'file' && it.type.startsWith('image/')) {
+        const f = it.getAsFile();
+        if (f) {
+          // Only consume the paste when we actually intercept an image —
+          // text pastes still flow through to xterm.
+          ev.preventDefault();
+          ev.stopPropagation();
+          void uploadAndInjectImage(f);
+          return;
+        }
+      }
+    }
+  }
+
+  function hasImageInDrag(dt: DataTransfer | null): boolean {
+    if (!dt) return false;
+    if (dt.types && dt.types.includes('Files')) return true;
+    return false;
+  }
+
+  function onDragEnter(ev: DragEvent): void {
+    if (!imagesEnabled) return;
+    if (!hasImageInDrag(ev.dataTransfer)) return;
+    ev.preventDefault();
+    dragDepth++;
+  }
+
+  function onDragOver(ev: DragEvent): void {
+    if (!imagesEnabled) return;
+    if (!hasImageInDrag(ev.dataTransfer)) return;
+    // Required for `drop` to fire — and stops the browser from
+    // navigating away if the user misses the panel and drops elsewhere.
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+  }
+
+  function onDragLeave(ev: DragEvent): void {
+    if (!imagesEnabled) return;
+    if (!hasImageInDrag(ev.dataTransfer)) return;
+    ev.preventDefault();
+    if (dragDepth > 0) dragDepth--;
+  }
+
+  function onDrop(ev: DragEvent): void {
+    if (!imagesEnabled) return;
+    if (!ev.dataTransfer) return;
+    const files = Array.from(ev.dataTransfer.files).filter((f) =>
+      f.type.startsWith('image/')
+    );
+    if (files.length === 0) return;
+    ev.preventDefault();
+    dragDepth = 0;
+    for (const f of files) void uploadAndInjectImage(f);
+  }
+
+  function onPaperclipClick(): void {
+    fileInput?.click();
+  }
+
+  function onFileInputChange(ev: Event): void {
+    const target = ev.target as HTMLInputElement;
+    const files = target.files ? Array.from(target.files) : [];
+    for (const f of files) void uploadAndInjectImage(f);
+    // Reset so re-selecting the same file still triggers a change event.
+    target.value = '';
+  }
 </script>
 
 {#if isStream}
@@ -203,9 +394,23 @@
     onStopped={() => onStatusChange?.('exited')}
   />
 {:else}
-  <div class="panel">
+  <div
+    class="panel"
+    role="region"
+    aria-label={t('agentTerminal.region')}
+    onpastecapture={onModalPasteCapture}
+    ondragenter={onDragEnter}
+    ondragover={onDragOver}
+    ondragleave={onDragLeave}
+    ondrop={onDrop}
+  >
     <div class="term-wrap">
       <Terminal bind:this={term} onData={onTerminalData} onResize={onTerminalResize} />
+      {#if imagesEnabled && dragActive}
+        <div class="drop-overlay" aria-hidden="true">
+          <span>{t('agentTerminal.image.dropOverlay')}</span>
+        </div>
+      {/if}
     </div>
 
     {#if pendingPrompt}
@@ -222,19 +427,61 @@
       </section>
     {/if}
 
-    {#if showQuickKeys}
+    {#if uploadStatus}
+      <div
+        class="upload-status"
+        class:upload-status--err={uploadStatus.kind === 'err'}
+        class:upload-status--ok={uploadStatus.kind === 'ok'}
+        role="status"
+        aria-live="polite"
+      >
+        {#if uploadStatus.kind === 'uploading'}
+          {t('agentTerminal.image.uploading')}
+        {:else if uploadStatus.kind === 'ok'}
+          {t('agentTerminal.image.toastInjected', {
+            filename: uploadStatus.filename,
+            path: uploadStatus.relativePath
+          })}
+        {:else if uploadStatus.kind === 'err'}
+          {uploadStatus.message}
+        {/if}
+      </div>
+    {/if}
+
+    {#if imagesEnabled || showQuickKeys}
       <div class="quick-keys" aria-label={t('agent.quickKeysLabel')}>
-        {#each quickKeys as key (key.id)}
+        {#if imagesEnabled}
           <button
             type="button"
-            class="quick-key"
-            title={key.label}
-            aria-label={key.label}
-            onclick={() => pressQuickKey(key.keys)}
+            class="quick-key quick-key--attach"
+            title={t('agentTerminal.image.attach')}
+            aria-label={t('agentTerminal.image.attach')}
+            onclick={onPaperclipClick}
           >
-            {key.label}
+            {'\u{1F4CE}'}
           </button>
-        {/each}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            multiple
+            hidden
+            bind:this={fileInput}
+            onchange={onFileInputChange}
+          />
+        {/if}
+        {#if showQuickKeys}
+          {#each quickKeys as key (key.id)}
+            <button
+              type="button"
+              class="quick-key"
+              title={key.label}
+              aria-label={key.label}
+              onclick={() => pressQuickKey(key.keys)}
+            >
+              {key.label}
+            </button>
+          {/each}
+        {/if}
       </div>
     {/if}
   </div>
@@ -260,6 +507,46 @@
     border-radius: 0.375rem;
     overflow: hidden;
     background: #000;
+    position: relative;
+  }
+  /* Translucent overlay while a file is dragged over the modal. Pointer
+     events disabled so the underlying drop handler still fires. */
+  .drop-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.72);
+    color: #e5e7eb;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border: 2px dashed #60a5fa;
+    border-radius: 0.375rem;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .upload-status {
+    flex: 0 0 auto;
+    padding: 0.45rem 0.65rem;
+    border-radius: 0.35rem;
+    font-size: 0.875rem;
+    background: var(--md-sys-color-surface-container-high, #1f2937);
+    color: var(--md-sys-color-on-surface, #e5e7eb);
+    border: 1px solid var(--md-sys-color-outline-variant, #374151);
+  }
+  .upload-status--ok {
+    border-color: #16a34a;
+    background: #052e1a;
+    color: #d1fae5;
+  }
+  .upload-status--err {
+    border-color: #dc2626;
+    background: #2c0b0b;
+    color: #fecaca;
+  }
+  .quick-key--attach {
+    font-size: 1.15rem;
   }
   .prompt {
     flex: 0 0 auto;

@@ -218,6 +218,16 @@ const de: Partial<Record<TranslationKey, string>> = {
   'agent.failedLoadLog': 'Log konnte nicht geladen werden: {error}',
   'agent.loadingLog': 'Log wird geladen\u2026',
   'agent.quickKeysLabel': 'Terminal-Schnelltasten',
+  'agentTerminal.region': 'Agent-Terminal',
+  'agentTerminal.image.attach': 'Bild anhängen',
+  'agentTerminal.image.dropOverlay': 'Bild hier ablegen',
+  'agentTerminal.image.uploading': 'Bild wird hochgeladen…',
+  'agentTerminal.image.toastInjected':
+    'Bild angehängt: {filename} — {path} eingefügt',
+  'agentTerminal.image.error.mime':
+    'Nicht unterstütztes Bildformat. Verwende PNG, JPEG, GIF oder WebP.',
+  'agentTerminal.image.error.size': 'Bild zu groß. Maximum 5 MB.',
+  'agentTerminal.image.error.upload': 'Upload fehlgeschlagen. Bitte erneut versuchen.',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Rollen',

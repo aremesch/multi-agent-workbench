@@ -57,6 +57,20 @@ export const adapterConfigSchema = z.object({
   createWorktree: z.boolean().default(true),
 
   /**
+   * Whether this CLI accepts image attachments by reading a file path from
+   * the prompt body — i.e. whether MAW should render the paperclip button
+   * + paste/drop UI on the agent's terminal modal. claude-code, codex and
+   * gemini all accept `@<path>` mentions; shell and the browser adapters
+   * do not.
+   *
+   * Server-side this flag is informational only — the upload route is
+   * gated by user auth + agent ownership, not by adapter feature. The
+   * flag flows out via `AdapterRegistry.list()` so the client can hide
+   * the UI on adapters where it would be useless.
+   */
+  acceptsImageAttachment: z.boolean().default(false),
+
+  /**
    * On-screen key-chord buttons rendered under xterm on touch devices (or
    * whenever the user toggles `ui.mobileQuickKeys` to `"always"`). Empty by
    * default — an adapter opts in by listing keys. `id` must be unique within

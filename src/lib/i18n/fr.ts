@@ -221,6 +221,16 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'agent.failedLoadLog': '\u00c9chec du chargement du log\u00a0: {error}',
   'agent.loadingLog': 'Chargement du log\u2026',
   'agent.quickKeysLabel': 'Touches rapides du terminal',
+  'agentTerminal.region': 'Terminal de l’agent',
+  'agentTerminal.image.attach': 'Joindre une image',
+  'agentTerminal.image.dropOverlay': 'Déposez l’image ici',
+  'agentTerminal.image.uploading': 'Téléversement de l’image…',
+  'agentTerminal.image.toastInjected':
+    'Image jointe : {filename} — {path} inséré',
+  'agentTerminal.image.error.mime':
+    'Format d’image non pris en charge. Utilisez PNG, JPEG, GIF ou WebP.',
+  'agentTerminal.image.error.size': 'Image trop volumineuse. Maximum 5 Mo.',
+  'agentTerminal.image.error.upload': 'Échec du téléversement. Réessayez.',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'R\u00f4les',
