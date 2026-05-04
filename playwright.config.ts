@@ -56,6 +56,7 @@ export default defineConfig({
       // math was written against. Bash always available; claude spec self-skips
       // when the adapter isn't registered.
       name: 'terminal',
+      // Matches `terminal-subscribe.spec.ts`, `terminal-log-display.spec.ts`, etc.
       testMatch: /terminal-[^/]+\.spec\.ts$/,
       timeout: 60_000,
       expect: { timeout: 15_000 },
