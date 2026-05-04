@@ -141,13 +141,18 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173
   },
-  // Use terser for the client bundle minifier instead of esbuild.
-  // esbuild's optimizer mishandles the ES2021 `let r; ...(r ||= {})` pattern
-  // that xterm 6.0 uses for function-scoped enum init in `requestMode` —
-  // it drops the `let r;` declaration but keeps the renamed `i = {}` assignment,
-  // producing `(void 0||(i={}))` against an undeclared `i`. In strict mode
-  // (all ESM) this throws `ReferenceError: assignment to undeclared variable i`
-  // the first time a TUI sends DECRQM, blanking the Show-Log modal.
+  // Use terser instead of esbuild for the client bundle minifier.
+  // The Vite client build target SvelteKit configures is
+  // ['es2020', 'edge88', 'firefox78', 'chrome87', 'safari14']. Logical
+  // assignment (`||=`) is ES2021, so esbuild has to transpile it for that
+  // target. The transpile-then-minify pipeline mishandles xterm 6.0's
+  // function-scoped enum init pattern (`let r; ...(r ||= {})` where `r` is
+  // never read after the assignment): it drops `let r;` while keeping the
+  // renamed `i = {}` assignment, producing `(void 0||(i={}))` against an
+  // undeclared `i`. Strict-mode ESM rejects it on every incoming DECRQM byte,
+  // blanking the Show-Log modal with `ReferenceError: assignment to
+  // undeclared variable i` for TUI agents (claude-code, codex, gemini).
+  // Terser doesn't have this transpile+DCE interaction bug.
   // See docs/plans/v0.2-fix-xterm-minify-undeclared-i.md.
   build: {
     minify: 'terser'
