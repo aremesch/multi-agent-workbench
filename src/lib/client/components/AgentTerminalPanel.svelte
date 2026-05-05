@@ -60,9 +60,6 @@
       onStatusChange?.(agent.status);
     }
   });
-  let pendingPrompt = $state<{ choices?: string[]; detail?: Record<string, unknown> } | null>(
-    null
-  );
   let term: Terminal | undefined = $state();
 
   // Debounce resize broadcasts: xterm fires onResize during the initial fit
@@ -86,13 +83,7 @@
       term?.reset();
       if (ansi.length > 0) term?.write(ansi);
     },
-    onEvent: ({ kind, choices, detail }) => {
-      if (kind === 'prompt_detected') {
-        pendingPrompt = { choices, detail };
-      } else if (kind === 'task_done' || kind === 'ready') {
-        pendingPrompt = null;
-      }
-    },
+    onEvent: () => {},
     onState: (s) => {
       status = s;
       onStatusChange?.(s);
@@ -162,11 +153,6 @@
     mql?.removeEventListener('change', onTouchChange);
     mql = null;
   });
-
-  function answer(choice: string): void {
-    getMawWsClient().answerPrompt(agent.id, choice);
-    pendingPrompt = null;
-  }
 
   // ── Mobile quick-keys ──────────────────────────────────────────────
   // Phone soft keyboards hide arrow keys / Esc / Shift+Tab / Ctrl+C.
@@ -413,20 +399,6 @@
       {/if}
     </div>
 
-    {#if pendingPrompt}
-      <section class="prompt">
-        <h2>{t('agent.promptDetected')}</h2>
-        {#if pendingPrompt.detail}
-          <pre>{JSON.stringify(pendingPrompt.detail, null, 2)}</pre>
-        {/if}
-        <div class="actions">
-          {#each pendingPrompt.choices ?? ['yes', 'no'] as choice (choice)}
-            <button onclick={() => answer(choice)}>{choice}</button>
-          {/each}
-        </div>
-      </section>
-    {/if}
-
     {#if uploadStatus}
       <div
         class="upload-status"
@@ -547,22 +519,6 @@
   }
   .quick-key--attach {
     font-size: 1.15rem;
-  }
-  .prompt {
-    flex: 0 0 auto;
-    padding: 0.75rem;
-    border: 1px solid #b45309;
-    border-radius: 0.375rem;
-    background: #1f1405;
-  }
-  .prompt .actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-  .prompt button {
-    min-width: 4rem;
-    min-height: 2.5rem;
   }
   .quick-keys {
     flex: 0 0 auto;

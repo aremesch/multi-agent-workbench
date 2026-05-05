@@ -228,7 +228,6 @@ const en = {
   'agent.tmuxGone': '(tmux session gone)',
   'agent.loading': 'loading\u2026',
   'agent.empty': '(empty)',
-  'agent.promptDetected': 'Prompt detected',
   'agent.spawnAgent': 'Spawn agent',
   'agent.noLiveAgents': 'No live agents. Click the + button to spawn one.',
   'agent.failedLoadLog': 'Failed to load log: {error}',

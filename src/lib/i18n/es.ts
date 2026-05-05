@@ -215,7 +215,6 @@ const es: Partial<Record<TranslationKey, string>> = {
   'agent.tmuxGone': '(sesi\u00f3n tmux finalizada)',
   'agent.loading': 'cargando\u2026',
   'agent.empty': '(vac\u00edo)',
-  'agent.promptDetected': 'Prompt detectado',
   'agent.spawnAgent': 'Lanzar agente',
   'agent.noLiveAgents': 'No hay agentes activos. Haz clic en + para lanzar uno.',
   'agent.failedLoadLog': 'Error al cargar el log: {error}',
