@@ -218,6 +218,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   'agent.failedLoadLog': 'Log konnte nicht geladen werden: {error}',
   'agent.loadingLog': 'Log wird geladen\u2026',
   'agent.quickKeysLabel': 'Terminal-Schnelltasten',
+  'agent.dragHandle': 'Zum Umsortieren ziehen',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Rollen',

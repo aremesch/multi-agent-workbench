@@ -221,6 +221,7 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'agent.failedLoadLog': '\u00c9chec du chargement du log\u00a0: {error}',
   'agent.loadingLog': 'Chargement du log\u2026',
   'agent.quickKeysLabel': 'Touches rapides du terminal',
+  'agent.dragHandle': 'Glisser pour réorganiser',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'R\u00f4les',
