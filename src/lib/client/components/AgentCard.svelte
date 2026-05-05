@@ -192,6 +192,10 @@
 
 <article class="agent-card">
   <header class="agent-card-header">
+    <span
+      class="agent-card-grip"
+      aria-hidden="true"
+      title={t('agent.dragHandle')}>⠿</span>
     <div class="titles">
       <span class="name"
         >{agent.task_title ?? agent.project_name ?? ''}</span
@@ -202,9 +206,10 @@
     <span class="status status-{agent.status}">{agent.status}</span>
   </header>
 
-  <!-- The body is the click target. The header hosts gridstack's drag handle
-       (via the `.agent-card-header` class hook in AgentGrid.svelte), so
-       clicking the header starts a drag, not an open. -->
+  <!-- Body is the click target. Gridstack's drag handle is the small
+       `.agent-card-grip` icon in the header (see AgentGrid.svelte) — the
+       rest of the header behaves like plain text and lets touch scroll
+       gestures pass through to the page. -->
   <div
     class="body"
     bind:this={bodyEl}
@@ -248,20 +253,40 @@
   .agent-card-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 0.4rem;
     padding: 0.35rem 0.6rem;
     background: #111827;
     border-bottom: 1px solid #1f2937;
+  }
+  .agent-card-grip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.95rem;
+    line-height: 1;
+    color: rgba(255, 255, 255, 0.35);
     cursor: grab;
     user-select: none;
+    /* `touch-action: none` is what lets gridstack capture drag on
+       touch devices. The rest of the header has the default
+       `touch-action: auto`, so vertical swipes there scroll the page
+       natively instead of being eaten by gridstack. */
+    touch-action: none;
   }
-  .agent-card-header:active {
+  .agent-card-grip:hover {
+    color: rgba(255, 255, 255, 0.7);
+  }
+  .agent-card-grip:active {
     cursor: grabbing;
   }
   .titles {
     display: flex;
     gap: 0.4rem;
     align-items: baseline;
+    flex: 1;
     min-width: 0;
   }
   .name {

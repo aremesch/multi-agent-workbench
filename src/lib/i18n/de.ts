@@ -228,6 +228,7 @@ const de: Partial<Record<TranslationKey, string>> = {
     'Nicht unterstütztes Bildformat. Verwende PNG, JPEG, GIF oder WebP.',
   'agentTerminal.image.error.size': 'Bild zu groß. Maximum 5 MB.',
   'agentTerminal.image.error.upload': 'Upload fehlgeschlagen. Bitte erneut versuchen.',
+  'agent.dragHandle': 'Zum Umsortieren ziehen',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Rollen',

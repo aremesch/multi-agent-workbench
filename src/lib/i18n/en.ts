@@ -234,6 +234,7 @@ const en = {
   'agent.failedLoadLog': 'Failed to load log: {error}',
   'agent.loadingLog': 'Loading log\u2026',
   'agent.quickKeysLabel': 'Terminal quick keys',
+  'agent.dragHandle': 'Drag to rearrange',
 
   // ── Agent terminal: panel + image attachments ───────────────────
   'agentTerminal.region': 'Agent terminal',

@@ -115,7 +115,7 @@
     // Attach a direct DOM listener so card-body clicks always fire.
     content.addEventListener('click', (e) => {
       const target = e.target as HTMLElement | null;
-      if (target && target.closest('.agent-card-header')) return; // let drag handle pass
+      if (target && target.closest('.agent-card-grip')) return; // let drag handle pass
       onOpen(agent);
     });
 
@@ -143,7 +143,11 @@
         cellHeight: 'auto',
         float: true,
         margin: 8,
-        draggable: { handle: '.agent-card-header' },
+        // `.agent-card-grip` is a small icon in each card's header — see
+        // AgentCard.svelte. Anchoring drag to the grip (instead of the
+        // full-width header) lets touch users scroll past tiles without
+        // accidentally picking them up.
+        draggable: { handle: '.agent-card-grip' },
         // Phones: collapse to a single column so cards aren't 1/12-th
         // of a 400 px viewport (≈33 px wide). Resize handle visible on
         // touch so users can adjust without a hover state.
