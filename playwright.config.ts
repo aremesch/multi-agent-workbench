@@ -33,6 +33,13 @@ export default defineConfig({
   expect: { timeout: 5_000 },
   fullyParallel: false,
   workers: 1,
+  // The chromium gpu-process intermittently SEGVs on `ubuntu-latest` runners
+  // mid-suite (`InitializeSandbox() called with multiple threads in process
+  // gpu-process` → SIGSEGV in the GPU shim, which kills the whole browser).
+  // The next test then errors with `browser.newContext: Target page, context
+  // or browser has been closed` even though it's never the test's fault. One
+  // CI retry covers the residual flake without masking real test bugs.
+  retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   globalSetup: './tests/e2e/global-setup.ts',
 
@@ -40,7 +47,15 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${E2E_PORT}`,
     storageState: 'tests/e2e/auth.storage.json',
     trace: 'retain-on-failure',
-    screenshot: 'only-on-failure'
+    screenshot: 'only-on-failure',
+    // Stop chromium from spawning the GPU process at all on Linux runners.
+    // We render no canvas/webgl in any test path, so software-rasterizer
+    // off + gpu off removes both crash surfaces (GPU init + swiftshader
+    // fallback) without changing how any page actually renders for the
+    // tests' assertions.
+    launchOptions: {
+      args: ['--disable-gpu', '--disable-software-rasterizer']
+    }
   },
 
   projects: [
