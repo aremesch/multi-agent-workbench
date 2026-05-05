@@ -195,10 +195,21 @@ export default defineConfig({
         // without collocated unit tests; the global function % drifted to
         // ~63.69 with `+page.{svelte,server.ts}` and `+layout.*` excluded
         // (those are e2e-tested). Raise this back when route unit tests land.
-        lines: 26,
-        branches: 84,
-        functions: 62,
-        statements: 26
+        // Raised 26/84/62/26 → 59/86/66/59 by v0.2-route-layer-tests: 19
+        // new collocated server.test.ts files across /api/user/*, /api/repos*,
+        // /api/projects, /api/roles, /api/agents/[id]/{log,snapshot,stop,target},
+        // /api/fs/{list,mkdir}, /api/push/{subscribe,unsubscribe} added 177
+        // cases. Actuals climbed lines 39.25→60.82, branches 84.54→87.83,
+        // functions 63.69→67.77, statements 39.25→60.82. Gates set at
+        // floor(actual − 1.5). Functions still trail the pre-ccf542e 70
+        // target — the remaining gap is in untested Svelte components
+        // (AgentCard, AgentGrid, Sidebar, …) and large server modules
+        // (bootstrap, AgentSupervisor, proxy, betterAuth) which need
+        // separate test efforts.
+        lines: 59,
+        branches: 86,
+        functions: 66,
+        statements: 59
       }
     },
     projects: [
