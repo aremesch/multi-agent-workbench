@@ -111,7 +111,20 @@
 
       // Runs after the native <dialog> focus trap picked the close button,
       // so this wins and the user can type immediately on modal open.
-      term.focus();
+      // Skip on touch devices: focusing xterm's hidden textarea while the
+      // user is interacting with the modal (e.g. tapping a mobile quick-key)
+      // is what makes Android surface the soft keyboard. Leaving the
+      // textarea unfocused means the keyboard only opens when the user
+      // taps the terminal area itself — xterm's own pointer handler then
+      // focuses the textarea via a real touch gesture, which is the
+      // legitimate trigger.
+      const isTouch =
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(pointer: coarse)').matches;
+      if (!isTouch) {
+        term.focus();
+      }
 
       if (onData) {
         term.onData((d) => onData(d));
