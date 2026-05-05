@@ -231,6 +231,27 @@ export default defineConfig({
           exclude: ['src/routes/**/server.{test,spec}.ts'],
           setupFiles: ['tests/unit/setup.client.ts']
         }
+      },
+      {
+        // Integration project: spawns a real `claude` subprocess via
+        // tmux + FIFO + AgentRuntime. The tests internally `test.skipIf`
+        // when `claude` is missing from PATH, so a `pnpm test` run on a
+        // CI machine without the binary is silent — but local devs who
+        // *do* have claude installed will still see the integration
+        // tests run, which is the point. For an explicit, focused live
+        // run use `pnpm test:integration`. See
+        // docs/plans/v0.2-claude-code-status-detection-tests.md.
+        extends: true,
+        test: {
+          name: 'integration',
+          environment: 'node',
+          include: ['tests/integration/**/*.{test,spec}.ts'],
+          // Real subprocess + API round-trip: keep the per-test budget
+          // generous so first-token latency on Haiku doesn't trip the
+          // gate when the local network is slow.
+          testTimeout: 120_000,
+          hookTimeout: 60_000
+        }
       }
     ]
   }
