@@ -53,10 +53,16 @@
       "no": ["n", "Enter"],
       "1": ["1", "Enter"],
       "2": ["2", "Enter"],
+      "3": ["3", "Enter"],
       "abort": ["C-c"]
     }
   },
 
+  // Patterns tuned against captured Claude Code v2.1.126 panes (May 2026).
+  // The hook path (POST /api/internal/claude-hook) is the primary
+  // tool-permission detector for claude-code; these regexes are the
+  // fallback for agents whose worktree didn't get .claude/settings.local.json
+  // and the only path for ready / task_done / error (no hook equivalent).
   "patterns": [
     {
       "id": "plan_approval_prompt",
@@ -70,33 +76,41 @@
     {
       "id": "tool_permission_prompt",
       "kind": "prompt_detected",
-      "regex": "Do you want to (?:run|proceed with) (?<tool>[a-zA-Z_]+)(?:\\((?<args>[^)]*)\\))?\\?",
-      "flags": "m",
+      // v2.1.x phrasings: `Do you want to create notes.txt?`, `Do you
+      // want to make this edit to /abs/file.ts?`, `Do you want to run
+      // npm test?`, `Do you want to proceed with foo?`. The action group
+      // captures everything between the verb and `?` — alertBody() picks
+      // it up in its priority chain (cmd → file_path → args → action).
+      // [^?\n]{1,80} caps runaway matches and prevents spanning past `?`.
+      "regex": "Do you want to (?<action>[^?\\n]{1,80})\\?",
       "scope": "tail",
-      "choices": ["yes", "no"],
+      "choices": ["1", "2", "3", "abort"],
       "severity": "warning",
-      "description": "Standard tool-use permission prompt"
-    },
-    {
-      "id": "shell_command_prompt",
-      "kind": "prompt_detected",
-      "regex": "Run (?<cmd>.+?) \\? \\[y/N\\]",
-      "scope": "tail",
-      "choices": ["yes", "no"],
-      "severity": "warning"
+      "description": "Tool-use permission prompt — v2.1.x verbs (create / make this edit to / run / proceed with / etc.)"
     },
     {
       "id": "ready",
       "kind": "ready",
-      "regex": "^>\\s*$",
-      "scope": "tail_line"
+      // The visible footer line: `? for shortcuts` (idle) vs
+      // `esc to interrupt` (working). The prompt char `❯` itself is
+      // ALWAYS painted in the input box (even mid-task), so it can't
+      // gate `ready`; the footer can.
+      "regex": "\\? for shortcuts",
+      "scope": "tail_line",
+      "description": "Footer line shown only while claude is idle / waiting on user"
     },
     {
       "id": "task_done",
       "kind": "task_done",
-      "regex": "(?:✓ Task complete|All done!)",
+      // End-of-turn signal: `✻ Cooked for 4s`, `✻ Baked for 9s`,
+      // `✻ Sautéed for 12s`, etc. Claude rotates the past-tense verb but
+      // always uses ✻ (U+273B). The mid-task spinner uses ✽ (U+273D) and
+      // gerund + ellipsis (`✽ Hyperspacing… (7s · …)`) — no `for Ns`,
+      // so it doesn't match. The `for \d+[ms]\b` clause is the anchor.
+      "regex": "✻ \\S.{0,40}? for \\d+[ms]\\b",
       "scope": "tail",
-      "severity": "info"
+      "severity": "info",
+      "description": "End-of-turn marker (✻ <verb> for <N>[ms])"
     },
     {
       "id": "rate_limit",
@@ -110,7 +124,9 @@
 
   "idleDetection": {
     "method": "cursor_at_prompt",
-    "promptLineRegex": "^>\\s*$",
+    // Same rationale as the `ready` pattern: the footer is the only
+    // line whose presence reliably distinguishes idle from working.
+    "promptLineRegex": "\\? for shortcuts",
     "inactivityMs": 2000
   },
 
