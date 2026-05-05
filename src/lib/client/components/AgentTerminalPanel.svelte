@@ -160,8 +160,11 @@
   // `mobileQuickKeys` field; we render them under xterm when either the
   // device is touch-primary (pointer: coarse) or the user forced the row
   // on via /settings. Each button fires bytes through the same send_keys
-  // path as real xterm keystrokes, then refocuses the terminal so the
-  // next real keypress lands in the PTY rather than on the button.
+  // path as real xterm keystrokes. The `<button>` uses `mousedown` +
+  // `preventDefault` to avoid stealing focus from xterm — on Android,
+  // a programmatic `term.focus()` during a tap gesture surfaces the soft
+  // keyboard, overlapping the PWA. Keeping focus where it is means the
+  // virtual keyboard only opens when the user taps the terminal itself.
   const quickKeys = $derived<MobileQuickKey[]>(
     page.data.cliKinds?.find(
       (k: { kind: string; mobileQuickKeys?: MobileQuickKey[] }) => k.kind === agent.cli_kind
@@ -178,7 +181,6 @@
 
   function pressQuickKey(keys: string): void {
     getMawWsClient().sendKeys(agent.id, keys);
-    term?.focus();
   }
 
   // ── Image / screenshot attachment ──────────────────────────────────
@@ -448,6 +450,7 @@
               class="quick-key"
               title={key.label}
               aria-label={key.label}
+              onmousedown={(e) => e.preventDefault()}
               onclick={() => pressQuickKey(key.keys)}
             >
               {key.label}
