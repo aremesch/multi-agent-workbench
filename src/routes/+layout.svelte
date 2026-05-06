@@ -109,7 +109,14 @@
 
 <svelte:window onclick={onDocClick} onkeydown={onKey} />
 
-<div class="flex h-screen flex-col overflow-hidden bg-surface text-on-surface">
+<!-- `h-dvh` (dynamic viewport height) instead of `h-screen` (= 100vh)
+     so the wrapper matches the actually-visible area on mobile. With
+     viewport-fit=cover + an Android PWA in standalone mode, 100vh
+     can resolve to the "large" viewport (URL bar collapsed) and
+     overflow into a body-scroll, which on touch lets the whole
+     header + sidebar + dashboard pan as one unit instead of just the
+     inner section. 100dvh tracks the live visible height. -->
+<div class="flex h-dvh flex-col overflow-hidden bg-surface text-on-surface">
   <header
     class="flex items-center gap-3 border-b border-outline-variant bg-surface-container px-4 py-2.5"
   >

@@ -205,11 +205,24 @@
 }
 
 /* Global body defaults read from the token layer so logged-out
- * and un-hydrated pages already respect the active theme. */
+ * and un-hydrated pages already respect the active theme.
+ *
+ * `height: 100%` + `overflow: hidden` + `overscroll-behavior: none`
+ * lock the document so only inner scroll containers (the dashboard
+ * <section> in +layout.svelte, modal bodies, etc.) can scroll. Without
+ * this, an Android PWA in standalone mode can fall back to scrolling
+ * the body when the layout's `h-dvh` wrapper hits viewport edge cases
+ * (URL bar collapse, system bar inset, viewport-fit=cover behind
+ * gesture nav), which would pan the header + sidebar + dashboard as
+ * one unit instead of just the inner section. The lock is no-op on
+ * desktop where the wrapper already fits the viewport exactly. */
 html,
 body {
   margin: 0;
   padding: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
