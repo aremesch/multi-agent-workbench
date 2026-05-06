@@ -133,6 +133,20 @@
   onMount(async () => {
     if (!container) return;
     const GridStackCtor = await loadGridStack();
+    // On coarse-pointer devices (phones, tablets) we run the grid in
+    // `staticGrid: true` so gridstack's `_removeDD(el)` nukes all drag
+    // listeners AND every `.ui-resizable-handle` element. The handles
+    // are 10 px-wide invisible strips along every tile edge with
+    // `touch-action: none` baked into the gridstack stylesheet — even
+    // with the drag handle anchored to a small grip in the header,
+    // touching one of those edge strips would start a *resize* (which
+    // looks identical to drag at c:1) and eat the page-scroll
+    // gesture. Drag-to-rearrange becomes desktop-only as a result;
+    // `alwaysShowResizeHandle: 'mobile'` is intentionally dropped
+    // because the handles aren't rendered when staticGrid is on.
+    const isCoarse =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(pointer: coarse)').matches;
     grid = GridStackCtor.init(
       {
         column: 12,
@@ -145,14 +159,14 @@
         margin: 8,
         // `.agent-card-grip` is a small icon in each card's header — see
         // AgentCard.svelte. Anchoring drag to the grip (instead of the
-        // full-width header) lets touch users scroll past tiles without
-        // accidentally picking them up.
+        // full-width header) is desktop polish; on touch the whole
+        // grid is static (see staticGrid below) so the grip is purely
+        // decorative and CSS hides it under @media (pointer: coarse).
         draggable: { handle: '.agent-card-grip' },
         // Phones: collapse to a single column so cards aren't 1/12-th
-        // of a 400 px viewport (≈33 px wide). Resize handle visible on
-        // touch so users can adjust without a hover state.
+        // of a 400 px viewport (≈33 px wide).
         columnOpts: { breakpoints: [{ w: 600, c: 1 }] },
-        alwaysShowResizeHandle: 'mobile'
+        staticGrid: isCoarse
       },
       container
     );

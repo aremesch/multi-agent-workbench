@@ -282,6 +282,15 @@
   .agent-card-grip:active {
     cursor: grabbing;
   }
+  /* On touch the whole grid is static (see AgentGrid.svelte), so the
+     grip is non-functional. Hide it so its tiny `touch-action: none`
+     hit zone doesn't punch a dead-zone hole through the page-scroll
+     gesture. */
+  @media (pointer: coarse) {
+    .agent-card-grip {
+      display: none;
+    }
+  }
   .titles {
     display: flex;
     gap: 0.4rem;
