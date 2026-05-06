@@ -474,16 +474,18 @@
   </form>
 </div>
 
-<DirectoryPickerDialog
-  open={pickerOpen}
-  initialPath={newRepoPath || undefined}
-  onClose={() => { pickerOpen = false; }}
-  onSelect={({ path, cloneUrl }) => {
-    newRepoPath = path;
-    newRepoCloneUrl = cloneUrl;
-    pickerOpen = false;
-  }}
-/>
+{#if pickerOpen}
+  <DirectoryPickerDialog
+    open={pickerOpen}
+    initialPath={newRepoPath || undefined}
+    onClose={() => { pickerOpen = false; }}
+    onSelect={({ path, cloneUrl }) => {
+      newRepoPath = path;
+      newRepoCloneUrl = cloneUrl;
+      pickerOpen = false;
+    }}
+  />
+{/if}
 
 <style>
   .wrap {

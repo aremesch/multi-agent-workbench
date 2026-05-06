@@ -228,11 +228,14 @@ test.describe('agent lifecycle', () => {
     await tmux('send-keys', '-t', `maw-agent-${agent2}`, 'Enter');
 
     // --- Assert: only agent 2 transitions to exited -----------------------
-    // Wait for the supervisor to notice agent 2's session closed. Polling
-    // the snapshot route also fires the route's own `reapAgent` side
-    // effect, which guarantees the DB row is flipped to 'exited' — so
-    // by the time waitForSnapshotStatus returns, agent 2's row is settled.
+    // The snapshot route returns 410 the moment Tmux.hasSession() reports
+    // the session is gone — but AgentSupervisor.finishAsExited only flips
+    // the DB row AFTER awaiting runtime.stop() (FIFO + pipe-pane teardown).
+    // So `waitForSnapshotStatus(..., 410)` is necessary but not sufficient:
+    // we also wait for the DB itself to settle, otherwise we land in the
+    // window where snapshot says gone but the row still says running.
     await waitForSnapshotStatus(page, agent2, 410);
+    await waitForDbStatus(agent2, 'exited');
     expect(readAgentStatus(agent2), 'agent-2 should be exited after its bash closed').toBe(
       'exited'
     );
