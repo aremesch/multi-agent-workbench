@@ -1,5 +1,6 @@
 import { execa } from 'execa';
 import type { AgentCommit } from '$lib/shared/types';
+import { getGit } from './client.js';
 
 // hash \x1f parents \x1f author-name \x1f author-email \x1f committer-name
 // \x1f committer-email \x1f author-date-epoch \x1f committer-date-epoch
@@ -49,13 +50,7 @@ function parseLog(stdout: string): AgentCommit[] {
 /** Resolve a revspec to a full SHA. Returns null on failure. */
 export async function resolveSha(repoPath: string, rev: string): Promise<string | null> {
   try {
-    const { stdout } = await execa('git', [
-      '-C',
-      repoPath,
-      'rev-parse',
-      '--verify',
-      `${rev}^{commit}`
-    ]);
+    const stdout = await getGit(repoPath).revparse(['--verify', `${rev}^{commit}`]);
     return stdout.trim() || null;
   } catch {
     return null;
@@ -77,7 +72,7 @@ export async function listCommitsByCommitter(
   baseSha: string | null,
   branch: string | null
 ): Promise<AgentCommit[]> {
-  const args = ['-C', repoPath, 'log', `--pretty=format:${FMT}`, '--no-merges'];
+  const args = ['log', `--pretty=format:${FMT}`, '--no-merges'];
   args.push(`--committer=^<?${escapeRegex(committerEmail)}>?$`);
 
   if (baseSha && branch) {
@@ -96,7 +91,7 @@ export async function listCommitsByCommitter(
   }
 
   try {
-    const { stdout } = await execa('git', args);
+    const stdout = await getGit(repoPath).raw(args);
     return parseLog(stdout);
   } catch {
     return [];
@@ -115,9 +110,7 @@ export async function listCommitsInRange(
 ): Promise<AgentCommit[]> {
   if (!(await refExists(repoPath, `refs/heads/${branch}`))) return [];
   try {
-    const { stdout } = await execa('git', [
-      '-C',
-      repoPath,
+    const stdout = await getGit(repoPath).raw([
       'log',
       `--pretty=format:${FMT}`,
       '--no-merges',
@@ -142,15 +135,10 @@ export async function listAgentCommitsViaMergeBase(
 ): Promise<AgentCommit[]> {
   if (!(await refExists(repoPath, `refs/heads/${branch}`))) return [];
 
+  const git = getGit(repoPath);
   let range: string;
   try {
-    const { stdout } = await execa('git', [
-      '-C',
-      repoPath,
-      'merge-base',
-      branch,
-      defaultBranch
-    ]);
+    const stdout = await git.raw(['merge-base', branch, defaultBranch]);
     const base = stdout.trim();
     range = base ? `${base}..${branch}` : branch;
   } catch {
@@ -158,9 +146,7 @@ export async function listAgentCommitsViaMergeBase(
   }
 
   try {
-    const { stdout } = await execa('git', [
-      '-C',
-      repoPath,
+    const stdout = await git.raw([
       'log',
       `--pretty=format:${FMT}`,
       '--no-merges',
@@ -174,7 +160,7 @@ export async function listAgentCommitsViaMergeBase(
 
 async function refExists(repoPath: string, ref: string): Promise<boolean> {
   try {
-    await execa('git', ['-C', repoPath, 'rev-parse', '--verify', ref]);
+    await getGit(repoPath).revparse(['--verify', ref]);
     return true;
   } catch {
     return false;
@@ -189,7 +175,7 @@ export async function revParseQuiet(repoPath: string, ref: string): Promise<bool
 /** True when the object `sha` exists in the repo's object DB. */
 export async function catFileExists(repoPath: string, sha: string): Promise<boolean> {
   try {
-    await execa('git', ['-C', repoPath, 'cat-file', '-e', sha]);
+    await getGit(repoPath).raw(['cat-file', '-e', sha]);
     return true;
   } catch {
     return false;
@@ -215,11 +201,11 @@ export async function checkShaReachability(
   const unique = [...new Set(shas.filter((s) => s))];
   if (unique.length === 0) return new Set();
 
+  const git = getGit(repoPath);
+
   let hasRemote = false;
   try {
-    const { stdout } = await execa('git', [
-      '-C',
-      repoPath,
+    const stdout = await git.raw([
       'for-each-ref',
       '--count=1',
       '--format=%(refname)',
@@ -232,7 +218,8 @@ export async function checkShaReachability(
 
   if (!hasRemote) {
     // No remote configured → fall back to local object existence so
-    // pure-local repos don't paint every commit as stale.
+    // pure-local repos don't paint every commit as stale. simple-git's
+    // .raw() doesn't expose stdin, so we use execa for this one call.
     try {
       const { stdout } = await execa(
         'git',
@@ -256,9 +243,7 @@ export async function checkShaReachability(
   const results = await Promise.all(
     unique.map(async (sha) => {
       try {
-        const { stdout } = await execa('git', [
-          '-C',
-          repoPath,
+        const stdout = await git.raw([
           'for-each-ref',
           '--count=1',
           '--format=%(refname)',

@@ -1,17 +1,24 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { SimpleGit } from 'simple-git';
 
-// Mock execa before importing the module under test.
-vi.mock('execa', () => ({
-  execa: vi.fn()
+const cloneMock = vi.fn();
+const envMock = vi.fn();
+const getGitMock = vi.fn();
+
+vi.mock('$lib/server/git/client', () => ({
+  getGit: (cwd?: string, overrides?: unknown) => getGitMock(cwd, overrides)
 }));
 
-import { execa } from 'execa';
 import { CloneError, cloneInto, isAcceptableCloneUrl } from './clone.js';
 
-const execaMock = vi.mocked(execa);
-
 beforeEach(() => {
-  execaMock.mockReset();
+  cloneMock.mockReset();
+  envMock.mockReset();
+  getGitMock.mockReset();
+  // Chainable: .env() returns the same git-like object so .clone() can be called next.
+  const chain = { env: envMock, clone: cloneMock };
+  envMock.mockReturnValue(chain);
+  getGitMock.mockReturnValue(chain as unknown as SimpleGit);
 });
 
 describe('isAcceptableCloneUrl', () => {
@@ -37,58 +44,63 @@ describe('cloneInto', () => {
       name: 'CloneError',
       code: 'invalid_url'
     });
-    expect(execaMock).not.toHaveBeenCalled();
+    expect(getGitMock).not.toHaveBeenCalled();
   });
 
-  it('shells out to `git clone -- <url> <path>` with prompt-less env', async () => {
-    execaMock.mockResolvedValue({} as never);
+  it('calls clone with prompt-less env and the configured timeout', async () => {
+    cloneMock.mockResolvedValue('');
     await cloneInto('https://example.com/a.git', '/tmp/x');
-    expect(execaMock).toHaveBeenCalledTimes(1);
-    const [cmd, args, opts] = execaMock.mock.calls[0] as unknown as [
-      string,
-      string[],
-      { env: Record<string, string>; timeout: number }
-    ];
-    expect(cmd).toBe('git');
-    expect(args).toEqual(['clone', '--', 'https://example.com/a.git', '/tmp/x']);
-    expect(opts.env.GIT_TERMINAL_PROMPT).toBe('0');
-    expect(opts.env.GIT_SSH_COMMAND).toContain('BatchMode=yes');
-    expect(opts.timeout).toBe(120_000);
+    expect(getGitMock).toHaveBeenCalledWith(undefined, { timeout: { block: 120_000 } });
+    expect(envMock).toHaveBeenCalledTimes(1);
+    const envArg = envMock.mock.calls[0]![0] as Record<string, string>;
+    expect(envArg.GIT_TERMINAL_PROMPT).toBe('0');
+    expect(envArg.GIT_SSH_COMMAND).toContain('BatchMode=yes');
+    expect(cloneMock).toHaveBeenCalledWith('https://example.com/a.git', '/tmp/x', ['--']);
   });
 
-  it('maps stderr containing "permission denied" to auth_failed', async () => {
-    execaMock.mockRejectedValue({
-      stderr: 'git@github.com: Permission denied (publickey).',
-      stdout: '',
-      message: 'Command failed'
-    });
+  it('maps "permission denied" to auth_failed', async () => {
+    cloneMock.mockRejectedValue(
+      Object.assign(new Error('git@github.com: Permission denied (publickey).'), {})
+    );
     await expect(cloneInto('git@github.com:a/b.git', '/tmp/x')).rejects.toMatchObject({
       code: 'auth_failed'
     });
   });
 
   it('maps "authentication failed" to auth_failed', async () => {
-    execaMock.mockRejectedValue({
-      stderr: 'fatal: Authentication failed for https://github.com/a/b.git',
-      message: 'Command failed'
-    });
+    cloneMock.mockRejectedValue(
+      new Error('fatal: Authentication failed for https://github.com/a/b.git')
+    );
     await expect(cloneInto('https://github.com/a/b.git', '/tmp/x')).rejects.toMatchObject({
       code: 'auth_failed'
     });
   });
 
-  it('maps other failures to clone_failed', async () => {
-    execaMock.mockRejectedValue({
-      stderr: 'fatal: repository does not exist',
-      message: 'Command failed'
+  it('maps "could not read username" to auth_failed', async () => {
+    cloneMock.mockRejectedValue(
+      new Error('fatal: could not read Username for https://github.com')
+    );
+    await expect(cloneInto('https://github.com/a/b.git', '/tmp/x')).rejects.toMatchObject({
+      code: 'auth_failed'
     });
+  });
+
+  it('maps "host key verification failed" to auth_failed', async () => {
+    cloneMock.mockRejectedValue(new Error('Host key verification failed.'));
+    await expect(cloneInto('git@github.com:a/b.git', '/tmp/x')).rejects.toMatchObject({
+      code: 'auth_failed'
+    });
+  });
+
+  it('maps other failures to clone_failed', async () => {
+    cloneMock.mockRejectedValue(new Error('fatal: repository does not exist'));
     await expect(cloneInto('https://github.com/a/b.git', '/tmp/x')).rejects.toMatchObject({
       code: 'clone_failed'
     });
   });
 
   it('CloneError is instanceof Error for consumer try/catch', async () => {
-    execaMock.mockRejectedValue({ stderr: 'boom', message: 'boom' });
+    cloneMock.mockRejectedValue(new Error('boom'));
     try {
       await cloneInto('https://x/y.git', '/tmp/x');
       throw new Error('should have thrown');

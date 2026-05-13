@@ -1,4 +1,4 @@
-import { execa } from 'execa';
+import { getGit } from './client';
 
 export interface WorktreeDirtyCheck {
   dirty: boolean;
@@ -14,18 +14,8 @@ export interface WorktreeDirtyCheck {
  */
 export async function isWorktreeDirty(worktreePath: string): Promise<WorktreeDirtyCheck> {
   try {
-    const { stdout } = await execa('git', [
-      '-C',
-      worktreePath,
-      'status',
-      '--porcelain',
-      '-z'
-    ]);
-    if (!stdout) return { dirty: false, files: [] };
-    const files = stdout
-      .split('\0')
-      .filter((r) => r.length > 0)
-      .map((r) => r.slice(3));
+    const result = await getGit(worktreePath).status();
+    const files = result.files.map((f) => f.path);
     return { dirty: files.length > 0, files };
   } catch {
     return { dirty: false, files: [] };

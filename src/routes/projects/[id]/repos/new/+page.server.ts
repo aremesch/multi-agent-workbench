@@ -1,11 +1,11 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { isAbsolute } from 'node:path';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { execa } from 'execa';
 import { ulid } from 'ulid';
 import type { Actions, PageServerLoad } from './$types';
 import { getProject, insertRepo } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
+import { getGit } from '$lib/server/git/client';
 import { resolveGitIdentity } from '$lib/server/user/gitIdentity';
 import { t } from '$lib/i18n';
 
@@ -83,7 +83,7 @@ export const actions: Actions = {
       }
     } else {
       try {
-        await execa('git', ['-C', path, 'rev-parse', '--git-dir']);
+        await getGit(path).revparse(['--git-dir']);
       } catch {
         return fail(400, {
           path,

@@ -1,8 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SimpleGit } from 'simple-git';
 
-// Scripted execa mock: each test registers handlers keyed by the joined
-// argv; the mock looks up the right response or calls the router fn.
+// Scripted mocks. Most calls go through simple-git's client (.raw(),
+// .revparse()); the one stdin case in checkShaReachability still uses
+// execa, so both surfaces are mocked.
+const rawMock = vi.fn();
+const revparseMock = vi.fn();
+const getGitMock = vi.fn();
 const execaMock = vi.fn();
+
+vi.mock('$lib/server/git/client', () => ({
+  getGit: (cwd?: string) => getGitMock(cwd)
+}));
+
 vi.mock('execa', () => ({
   execa: (cmd: string, args: string[], opts?: unknown) => execaMock(cmd, args, opts)
 }));
@@ -15,26 +25,47 @@ import {
 } from './agentCommits.js';
 
 beforeEach(() => {
+  rawMock.mockReset();
+  revparseMock.mockReset();
+  getGitMock.mockReset();
+  getGitMock.mockReturnValue({
+    raw: rawMock,
+    revparse: revparseMock
+  } as unknown as SimpleGit);
   execaMock.mockReset();
 });
 
-/** Route calls by matching on `args[1..]` (strip the `-C <repo>` prefix). */
-function routeExeca(
-  routes: Record<string, { stdout?: string; stderr?: string; throws?: boolean }>
+/** Route .raw() calls by matching on the args array joined. */
+function routeRaw(
+  routes: Record<string, { stdout?: string; throws?: boolean }>
 ): void {
-  execaMock.mockImplementation((_cmd: string, args: string[]) => {
-    // Drop the leading -C <repoPath>
-    const key = args.slice(2).join(' ');
+  rawMock.mockImplementation((args: string[]) => {
+    const key = args.join(' ');
     const match = routes[key];
     if (!match) {
-      throw Object.assign(new Error(`unmatched execa: ${key}`), {
-        stderr: 'unknown revision'
-      });
+      throw new Error(`unmatched raw: ${key}`);
     }
     if (match.throws) {
-      throw Object.assign(new Error('git err'), { stderr: match.stderr ?? '' });
+      throw new Error('git err');
     }
-    return Promise.resolve({ stdout: match.stdout ?? '', stderr: '' });
+    return Promise.resolve(match.stdout ?? '');
+  });
+}
+
+/** Route .revparse() calls by matching on the args array joined. */
+function routeRevparse(
+  routes: Record<string, { stdout?: string; throws?: boolean }>
+): void {
+  revparseMock.mockImplementation((args: string[]) => {
+    const key = args.join(' ');
+    const match = routes[key];
+    if (!match) {
+      throw new Error(`unmatched revparse: ${key}`);
+    }
+    if (match.throws) {
+      throw new Error('git err');
+    }
+    return Promise.resolve(match.stdout ?? '');
   });
 }
 
@@ -66,16 +97,18 @@ function logRecord(
 
 describe('listAgentCommitsViaMergeBase', () => {
   it('returns [] when the branch does not exist', async () => {
-    routeExeca({
-      'rev-parse --verify refs/heads/gone': { throws: true, stderr: "unknown revision or path 'gone'" }
+    routeRevparse({
+      '--verify refs/heads/gone': { throws: true }
     });
     const out = await listAgentCommitsViaMergeBase('/repo', 'gone', 'main');
     expect(out).toEqual([]);
   });
 
   it('runs merge-base then log over <base>..<branch> on the happy path', async () => {
-    routeExeca({
-      'rev-parse --verify refs/heads/feature': { stdout: 'abc' },
+    routeRevparse({
+      '--verify refs/heads/feature': { stdout: 'abc' }
+    });
+    routeRaw({
       'merge-base feature main': { stdout: 'BASE\n' },
       [`log --pretty=format:${FMT} --no-merges BASE..feature`]: {
         stdout:
@@ -98,8 +131,10 @@ describe('listAgentCommitsViaMergeBase', () => {
   });
 
   it('returns [] when the range has no commits (log stdout blank)', async () => {
-    routeExeca({
-      'rev-parse --verify refs/heads/empty': { stdout: 'ok' },
+    routeRevparse({
+      '--verify refs/heads/empty': { stdout: 'ok' }
+    });
+    routeRaw({
       'merge-base empty main': { stdout: 'BASE\n' },
       [`log --pretty=format:${FMT} --no-merges BASE..empty`]: {
         stdout: ''
@@ -110,9 +145,11 @@ describe('listAgentCommitsViaMergeBase', () => {
   });
 
   it('falls back to the full branch log when merge-base fails', async () => {
-    routeExeca({
-      'rev-parse --verify refs/heads/orphan': { stdout: 'ok' },
-      'merge-base orphan main': { throws: true, stderr: 'no common ancestor' },
+    routeRevparse({
+      '--verify refs/heads/orphan': { stdout: 'ok' }
+    });
+    routeRaw({
+      'merge-base orphan main': { throws: true },
       [`log --pretty=format:${FMT} --no-merges orphan`]: {
         stdout: logRecord('sha3', 'Carol', '2026-01-03T00:00:00Z', 'orphan commit', '')
       }
@@ -123,8 +160,10 @@ describe('listAgentCommitsViaMergeBase', () => {
   });
 
   it('falls back to branch-only range when merge-base returns blank (disjoint history)', async () => {
-    routeExeca({
-      'rev-parse --verify refs/heads/x': { stdout: 'ok' },
+    routeRevparse({
+      '--verify refs/heads/x': { stdout: 'ok' }
+    });
+    routeRaw({
       'merge-base x main': { stdout: '   \n' }, // blank after trim
       [`log --pretty=format:${FMT} --no-merges x`]: {
         stdout: logRecord('shaX', 'Dan', '2026-01-04T00:00:00Z', 's', 'b')
@@ -135,8 +174,10 @@ describe('listAgentCommitsViaMergeBase', () => {
   });
 
   it('shortSha is the first 7 characters of sha', async () => {
-    routeExeca({
-      'rev-parse --verify refs/heads/f': { stdout: 'ok' },
+    routeRevparse({
+      '--verify refs/heads/f': { stdout: 'ok' }
+    });
+    routeRaw({
       'merge-base f main': { stdout: 'b' },
       [`log --pretty=format:${FMT} --no-merges b..f`]: {
         stdout: logRecord('deadbeefcafef00d', 'A', 'D', 'S', '')
@@ -149,22 +190,22 @@ describe('listAgentCommitsViaMergeBase', () => {
 
 describe('revParseQuiet', () => {
   it('returns true when rev-parse exits 0', async () => {
-    routeExeca({ 'rev-parse --verify refs/heads/main': { stdout: 'abc' } });
+    routeRevparse({ '--verify refs/heads/main': { stdout: 'abc' } });
     await expect(revParseQuiet('/repo', 'refs/heads/main')).resolves.toBe(true);
   });
   it('returns false when rev-parse throws', async () => {
-    routeExeca({ 'rev-parse --verify refs/heads/gone': { throws: true } });
+    routeRevparse({ '--verify refs/heads/gone': { throws: true } });
     await expect(revParseQuiet('/repo', 'refs/heads/gone')).resolves.toBe(false);
   });
 });
 
 describe('catFileExists', () => {
   it('returns true when cat-file -e exits 0', async () => {
-    routeExeca({ 'cat-file -e deadbeef': { stdout: '' } });
+    routeRaw({ 'cat-file -e deadbeef': { stdout: '' } });
     await expect(catFileExists('/repo', 'deadbeef')).resolves.toBe(true);
   });
   it('returns false when cat-file -e throws', async () => {
-    routeExeca({ 'cat-file -e deadbeef': { throws: true } });
+    routeRaw({ 'cat-file -e deadbeef': { throws: true } });
     await expect(catFileExists('/repo', 'deadbeef')).resolves.toBe(false);
   });
 });
@@ -173,44 +214,43 @@ describe('checkShaReachability', () => {
   it('returns empty set for empty input', async () => {
     const out = await checkShaReachability('/repo', []);
     expect(out.size).toBe(0);
+    expect(rawMock).not.toHaveBeenCalled();
     expect(execaMock).not.toHaveBeenCalled();
   });
 
   it('returns the subset reachable from remote-tracking refs', async () => {
     // 1st call: has-remote probe (returns a ref → remote exists).
     // Subsequent calls: per-sha `for-each-ref --contains`.
-    execaMock.mockImplementation((_cmd, args: string[]) => {
-      const a = args.slice(2);
-      if (a.includes('--count=1') && !a.includes('--contains')) {
-        // probe
-        return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+    rawMock.mockImplementation((args: string[]) => {
+      if (args.includes('--count=1') && !args.includes('--contains')) {
+        return Promise.resolve('refs/remotes/origin/main\n');
       }
-      const i = a.indexOf('--contains');
-      const sha = a[i + 1];
+      const i = args.indexOf('--contains');
+      const sha = args[i + 1];
       const onRemote = sha === 'aaa1111' || sha === 'ccc3333';
-      return Promise.resolve({
-        stdout: onRemote ? 'refs/remotes/origin/main\n' : '',
-        stderr: ''
-      });
+      return Promise.resolve(onRemote ? 'refs/remotes/origin/main\n' : '');
     });
     const out = await checkShaReachability('/repo', ['aaa1111', 'bbb2222', 'ccc3333']);
     expect([...out].sort()).toEqual(['aaa1111', 'ccc3333']);
   });
 
   it('falls back to local object DB when no remote refs exist', async () => {
-    execaMock.mockImplementation((_cmd, args: string[]) => {
-      const a = args.slice(2);
-      if (a.includes('for-each-ref')) {
+    rawMock.mockImplementation((args: string[]) => {
+      if (args.includes('for-each-ref')) {
         // probe returns empty → no remote
-        return Promise.resolve({ stdout: '', stderr: '' });
+        return Promise.resolve('');
       }
-      if (a[0] === 'cat-file' && a[1] === '--batch-check=%(objectname) %(objecttype)') {
+      throw new Error(`unmatched raw: ${args.join(' ')}`);
+    });
+    // cat-file --batch-check uses execa because it needs stdin
+    execaMock.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.includes('cat-file') && args.some((a) => a.startsWith('--batch-check='))) {
         return Promise.resolve({
           stdout: 'aaa1111 commit\nbbb2222 missing\nccc3333 commit',
           stderr: ''
         });
       }
-      throw new Error(`unmatched: ${a.join(' ')}`);
+      throw new Error(`unmatched execa: ${args.join(' ')}`);
     });
     const out = await checkShaReachability('/repo', ['aaa1111', 'bbb2222', 'ccc3333']);
     expect([...out].sort()).toEqual(['aaa1111', 'ccc3333']);
@@ -219,13 +259,12 @@ describe('checkShaReachability', () => {
   it('marks a locally-present sha unreachable when no remote ref contains it', async () => {
     // Models the rebase/recommit case: old SHA still loose in the local
     // object DB, but gone from every remote-tracking ref.
-    execaMock.mockImplementation((_cmd, args: string[]) => {
-      const a = args.slice(2);
-      if (a.includes('--count=1') && !a.includes('--contains')) {
-        return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+    rawMock.mockImplementation((args: string[]) => {
+      if (args.includes('--count=1') && !args.includes('--contains')) {
+        return Promise.resolve('refs/remotes/origin/main\n');
       }
-      // Every per-sha containment check returns empty (no remote ref contains it).
-      return Promise.resolve({ stdout: '', stderr: '' });
+      // Every per-sha containment check returns empty.
+      return Promise.resolve('');
     });
     const out = await checkShaReachability('/repo', ['96534ce']);
     expect(out.size).toBe(0);
@@ -233,14 +272,13 @@ describe('checkShaReachability', () => {
 
   it('deduplicates input shas before checking', async () => {
     const seen: string[] = [];
-    execaMock.mockImplementation((_cmd, args: string[]) => {
-      const a = args.slice(2);
-      if (a.includes('--count=1') && !a.includes('--contains')) {
-        return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+    rawMock.mockImplementation((args: string[]) => {
+      if (args.includes('--count=1') && !args.includes('--contains')) {
+        return Promise.resolve('refs/remotes/origin/main\n');
       }
-      const i = a.indexOf('--contains');
-      if (i >= 0) seen.push(a[i + 1]!);
-      return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+      const i = args.indexOf('--contains');
+      if (i >= 0) seen.push(args[i + 1]!);
+      return Promise.resolve('refs/remotes/origin/main\n');
     });
     const out = await checkShaReachability('/repo', ['aaa', 'aaa', 'aaa']);
     expect(out.has('aaa')).toBe(true);
@@ -248,18 +286,18 @@ describe('checkShaReachability', () => {
   });
 
   it('returns empty set when the probe throws', async () => {
-    execaMock.mockRejectedValue(Object.assign(new Error('git fail'), { stderr: '' }));
+    rawMock.mockRejectedValue(new Error('git fail'));
+    execaMock.mockRejectedValue(new Error('git fail'));
     const out = await checkShaReachability('/repo', ['aaa', 'bbb']);
     expect(out.size).toBe(0);
   });
 
   it('treats per-sha containment failure as unreachable', async () => {
-    execaMock.mockImplementation((_cmd, args: string[]) => {
-      const a = args.slice(2);
-      if (a.includes('--count=1') && !a.includes('--contains')) {
-        return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+    rawMock.mockImplementation((args: string[]) => {
+      if (args.includes('--count=1') && !args.includes('--contains')) {
+        return Promise.resolve('refs/remotes/origin/main\n');
       }
-      throw Object.assign(new Error('bad rev'), { stderr: '' });
+      throw new Error('bad rev');
     });
     const out = await checkShaReachability('/repo', ['aaa']);
     expect(out.size).toBe(0);

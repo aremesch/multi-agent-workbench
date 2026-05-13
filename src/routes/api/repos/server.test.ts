@@ -7,7 +7,8 @@ const cloneIntoMock = vi.fn();
 const ensureDefaultBranchMock = vi.fn();
 const initEmptyMock = vi.fn();
 const resolveGitIdentityMock = vi.fn();
-const execaMock = vi.fn();
+const revparseMock = vi.fn();
+const getGitMock = vi.fn();
 
 const existsSyncMock = vi.fn();
 const readdirSyncMock = vi.fn();
@@ -49,8 +50,8 @@ vi.mock('$lib/server/user/gitIdentity', () => ({
   resolveGitIdentity: (...args: unknown[]) => resolveGitIdentityMock(...args)
 }));
 
-vi.mock('execa', () => ({
-  execa: (...args: unknown[]) => execaMock(...args)
+vi.mock('$lib/server/git/client', () => ({
+  getGit: (cwd?: string) => getGitMock(cwd)
 }));
 
 vi.mock('node:fs', () => ({
@@ -102,7 +103,9 @@ beforeEach(() => {
   initEmptyMock.mockReset();
   resolveGitIdentityMock.mockReset();
   resolveGitIdentityMock.mockReturnValue({ name: 'Alice', email: 'a@x' });
-  execaMock.mockReset();
+  revparseMock.mockReset();
+  getGitMock.mockReset();
+  getGitMock.mockReturnValue({ revparse: revparseMock });
   existsSyncMock.mockReset();
   readdirSyncMock.mockReset();
   statSyncMock.mockReset();
@@ -312,20 +315,20 @@ describe('POST /api/repos — non-empty directory branch', () => {
   });
 
   it('400 when non-empty dir is not a git repo', async () => {
-    execaMock.mockRejectedValue(new Error('not a git repo'));
+    revparseMock.mockRejectedValue(new Error('not a git repo'));
     const res = await call({ body: { path: '/dir' } });
     expect(res.status).toBe(400);
   });
 
   it('400 when ensureDefaultBranch returns no_master on existing repo', async () => {
-    execaMock.mockResolvedValue({ stdout: '.git' });
+    revparseMock.mockResolvedValue('.git');
     ensureDefaultBranchMock.mockResolvedValue({ kind: 'no_master', current: null });
     const res = await call({ body: { path: '/dir' } });
     expect(res.status).toBe(400);
   });
 
   it('200 happy path on existing repo', async () => {
-    execaMock.mockResolvedValue({ stdout: '.git' });
+    revparseMock.mockResolvedValue('.git');
     ensureDefaultBranchMock.mockResolvedValue({ kind: 'ok' });
     const res = await call({ body: { path: '/dir' } });
     expect(res.status).toBe(200);

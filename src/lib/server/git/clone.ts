@@ -12,7 +12,7 @@
  * is forced so a missing credential fails cleanly instead of hanging.
  */
 
-import { execa } from 'execa';
+import { getGit } from './client.js';
 
 export type CloneErrorCode = 'invalid_url' | 'auth_failed' | 'clone_failed';
 
@@ -72,28 +72,30 @@ export async function cloneInto(
   }
   const timeout = opts.timeoutMs ?? 120_000;
 
+  const git = getGit(undefined, {
+    timeout: { block: timeout }
+  });
+
   try {
-    await execa('git', ['clone', '--', url, path], {
-      timeout,
-      env: {
-        // Fail-fast when HTTPS needs a credential we don't have — don't
-        // hang on an interactive prompt.
-        GIT_TERMINAL_PROMPT: '0',
-        // Likewise: no ssh password prompt.
-        GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new'
-      }
-    });
+    await git.env({
+      ...process.env,
+      // Fail-fast when HTTPS needs a credential we don't have — don't
+      // hang on an interactive prompt.
+      GIT_TERMINAL_PROMPT: '0',
+      // Likewise: no ssh password prompt.
+      GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new'
+    }).clone(url, path, ['--']);
   } catch (err) {
-    const e = err as { stderr?: string; stdout?: string; message: string };
-    const blob = `${e.stderr ?? ''}\n${e.stdout ?? ''}\n${e.message}`.toLowerCase();
+    const e = err as { message: string };
+    const blob = e.message.toLowerCase();
     if (
       blob.includes('permission denied') ||
       blob.includes('authentication failed') ||
       blob.includes('could not read username') ||
       blob.includes('host key verification failed')
     ) {
-      throw new CloneError('auth_failed', (e.stderr || e.message).trim());
+      throw new CloneError('auth_failed', e.message.trim());
     }
-    throw new CloneError('clone_failed', (e.stderr || e.message).trim());
+    throw new CloneError('clone_failed', e.message.trim());
   }
 }

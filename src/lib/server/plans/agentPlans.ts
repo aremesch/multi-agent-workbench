@@ -32,12 +32,12 @@
  * combo is the standard cure.
  */
 
-import { execa } from 'execa';
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, sep, basename, isAbsolute } from 'node:path';
 import { marked } from 'marked';
 import DOMPurify from 'isomorphic-dompurify';
+import { getGit } from '$lib/server/git/client';
 
 export type PlanSource = 'local' | 'global';
 
@@ -231,36 +231,29 @@ async function touchedFiles(
 ): Promise<Set<string> | null> {
   if (!baseSha) return null;
 
+  const git = getGit(worktreePath);
+
   // Fast guard: if base_sha doesn't resolve to a commit, the diff would
   // throw — short-circuit to "show all".
   try {
-    await execa('git', [
-      '-C',
-      worktreePath,
-      'rev-parse',
-      '--verify',
-      `${baseSha}^{commit}`
-    ]);
+    await git.revparse(['--verify', `${baseSha}^{commit}`]);
   } catch {
     return null;
   }
 
   const touched = new Set<string>();
 
-  // Committed changes since baseSha. -z + null-separated for safety.
+  // Committed changes since baseSha. simple-git owns the parsing — just
+  // newline-split the --name-only output and basename each.
   try {
-    const { stdout } = await execa('git', [
-      '-C',
-      worktreePath,
-      'diff',
+    const stdout = await git.diff([
       '--name-only',
       '--diff-filter=AM',
-      '-z',
       `${baseSha}..HEAD`,
       '--',
       plansDir
     ]);
-    for (const path of stdout.split(' ')) {
+    for (const path of stdout.split('\n')) {
       if (!path) continue;
       const name = basename(path);
       if (SAFE_FILENAME_RE.test(name)) touched.add(name);
@@ -270,28 +263,13 @@ async function touchedFiles(
     return null;
   }
 
-  // Plus uncommitted (staged + unstaged) changes. `git status --porcelain
-  // -z` is the most robust way to read this regardless of whether files
-  // are staged.
+  // Plus uncommitted (staged + unstaged) changes. simple-git's status()
+  // returns structured FileStatusResult[] — no manual porcelain parsing,
+  // no NUL handling, just paths.
   try {
-    const { stdout } = await execa('git', [
-      '-C',
-      worktreePath,
-      'status',
-      '--porcelain',
-      '-z',
-      '--',
-      plansDir
-    ]);
-    // Each entry is `XY <path>\0` where X = index status, Y = worktree.
-    // Renames are `XY <newpath>\0<oldpath>\0`, but for our purposes we
-    // only care about the new path so the simple split is fine.
-    const parts = stdout.split(' ').filter((p) => p.length > 0);
-    for (const entry of parts) {
-      // Drop the two-char status + space.
-      const path = entry.slice(3);
-      if (!path) continue;
-      const name = basename(path);
+    const result = await git.status([plansDir]);
+    for (const entry of result.files) {
+      const name = basename(entry.path);
       if (SAFE_FILENAME_RE.test(name)) touched.add(name);
     }
   } catch {

@@ -1,13 +1,13 @@
 /**
- * Git worktree management via `execa`. Per plan, we shell out rather than
- * using a git library because worktree/dirty-state/edge cases are easier to
- * debug at the CLI level.
+ * Git worktree management via `simple-git`. Worktree subcommands go through
+ * `.raw(['worktree', ...])` (simple-git has no first-class worktree API);
+ * everything else (status, revparse, init, commit) uses the structured API.
  */
 
-import { execa } from 'execa';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GitIdentity } from '../user/gitIdentity.js';
+import { getGit } from './client.js';
 
 export interface WorktreeEntry {
   path: string;
@@ -37,7 +37,7 @@ export class WorktreeManager {
 
   /** `git worktree list --porcelain` parsed into structured entries. */
   static async list(repoPath: string): Promise<WorktreeEntry[]> {
-    const { stdout } = await execa('git', ['-C', repoPath, 'worktree', 'list', '--porcelain']);
+    const stdout = await getGit(repoPath).raw(['worktree', 'list', '--porcelain']);
     const blocks = stdout.split('\n\n').filter((b) => b.trim());
     return blocks.map((block) => {
       const entry: WorktreeEntry = { path: '', branch: null, head: null, bare: false, detached: false };
@@ -78,25 +78,11 @@ export class WorktreeManager {
       throw new Error(`worktree path already exists: ${wtPath}`);
     }
     const start = opts.startPoint ?? 'HEAD';
-    await execa('git', [
-      '-C',
-      opts.repoPath,
-      'worktree',
-      'add',
-      '-B',
-      opts.branch,
-      wtPath,
-      start
-    ]);
+    const git = getGit(opts.repoPath);
+    await git.raw(['worktree', 'add', '-B', opts.branch, wtPath, start]);
     let baseSha: string | null = null;
     try {
-      const { stdout } = await execa('git', [
-        '-C',
-        opts.repoPath,
-        'rev-parse',
-        '--verify',
-        `${start}^{commit}`
-      ]);
+      const stdout = await git.revparse(['--verify', `${start}^{commit}`]);
       baseSha = stdout.trim() || null;
     } catch {
       baseSha = null;
@@ -110,22 +96,22 @@ export class WorktreeManager {
    * policy deferred until v0.2 per plan §Open risks #7).
    */
   async remove(opts: { repoPath: string; wtPath: string; force?: boolean }): Promise<void> {
-    const args = ['-C', opts.repoPath, 'worktree', 'remove'];
+    const args = ['worktree', 'remove'];
     if (opts.force) args.push('--force');
     args.push(opts.wtPath);
-    await execa('git', args);
+    await getGit(opts.repoPath).raw(args);
   }
 
   /** `git worktree prune` — cleans up stale admin files after manual dir removal. */
   static async prune(repoPath: string): Promise<void> {
-    await execa('git', ['-C', repoPath, 'worktree', 'prune']);
+    await getGit(repoPath).raw(['worktree', 'prune']);
   }
 
   /** Dirty check: `true` if the worktree has uncommitted changes. */
   static async isDirty(wtPath: string): Promise<boolean> {
     try {
-      const { stdout } = await execa('git', ['-C', wtPath, 'status', '--porcelain']);
-      return stdout.trim().length > 0;
+      const result = await getGit(wtPath).status();
+      return result.files.length > 0;
     } catch {
       return false;
     }
@@ -144,11 +130,10 @@ export class WorktreeManager {
    * the logged-in user's resolved git identity.
    */
   static async initEmpty(dir: string, desired: string, identity: GitIdentity): Promise<void> {
-    await execa('git', ['-C', dir, 'init', '-b', desired]);
-    await execa('git', [
+    const git = getGit(dir);
+    await git.raw(['init', '-b', desired]);
+    await git.raw([
       ...commitIdentityFlags(identity),
-      '-C',
-      dir,
       'commit',
       '--allow-empty',
       '-m',
@@ -189,9 +174,10 @@ export class WorktreeManager {
     | { kind: 'seeded' }
     | { kind: 'no_master'; current: string | null }
   > {
+    const git = getGit(repoPath);
     const gitExits = async (args: string[]): Promise<boolean> => {
       try {
-        await execa('git', ['-C', repoPath, ...args]);
+        await git.raw(args);
         return true;
       } catch {
         return false;
@@ -206,17 +192,9 @@ export class WorktreeManager {
     // 2. Does the repo have any commits at all? If not, it's unborn — we
     //    re-point HEAD at the desired branch and seed an initial empty commit.
     if (!(await gitExits(['rev-parse', '--verify', 'HEAD']))) {
-      await execa('git', [
-        '-C',
-        repoPath,
-        'symbolic-ref',
-        'HEAD',
-        `refs/heads/${desired}`
-      ]);
-      await execa('git', [
+      await git.raw(['symbolic-ref', 'HEAD', `refs/heads/${desired}`]);
+      await git.raw([
         ...commitIdentityFlags(identity),
-        '-C',
-        repoPath,
         'commit',
         '--allow-empty',
         '-m',
@@ -229,7 +207,7 @@ export class WorktreeManager {
     //    `git branch -m master <desired>` works even when a different branch
     //    is currently checked out.
     if (await gitExits(['rev-parse', '--verify', 'refs/heads/master'])) {
-      await execa('git', ['-C', repoPath, 'branch', '-m', 'master', desired]);
+      await git.raw(['branch', '-m', 'master', desired]);
       return { kind: 'renamed', from: 'master' };
     }
 
@@ -238,13 +216,7 @@ export class WorktreeManager {
     //    branch so the caller can craft a useful error message.
     let current: string | null = null;
     try {
-      const { stdout } = await execa('git', [
-        '-C',
-        repoPath,
-        'symbolic-ref',
-        '--short',
-        'HEAD'
-      ]);
+      const stdout = await git.raw(['symbolic-ref', '--short', 'HEAD']);
       current = stdout.trim() || null;
     } catch {
       current = null;

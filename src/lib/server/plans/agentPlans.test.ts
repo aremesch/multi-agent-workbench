@@ -1,21 +1,25 @@
 /**
  * Unit tests for the plan-discovery + render helpers.
  *
- * Strategy: mock `execa` so git invocations are scripted, mock
- * `node:fs/promises` so the readFile/readdir/stat/realpath calls are
- * scripted too, and mock `node:os.homedir` so the global plans dir is
- * deterministic (`/home/test/.claude/plans`). Lets us exercise the
+ * Strategy: mock the simple-git client factory so git invocations are
+ * scripted, mock `node:fs/promises` so the readFile/readdir/stat/realpath
+ * calls are scripted too, and mock `node:os.homedir` so the global plans
+ * dir is deterministic (`/home/test/.claude/plans`). Lets us exercise the
  * diff-vs-fallback fork, the local+global merge, settings.json
  * resolution, the realpath/symlink TOCTOU defence and the markdown
  * render+sanitize pipeline without touching disk.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SimpleGit } from 'simple-git';
 
-// Mock execa BEFORE importing the SUT.
-const execaMock = vi.fn();
-vi.mock('execa', () => ({
-  execa: (cmd: string, args: string[], opts?: unknown) => execaMock(cmd, args, opts)
+// Mock the simple-git client BEFORE importing the SUT.
+const revparseMock = vi.fn();
+const diffMock = vi.fn();
+const statusMock = vi.fn();
+const getGitMock = vi.fn();
+vi.mock('$lib/server/git/client', () => ({
+  getGit: (cwd?: string) => getGitMock(cwd)
 }));
 
 // Mock node:fs/promises with per-test settings.
@@ -50,7 +54,15 @@ const AGENT_CREATED_MS = 10_000_000;
 const GLOBAL_MTIME_SKEW_MS = 60_000;
 
 beforeEach(() => {
-  execaMock.mockReset();
+  revparseMock.mockReset();
+  diffMock.mockReset();
+  statusMock.mockReset();
+  getGitMock.mockReset();
+  getGitMock.mockReturnValue({
+    revparse: revparseMock,
+    diff: diffMock,
+    status: statusMock
+  } as unknown as SimpleGit);
   readFileMock.mockReset();
   readdirMock.mockReset();
   statMock.mockReset();
@@ -169,17 +181,20 @@ describe('listAgentPlans (local-only behaviour preserved)', () => {
     expect(out[0]!.source).toBe('local');
     expect(out[0]!.modifiedMs).toBe(2000);
     expect(out[0]!.sizeBytes).toBe(50);
-    expect(execaMock).not.toHaveBeenCalled();
+    expect(getGitMock).not.toHaveBeenCalled();
   });
 
   it('falls back to ALL local .md when base_sha does not resolve', async () => {
     scriptDirs(['a.md'], []);
     statMock.mockResolvedValue(fakeStat(1000, 10));
-    execaMock.mockRejectedValue(new Error('unknown revision'));
+    revparseMock.mockRejectedValue(new Error('unknown revision'));
     const out = await listAgentPlans('/wt', 'docs/plans', 'deadbeef', AGENT_CREATED_MS);
     expect(out.map((s) => s.name)).toEqual(['a.md']);
     expect(out[0]!.source).toBe('local');
-    expect(execaMock.mock.calls.length).toBe(1);
+    // After the rev-parse failure, we shouldn't have called diff or status.
+    expect(revparseMock).toHaveBeenCalledTimes(1);
+    expect(diffMock).not.toHaveBeenCalled();
+    expect(statusMock).not.toHaveBeenCalled();
   });
 
   it('filters local by git diff + status when base_sha resolves', async () => {
@@ -189,19 +204,30 @@ describe('listAgentPlans (local-only behaviour preserved)', () => {
       if (p.endsWith('staged.md')) return Promise.resolve(fakeStat(2000, 2));
       return Promise.resolve(fakeStat(1000, 3));
     });
-    execaMock.mockImplementation(async (_cmd: string, args: string[]) => {
-      if (args.includes('rev-parse')) return { stdout: 'BASE\n', stderr: '' };
-      if (args.includes('diff')) {
-        return { stdout: 'docs/plans/kept.md ', stderr: '' };
-      }
-      if (args.includes('status')) {
-        return { stdout: '?? docs/plans/staged.md ', stderr: '' };
-      }
-      return { stdout: '', stderr: '' };
+    revparseMock.mockResolvedValue('BASE\n');
+    // Committed change to kept.md — newline-separated diff --name-only output.
+    diffMock.mockResolvedValue('docs/plans/kept.md\n');
+    // Uncommitted addition of staged.md — structured status response.
+    statusMock.mockResolvedValue({
+      files: [{ path: 'docs/plans/staged.md', index: '?', working_dir: '?' }]
     });
     const out = await listAgentPlans('/wt', 'docs/plans', 'BASE', AGENT_CREATED_MS);
     expect(out.map((s) => s.name)).toEqual(['kept.md', 'staged.md']);
     expect(out.every((s) => s.source === 'local')).toBe(true);
+  });
+
+  it('handles multi-file diff output (regression guard for separator bugs)', async () => {
+    scriptDirs(['one.md', 'two.md', 'unchanged.md'], []);
+    statMock.mockImplementation((p: string) => {
+      if (p.endsWith('one.md')) return Promise.resolve(fakeStat(3000, 1));
+      if (p.endsWith('two.md')) return Promise.resolve(fakeStat(2000, 1));
+      return Promise.resolve(fakeStat(1000, 1));
+    });
+    revparseMock.mockResolvedValue('BASE\n');
+    diffMock.mockResolvedValue('docs/plans/one.md\ndocs/plans/two.md\n');
+    statusMock.mockResolvedValue({ files: [] });
+    const out = await listAgentPlans('/wt', 'docs/plans', 'BASE', AGENT_CREATED_MS);
+    expect(out.map((s) => s.name).sort()).toEqual(['one.md', 'two.md']);
   });
 
   it('skips files that vanish between readdir and stat', async () => {
