@@ -21,7 +21,11 @@ vi.mock('$lib/server/db/queries', () => ({
 vi.mock('$lib/server/plans/agentPlans', () => ({
   resolvePlansDir: (p: string) => resolvePlansDirMock(p),
   listAgentPlans: (...args: unknown[]) => listAgentPlansMock(...args),
-  renderAgentPlan: (...args: unknown[]) => renderAgentPlanMock(...args)
+  renderAgentPlan: (...args: unknown[]) => renderAgentPlanMock(...args),
+  // displayDir is a pure helper — give it a real implementation so the
+  // route's response shape is correct without coupling to internals.
+  displayDir: (source: 'local' | 'global', plansDir: string) =>
+    source === 'global' ? '~/.claude/plans' : plansDir
 }));
 
 import { GET } from './+server.js';
@@ -30,6 +34,7 @@ interface CallOpts {
   agentId?: string;
   user?: { id: string } | null;
   fileParam?: string | null;
+  sourceParam?: string | null;
 }
 
 async function call(opts: CallOpts = {}): Promise<Response> {
@@ -37,6 +42,9 @@ async function call(opts: CallOpts = {}): Promise<Response> {
   const url = new URL(`http://localhost/api/agents/${id}/plan`);
   if (opts.fileParam !== undefined && opts.fileParam !== null) {
     url.searchParams.set('file', opts.fileParam);
+  }
+  if (opts.sourceParam !== undefined && opts.sourceParam !== null) {
+    url.searchParams.set('source', opts.sourceParam);
   }
   const event = {
     locals: { user: opts.user === undefined ? { id: 'user-1' } : opts.user },
@@ -107,7 +115,8 @@ describe('GET /api/agents/:id/plan — list mode', () => {
       id: 'agent-1',
       user_id: 'user-1',
       worktree_id: 'wt-1',
-      base_sha: 'BASE123'
+      base_sha: 'BASE123',
+      created_at: 5_000_000
     });
     getWorktreeMock.mockReturnValue({ id: 'wt-1', path: '/wt' });
     resolvePlansDirMock.mockResolvedValue('docs/plans');
@@ -118,26 +127,38 @@ describe('GET /api/agents/:id/plan — list mode', () => {
     const res = await call();
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ dir: 'docs/plans', files: [] });
+    expect(body).toEqual({
+      dir: 'docs/plans',
+      globalDir: '~/.claude/plans',
+      files: []
+    });
   });
 
   it('returns the file list when plans exist', async () => {
     listAgentPlansMock.mockResolvedValue([
-      { name: 'v0.2-x.md', modifiedMs: 2000, sizeBytes: 50 },
-      { name: 'v0.1-y.md', modifiedMs: 1000, sizeBytes: 30 }
+      { name: 'v0.2-x.md', modifiedMs: 2000, sizeBytes: 50, source: 'local' },
+      { name: 'v0.1-y.md', modifiedMs: 1000, sizeBytes: 30, source: 'global' }
     ]);
     const res = await call();
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.dir).toBe('docs/plans');
+    expect(body.globalDir).toBe('~/.claude/plans');
     expect(body.files).toHaveLength(2);
     expect(body.files[0].name).toBe('v0.2-x.md');
+    expect(body.files[0].source).toBe('local');
+    expect(body.files[1].source).toBe('global');
   });
 
-  it('forwards base_sha into listAgentPlans', async () => {
+  it('forwards base_sha and created_at into listAgentPlans', async () => {
     listAgentPlansMock.mockResolvedValue([]);
     await call();
-    expect(listAgentPlansMock).toHaveBeenCalledWith('/wt', 'docs/plans', 'BASE123');
+    expect(listAgentPlansMock).toHaveBeenCalledWith(
+      '/wt',
+      'docs/plans',
+      'BASE123',
+      5_000_000
+    );
   });
 
   it('passes null base_sha through unchanged', async () => {
@@ -145,11 +166,17 @@ describe('GET /api/agents/:id/plan — list mode', () => {
       id: 'agent-1',
       user_id: 'user-1',
       worktree_id: 'wt-1',
-      base_sha: null
+      base_sha: null,
+      created_at: 5_000_000
     });
     listAgentPlansMock.mockResolvedValue([]);
     await call();
-    expect(listAgentPlansMock).toHaveBeenCalledWith('/wt', 'docs/plans', null);
+    expect(listAgentPlansMock).toHaveBeenCalledWith(
+      '/wt',
+      'docs/plans',
+      null,
+      5_000_000
+    );
   });
 });
 
@@ -159,18 +186,42 @@ describe('GET /api/agents/:id/plan?file=<name> — render mode', () => {
       id: 'agent-1',
       user_id: 'user-1',
       worktree_id: 'wt-1',
-      base_sha: null
+      base_sha: null,
+      created_at: 5_000_000
     });
     getWorktreeMock.mockReturnValue({ id: 'wt-1', path: '/wt' });
     resolvePlansDirMock.mockResolvedValue('docs/plans');
   });
 
-  it('returns the rendered HTML', async () => {
+  it('returns the rendered HTML and defaults source=local', async () => {
     renderAgentPlanMock.mockResolvedValue({ name: 'plan.md', html: '<h1>x</h1>' });
     const res = await call({ fileParam: 'plan.md' });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ name: 'plan.md', html: '<h1>x</h1>' });
+    expect(renderAgentPlanMock).toHaveBeenCalledWith(
+      '/wt',
+      'docs/plans',
+      'plan.md',
+      'local'
+    );
+  });
+
+  it('renders from ~/.claude/plans when source=global', async () => {
+    renderAgentPlanMock.mockResolvedValue({ name: 'g.md', html: '<p>g</p>' });
+    const res = await call({ fileParam: 'g.md', sourceParam: 'global' });
+    expect(res.status).toBe(200);
+    // For global renders the route doesn't bother reading .claude/settings.json.
+    expect(resolvePlansDirMock).not.toHaveBeenCalled();
+    expect(renderAgentPlanMock).toHaveBeenCalledWith('/wt', '', 'g.md', 'global');
+  });
+
+  it('returns 400 invalid_source when source is anything else', async () => {
+    const res = await call({ fileParam: 'plan.md', sourceParam: 'bogus' });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('invalid_source');
+    expect(renderAgentPlanMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 when the filename fails the safety regex', async () => {

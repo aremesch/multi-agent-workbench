@@ -392,11 +392,12 @@ const en = {
   'plan.modal.titleEmpty': 'Plan',
   'plan.modal.titleError': 'Plan',
   'plan.modal.titleLoading': 'Plan',
-  'plan.modal.empty': 'No plan files found in {dir}',
+  'plan.modal.empty': 'No plan files found in {dir} or {globalDir}',
   'plan.modal.switcherLabel': 'Switch plan',
   'plan.modal.loading': 'Loading plan…',
   'plan.modal.error': 'Failed to load plan: {error}',
   'plan.modal.retry': 'Retry',
+  'plan.modal.sourceGlobal': 'global',
 
   // ── Agent log modal title (running-agent variant) ────────────────
   'agent.logTitle': 'Log: {name}',

@@ -357,11 +357,12 @@ const es: Partial<Record<TranslationKey, string>> = {
   'plan.modal.titleEmpty': 'Plan',
   'plan.modal.titleError': 'Plan',
   'plan.modal.titleLoading': 'Plan',
-  'plan.modal.empty': 'No se encontraron archivos de plan en {dir}',
+  'plan.modal.empty': 'No se encontraron archivos de plan en {dir} ni en {globalDir}',
   'plan.modal.switcherLabel': 'Cambiar plan',
   'plan.modal.loading': 'Cargando plan…',
   'plan.modal.error': 'Error al cargar el plan: {error}',
   'plan.modal.retry': 'Reintentar',
+  'plan.modal.sourceGlobal': 'global',
 
   // ── Agent log modal title ────────────────────────────────────────
   'agent.logTitle': 'Log: {name}',

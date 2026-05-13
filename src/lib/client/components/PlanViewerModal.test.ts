@@ -38,13 +38,16 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 }
 
 describe('PlanViewerModal — empty state', () => {
-  it('renders the empty message when the API returns no files', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ dir: 'docs/plans', files: [] }));
+  it('renders the empty message with both dirs when the API returns no files', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ dir: 'docs/plans', globalDir: '~/.claude/plans', files: [] })
+    );
     const { findByText, container } = render(PlanViewerModal, {
       props: { open: true, agentId: 'agent-1', onClose: vi.fn() }
     });
-    // Mock translator emits "<key> {dir=docs/plans}" — assert the dir flowed through.
+    // Mock translator emits "<key> {dir=docs/plans,globalDir=~/.claude/plans}".
     expect(await findByText(/dir=docs\/plans/)).toBeInTheDocument();
+    expect(await findByText(/globalDir=~\/.claude\/plans/)).toBeInTheDocument();
     expect(container.querySelector('.empty')).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]![0]).toContain('/api/agents/agent-1/plan');
@@ -57,7 +60,8 @@ describe('PlanViewerModal — single file auto-load', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           dir: 'docs/plans',
-          files: [{ name: 'v0.2.md', modifiedMs: 1000, sizeBytes: 10 }]
+          globalDir: '~/.claude/plans',
+          files: [{ name: 'v0.2.md', modifiedMs: 1000, sizeBytes: 10, source: 'local' }]
         })
       )
       .mockResolvedValueOnce(jsonResponse({ name: 'v0.2.md', html: '<h1>Hello</h1>' }));
@@ -68,21 +72,44 @@ describe('PlanViewerModal — single file auto-load', () => {
     expect(await findByText('Hello')).toBeInTheDocument();
     expect(container.querySelector('.markdown-body')?.innerHTML).toContain('<h1>Hello</h1>');
 
-    // Two fetches: list, then ?file=
+    // Two fetches: list, then ?file=&source=
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1]![0]).toContain('file=v0.2.md');
+    const renderUrl = fetchMock.mock.calls[1]![0] as string;
+    expect(renderUrl).toContain('file=v0.2.md');
+    expect(renderUrl).toContain('source=local');
   });
-});
 
-describe('PlanViewerModal — multi-file switcher', () => {
-  it('shows a select switcher when multiple plans exist', async () => {
+  it('passes source=global through to the render fetch when a global plan auto-loads', async () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
           dir: 'docs/plans',
+          globalDir: '~/.claude/plans',
+          files: [{ name: 'g.md', modifiedMs: 9000, sizeBytes: 10, source: 'global' }]
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ name: 'g.md', html: '<p>g</p>' }));
+
+    render(PlanViewerModal, {
+      props: { open: true, agentId: 'agent-1', onClose: vi.fn() }
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const renderUrl = fetchMock.mock.calls[1]![0] as string;
+    expect(renderUrl).toContain('file=g.md');
+    expect(renderUrl).toContain('source=global');
+  });
+});
+
+describe('PlanViewerModal — multi-file switcher', () => {
+  it('shows a switcher with source-tagged option values when multiple plans exist', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          dir: 'docs/plans',
+          globalDir: '~/.claude/plans',
           files: [
-            { name: 'v0.2.md', modifiedMs: 2000, sizeBytes: 10 },
-            { name: 'v0.1.md', modifiedMs: 1000, sizeBytes: 10 }
+            { name: 'v0.2.md', modifiedMs: 2000, sizeBytes: 10, source: 'local' },
+            { name: 'v0.1.md', modifiedMs: 1000, sizeBytes: 10, source: 'global' }
           ]
         })
       )
@@ -96,7 +123,12 @@ describe('PlanViewerModal — multi-file switcher', () => {
     });
     const select = container.querySelector('.switcher select') as HTMLSelectElement;
     expect(select.options.length).toBe(2);
-    expect(select.value).toBe('v0.2.md');
+    // Option values encode `${source}/${name}` so duplicate basenames stay distinct.
+    expect(select.value).toBe('local/v0.2.md');
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      'local/v0.2.md',
+      'global/v0.1.md'
+    ]);
   });
 });
 

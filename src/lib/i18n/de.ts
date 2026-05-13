@@ -353,11 +353,12 @@ const de: Partial<Record<TranslationKey, string>> = {
   'plan.modal.titleEmpty': 'Plan',
   'plan.modal.titleError': 'Plan',
   'plan.modal.titleLoading': 'Plan',
-  'plan.modal.empty': 'Keine Plandateien in {dir} gefunden',
+  'plan.modal.empty': 'Keine Plandateien in {dir} oder {globalDir} gefunden',
   'plan.modal.switcherLabel': 'Plan wechseln',
   'plan.modal.loading': 'Plan wird geladen…',
   'plan.modal.error': 'Plan konnte nicht geladen werden: {error}',
   'plan.modal.retry': 'Erneut versuchen',
+  'plan.modal.sourceGlobal': 'global',
 
   // ── Agent log modal title (running-agent variant) ────────────────
   'agent.logTitle': 'Log: {name}',

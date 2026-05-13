@@ -357,11 +357,12 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'plan.modal.titleEmpty': 'Plan',
   'plan.modal.titleError': 'Plan',
   'plan.modal.titleLoading': 'Plan',
-  'plan.modal.empty': 'Aucun fichier de plan trouv\u00e9 dans {dir}',
+  'plan.modal.empty': 'Aucun fichier de plan trouv\u00e9 dans {dir} ni dans {globalDir}',
   'plan.modal.switcherLabel': 'Changer de plan',
   'plan.modal.loading': 'Chargement du plan\u2026',
   'plan.modal.error': 'Impossible de charger le plan\u00a0: {error}',
   'plan.modal.retry': 'R\u00e9essayer',
+  'plan.modal.sourceGlobal': 'global',
 
   // \u2500\u2500 Agent log modal title \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   'agent.logTitle': 'Journal\u00a0: {name}',

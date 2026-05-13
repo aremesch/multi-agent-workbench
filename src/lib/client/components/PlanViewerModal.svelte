@@ -28,11 +28,25 @@
     onClose: () => void;
   } = $props();
 
-  type FileSummary = { name: string; modifiedMs: number; sizeBytes: number };
+  type PlanSource = 'local' | 'global';
+  type FileSummary = {
+    name: string;
+    modifiedMs: number;
+    sizeBytes: number;
+    source: PlanSource;
+  };
   type State =
     | { kind: 'loading' }
-    | { kind: 'empty'; dir: string }
-    | { kind: 'viewing'; current: string; html: string; files: FileSummary[]; dir: string }
+    | { kind: 'empty'; dir: string; globalDir: string }
+    | {
+        kind: 'viewing';
+        current: string;
+        currentSource: PlanSource;
+        html: string;
+        files: FileSummary[];
+        dir: string;
+        globalDir: string;
+      }
     | { kind: 'error'; message: string };
 
   let view: State = $state({ kind: 'loading' });
@@ -55,13 +69,18 @@
     try {
       const res = await fetch(`/api/agents/${encodeURIComponent(id)}/plan`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { dir: string; files: FileSummary[] };
+      const body = (await res.json()) as {
+        dir: string;
+        globalDir: string;
+        files: FileSummary[];
+      };
       if (body.files.length === 0) {
-        view = { kind: 'empty', dir: body.dir };
+        view = { kind: 'empty', dir: body.dir, globalDir: body.globalDir };
         return;
       }
       // Auto-pick the most recently modified plan and render it.
-      await loadFile(id, body.files[0]!.name, body.files, body.dir);
+      const first = body.files[0]!;
+      await loadFile(id, first, body.files, body.dir, body.globalDir);
     } catch (err) {
       view = { kind: 'error', message: err instanceof Error ? err.message : String(err) };
     }
@@ -69,18 +88,29 @@
 
   async function loadFile(
     id: string,
-    name: string,
+    file: FileSummary,
     files: FileSummary[],
-    dir: string
+    dir: string,
+    globalDir: string
   ): Promise<void> {
     view = { kind: 'loading' };
     try {
       const res = await fetch(
-        `/api/agents/${encodeURIComponent(id)}/plan?file=${encodeURIComponent(name)}`
+        `/api/agents/${encodeURIComponent(id)}/plan` +
+          `?file=${encodeURIComponent(file.name)}` +
+          `&source=${encodeURIComponent(file.source)}`
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { name: string; html: string };
-      view = { kind: 'viewing', current: body.name, html: body.html, files, dir };
+      view = {
+        kind: 'viewing',
+        current: body.name,
+        currentSource: file.source,
+        html: body.html,
+        files,
+        dir,
+        globalDir
+      };
     } catch (err) {
       view = { kind: 'error', message: err instanceof Error ? err.message : String(err) };
     }
@@ -89,9 +119,20 @@
   function onSwitcherChange(ev: Event): void {
     if (view.kind !== 'viewing' || !agentId) return;
     const target = ev.target as HTMLSelectElement;
-    const next = target.value;
-    if (!next || next === view.current) return;
-    void loadFile(agentId, next, view.files, view.dir);
+    const nextValue = target.value;
+    if (!nextValue) return;
+    // Switcher option values encode `source/name` so source-tagged
+    // duplicates with the same basename remain distinguishable.
+    const sep = nextValue.indexOf('/');
+    if (sep < 0) return;
+    const nextSource = nextValue.slice(0, sep) as PlanSource;
+    const nextName = nextValue.slice(sep + 1);
+    if (nextName === view.current && nextSource === view.currentSource) return;
+    const file = view.files.find(
+      (f) => f.name === nextName && f.source === nextSource
+    );
+    if (!file) return;
+    void loadFile(agentId, file, view.files, view.dir, view.globalDir);
   }
 
   function retry(): void {
@@ -101,7 +142,13 @@
   }
 
   function modalTitle(v: State): string {
-    if (v.kind === 'viewing') return t('plan.modal.title', { name: v.current });
+    if (v.kind === 'viewing') {
+      const name =
+        v.currentSource === 'global'
+          ? `${v.current} · ${t('plan.modal.sourceGlobal')}`
+          : v.current;
+      return t('plan.modal.title', { name });
+    }
     if (v.kind === 'empty') return t('plan.modal.titleEmpty');
     if (v.kind === 'error') return t('plan.modal.titleError');
     return t('plan.modal.titleLoading');
@@ -110,14 +157,24 @@
   function fmtTime(ms: number): string {
     return new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
   }
+
+  function fileLabel(file: FileSummary): string {
+    const base = `${file.name} · ${fmtTime(file.modifiedMs)}`;
+    return file.source === 'global'
+      ? `${base} · ${t('plan.modal.sourceGlobal')}`
+      : base;
+  }
 </script>
 
 {#snippet headerSwitcher()}
   {#if view.kind === 'viewing' && view.files.length > 1}
     <label class="switcher" aria-label={t('plan.modal.switcherLabel')}>
-      <select value={view.current} onchange={onSwitcherChange}>
-        {#each view.files as file (file.name)}
-          <option value={file.name}>{file.name} · {fmtTime(file.modifiedMs)}</option>
+      <select
+        value={`${view.currentSource}/${view.current}`}
+        onchange={onSwitcherChange}
+      >
+        {#each view.files as file (`${file.source}/${file.name}`)}
+          <option value={`${file.source}/${file.name}`}>{fileLabel(file)}</option>
         {/each}
       </select>
     </label>
@@ -135,7 +192,7 @@
       <div class="status">{t('plan.modal.loading')}</div>
     {:else if view.kind === 'empty'}
       <div class="empty">
-        {t('plan.modal.empty', { dir: view.dir })}
+        {t('plan.modal.empty', { dir: view.dir, globalDir: view.globalDir })}
       </div>
     {:else if view.kind === 'error'}
       <div class="error">{t('plan.modal.error', { error: view.message })}</div>
