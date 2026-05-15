@@ -25,6 +25,8 @@
         activeRepos: SidebarRepoNode[];
         archivedRepos: SidebarRepoNode[];
         collapsed: boolean;
+        queueOpenTotal?: number;
+        queueOpenByRepo?: Record<string, number>;
       } | null;
       theme: ThemeId;
       locale: Locale;
@@ -254,6 +256,8 @@
         activeRepos={data.sidebar.activeRepos}
         archivedRepos={data.sidebar.archivedRepos}
         collapsed={sidebarCollapsed}
+        queueOpenTotal={data.sidebar.queueOpenTotal ?? 0}
+        queueOpenByRepo={data.sidebar.queueOpenByRepo ?? {}}
       />
     {/if}
     <section class="min-w-0 flex-1 overflow-y-auto p-4">

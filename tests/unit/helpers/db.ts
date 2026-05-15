@@ -44,6 +44,7 @@ export const TABLES_IN_TEARDOWN_ORDER = [
   'messages',
   'events',
   'terminal_log',
+  'queue_entries',
   'tasks',
   'agent_runs',
   'agents',

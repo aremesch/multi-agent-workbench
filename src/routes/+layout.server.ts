@@ -1,5 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 import {
+  countOpenQueueEntries,
+  countOpenQueueEntriesByRepo,
   getSpawnDefaultsAll,
   getUserSetting,
   listAgentCardsForUser,
@@ -92,12 +94,19 @@ export const load: LayoutServerLoad = async ({ locals }) => {
     cliKinds.map((k) => k.kind)
   );
 
+  const queueByRepo = new Map<string, number>();
+  for (const row of countOpenQueueEntriesByRepo(locals.user.id)) {
+    queueByRepo.set(row.repo_id, row.n);
+  }
+
   return {
     user: { id: locals.user.id, username: locals.user.username },
     sidebar: {
       activeRepos,
       archivedRepos: groupByRepo(archived),
-      collapsed: parseCollapsed(getUserSetting(locals.user.id, SIDEBAR_COLLAPSED_KEY))
+      collapsed: parseCollapsed(getUserSetting(locals.user.id, SIDEBAR_COLLAPSED_KEY)),
+      queueOpenTotal: countOpenQueueEntries(locals.user.id),
+      queueOpenByRepo: Object.fromEntries(queueByRepo)
     },
     theme: parseTheme(getUserSetting(locals.user.id, THEME_SETTING_KEY)),
     locale: (locals.locale ?? DEFAULT_LOCALE) as Locale,

@@ -394,7 +394,83 @@ const de: Partial<Record<TranslationKey, string>> = {
     'Diesen Agent stoppen und seine tmux-Sitzung schließen? Der CLI-Prozess wird beendet und nicht gespeicherter Speicherzustand geht verloren.',
   'exitAgent.confirm.cancel': 'Abbrechen',
   'exitAgent.confirm.confirm': 'Agent stoppen',
-  'exitAgent.error': 'Agent konnte nicht gestoppt werden: {error}'
+  'exitAgent.error': 'Agent konnte nicht gestoppt werden: {error}',
+
+  // ── Warteschlange + Scheduler (v0.3) ─────────────────────────────
+  'nav.queue': 'Warteschlange',
+  'sidebar.queue': 'Warteschlange',
+  'sidebar.queueBadge': '{n} offen',
+  'queue.title': 'Warteschlange',
+  'queue.subtitle':
+    'Agenten-Aufgaben vorbereiten — der Scheduler arbeitet sie nacheinander ab.',
+  'queue.empty': 'Noch keine Aufgaben in der Warteschlange.',
+  'queue.action.create': 'Neuer Eintrag',
+  'queue.action.addToQueue': 'Zur Warteschlange hinzufügen',
+  'queue.action.spawnNow': 'Jetzt starten',
+  'queue.action.runNow': 'Sofort ausführen',
+  'queue.action.cancel': 'Abbrechen',
+  'queue.action.edit': 'Bearbeiten',
+  'queue.action.delete': 'Löschen',
+  'queue.action.openAgent': 'Agent öffnen',
+  'queue.action.viewSourceIssue': 'Quell-Issue anzeigen',
+  'queue.action.reorderToggle': 'Sortieren',
+  'queue.action.reorderDone': 'Fertig',
+  'queue.section.running': 'Läuft jetzt',
+  'queue.section.ready': 'Bereit',
+  'queue.section.blocked': 'Blockiert',
+  'queue.section.scheduled': 'Geplant',
+  'queue.section.completed': 'Abgeschlossen',
+  'queue.column.title': 'Aufgabe',
+  'queue.column.repo': 'Repository',
+  'queue.column.role': 'Rolle',
+  'queue.column.model': 'Modell',
+  'queue.column.branch': 'Branch',
+  'queue.column.priority': 'Priorität',
+  'queue.column.scheduledFor': 'Geplant',
+  'queue.column.dependsOn': 'Abhängig von',
+  'queue.column.status': 'Status',
+  'queue.column.actions': 'Aktionen',
+  'queue.status.pending': 'Wartend',
+  'queue.status.blocked': 'Blockiert',
+  'queue.status.ready': 'Bereit',
+  'queue.status.running': 'Läuft',
+  'queue.status.done': 'Erledigt',
+  'queue.status.failed': 'Fehlgeschlagen',
+  'queue.status.cancelled': 'Abgebrochen',
+  'queue.field.priority': 'Priorität',
+  'queue.field.priorityHint':
+    'Höhere Zahlen laufen zuerst; bei Gleichstand entscheidet die Erstellungszeit.',
+  'queue.field.scheduledFor': 'Nicht vor',
+  'queue.field.scheduledForHint':
+    'Optional. Der Eintrag bleibt bis zu diesem Zeitpunkt blockiert.',
+  'queue.field.exclusive': 'Exklusiv für dieses Repository',
+  'queue.field.exclusiveHint':
+    'Solange dieser Eintrag läuft, läuft kein anderer Agent (Warteschlange oder manuell) auf diesem Repository.',
+  'queue.field.dependsOn': 'Abhängig von',
+  'queue.field.dependsOnHint':
+    'Dieser Eintrag bleibt blockiert, bis alle ausgewählten Einträge erfolgreich beendet sind.',
+  'queue.field.dependsOnEmpty':
+    'Noch keine anderen Warteschlangen-Einträge zum Verknüpfen vorhanden.',
+  'queue.confirmCancel.title': 'Warteschlangeneintrag abbrechen',
+  'queue.confirmCancel.body':
+    'Der Eintrag wird als abgebrochen markiert; sollte er gerade laufen, wird sein Agent gestoppt.',
+  'queue.confirmCancel.confirm': 'Eintrag abbrechen',
+  'queue.confirmCancel.cancel': 'Behalten',
+  'queue.error.notFound': 'Warteschlangeneintrag nicht gefunden',
+  'queue.error.notEditable': 'Dieser Eintrag kann nicht mehr bearbeitet werden',
+  'queue.error.dependsOnSelf': 'Ein Eintrag kann nicht von sich selbst abhängen',
+  'queue.error.unknownDependency':
+    'Eine oder mehrere Abhängigkeiten wurden nicht gefunden',
+  'queue.error.loadFailed': 'Warteschlange konnte nicht geladen werden',
+  'queue.error.saveFailed': 'Warteschlangeneintrag konnte nicht gespeichert werden',
+  'queue.lastError': 'Letzter Fehler: {message}',
+  'queue.settings.title': 'Warteschlangen-Parallelität',
+  'queue.settings.maxGlobal': 'Maximale parallele Aufgaben (global)',
+  'queue.settings.maxPerRepo':
+    'Maximale parallele Agenten pro Repository (Standard)',
+  'queue.settings.perRepoOverrides': 'Pro-Repository-Überschreibungen',
+  'queue.settings.save': 'Speichern',
+  'queue.settings.savedFlash': 'Gespeichert.'
 };
 
 export default de;

@@ -32,6 +32,7 @@ import {
   BROWSER_STREAM_KIND
 } from './agents/AgentSupervisor.js';
 import { PushService } from './push/PushService.js';
+import { getQueueScheduler, QueueScheduler } from './queue/Scheduler.js';
 import { hashPassword } from './auth/password.js';
 import { Tmux } from './tmux/TmuxSession.js';
 
@@ -45,6 +46,7 @@ const G = globalThis as unknown as {
   __maw_supervisor?: AgentSupervisor;
   __maw_registry?: AdapterRegistry;
   __maw_push?: PushService;
+  __maw_scheduler?: QueueScheduler;
 };
 
 export function bootstrap(): Promise<void> {
@@ -137,6 +139,13 @@ export function bootstrap(): Promise<void> {
     const { reattached, crashed } = await G.__maw_supervisor.init();
     console.log(`[maw] supervisor: ${reattached} agents reattached, ${crashed} crashed`);
 
+    // 6a. Queue scheduler — sits on top of the supervisor. Reconciles any
+    //     queue entry whose linked agent finished while we were down, then
+    //     fires the first tick so anything ready immediately runs.
+    G.__maw_scheduler = getQueueScheduler();
+    await G.__maw_scheduler.start(G.__maw_supervisor);
+    console.log('[maw] queue scheduler: started');
+
     // 6. Periodic reaper: scans every ~5s for runtimes whose tmux session
     //    has disappeared and flips them to `exited`. This is the slow-path
     //    safety net — the fast path is the per-agent session-closed hook
@@ -177,4 +186,11 @@ export function getPushService(): PushService {
     throw new Error('bootstrap() has not completed — getPushService() called too early');
   }
   return G.__maw_push;
+}
+
+export function getScheduler(): QueueScheduler {
+  if (!G.__maw_scheduler) {
+    throw new Error('bootstrap() has not completed — getScheduler() called too early');
+  }
+  return G.__maw_scheduler;
 }

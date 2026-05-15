@@ -34,6 +34,37 @@
     pushPermission = Notification.permission;
   }
 
+  // ── Queue concurrency settings ─────────────────────────────────────
+  // svelte-ignore state_referenced_locally
+  let queueGlobalLimit = $state<number>(data.queueConcurrency.maxConcurrentGlobal);
+  // svelte-ignore state_referenced_locally
+  let queuePerRepoLimit = $state<number>(data.queueConcurrency.maxConcurrentPerRepo);
+  let queueSaving = $state(false);
+  let queueSavedFlash = $state(false);
+
+  async function saveQueueConcurrency(): Promise<void> {
+    queueSaving = true;
+    queueSavedFlash = false;
+    try {
+      const res = await apiFetch('/api/user/queue-concurrency', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          maxConcurrentGlobal: Math.max(0, Math.floor(Number(queueGlobalLimit) || 0)),
+          maxConcurrentPerRepo: Math.max(0, Math.floor(Number(queuePerRepoLimit) || 0)),
+          perRepoOverrides: data.queueConcurrency.perRepoOverrides ?? {}
+        })
+      });
+      if (res.ok) {
+        queueSavedFlash = true;
+        await invalidateAll();
+        setTimeout(() => { queueSavedFlash = false; }, 2000);
+      }
+    } finally {
+      queueSaving = false;
+    }
+  }
+
   async function toggleNotifyKind(kind: string, enabled: boolean): Promise<void> {
     if (enabled && !pushKinds.includes(kind)) {
       pushKinds = [...pushKinds, kind];
@@ -341,6 +372,38 @@
         {t('settings.pushEnable')}
       </button>
     {/if}
+  </section>
+
+  <section class="group" aria-labelledby="queue-heading">
+    <h2 id="queue-heading">{t('queue.settings.title')}</h2>
+    <div class="queue-row">
+      <label class="queue-field">
+        <span>{t('queue.settings.maxGlobal')}</span>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          bind:value={queueGlobalLimit}
+        />
+      </label>
+      <label class="queue-field">
+        <span>{t('queue.settings.maxPerRepo')}</span>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          bind:value={queuePerRepoLimit}
+        />
+      </label>
+    </div>
+    <div class="queue-actions">
+      <button type="button" class="queue-save" onclick={saveQueueConcurrency} disabled={queueSaving}>
+        {t('queue.settings.save')}
+      </button>
+      {#if queueSavedFlash}
+        <span class="muted small">{t('queue.settings.savedFlash')}</span>
+      {/if}
+    </div>
   </section>
 </section>
 
@@ -695,5 +758,45 @@
   }
   .save-btn:hover {
     opacity: 0.9;
+  }
+  .queue-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0.75rem;
+  }
+  .queue-field {
+    display: grid;
+    gap: 0.3rem;
+  }
+  .queue-field input[type='number'] {
+    width: 6rem;
+    padding: 0.45rem 0.6rem;
+    border-radius: var(--md-sys-shape-corner-sm);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font: inherit;
+  }
+  .queue-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-top: 1rem;
+  }
+  .queue-save {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    border: none;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--md-sys-shape-corner-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .queue-save:hover {
+    opacity: 0.9;
+  }
+  .small {
+    font-size: 0.8rem;
   }
 </style>

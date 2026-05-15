@@ -1,28 +1,17 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { ulid } from 'ulid';
 import type { Actions, PageServerLoad } from './$types';
-import { t } from '$lib/i18n';
+import { t, type TranslationKey } from '$lib/i18n';
 import {
-  findWorktreeByPath,
-  getProject,
-  getRepo,
-  getRole,
   getSpawnDefaultsAll,
-  insertTask,
-  insertWorktree,
   listReposWithProjectForUser,
-  listRoles,
-  updateAgentCurrentTask
+  listRoles
 } from '$lib/server/db/queries';
-import { WorktreeManager } from '$lib/server/git/WorktreeManager';
-import { resolveSha } from '$lib/server/git/agentCommits';
-import { getConfig } from '$lib/server/config';
-import { slugifyTitle } from '$lib/server/util/slug';
-import { isBrowserKind } from '$lib/server/agents/AgentSupervisor';
-import { parseBrowserTargetUrl } from '$lib/shared/browserTarget';
-import type { RepoRow } from '$lib/server/db/types';
+import {
+  performSpawn,
+  validateSpawnInputs,
+  type RawSpawnInputs,
+  type SpawnError
+} from '$lib/server/agents/spawnFromInputs';
 
 interface RepoOption {
   id: string;
@@ -36,6 +25,48 @@ function loadRepoOptions(userId: string): RepoOption[] {
     path: r.path,
     projectName: r.project_name
   }));
+}
+
+/**
+ * Map the spawn pipeline's discriminated error codes onto the form action's
+ * i18n keys. Centralized so the queue API can pick its own mapping without
+ * the pipeline owning either.
+ */
+function spawnErrorToTranslationKey(err: SpawnError): TranslationKey {
+  switch (err.code) {
+    case 'roleRepoRequired':
+      return 'spawn.error.roleRepoRequired';
+    case 'titleRequired':
+      return 'spawn.error.titleRequired';
+    case 'titleUnslugifiable':
+      return 'spawn.error.titleUnslugifiable';
+    case 'unknownRole':
+      return 'spawn.error.unknownRole';
+    case 'unknownRepo':
+      return 'spawn.error.unknownRepo';
+    case 'unknownAdapter':
+      // No dedicated key; reuse the role error since the user picked a role
+      // whose cli_kind has no loaded adapter — both surface as "this role
+      // can't be used right now."
+      return 'spawn.error.unknownRole';
+    case 'browserUrlEmpty':
+      return 'spawn.error.browserUrl.empty';
+    case 'browserUrlInvalid':
+      return 'spawn.error.browserUrl.invalid';
+    case 'browserUrlScheme':
+      return 'spawn.error.browserUrl.scheme';
+    case 'browserUrlHost':
+      return 'spawn.error.browserUrl.host';
+    case 'browserUrlPort':
+      return 'spawn.error.browserUrl.port';
+    case 'titleTaken':
+      return 'spawn.error.titleTaken';
+    case 'branchMissing':
+    case 'worktreeFailed':
+      return 'spawn.error.worktreeFailed';
+    case 'spawnFailed':
+      return 'spawn.error.spawnFailed';
+  }
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -70,6 +101,15 @@ export const actions: Actions = {
     const form_model = String(form.get('model') ?? '').trim() || null;
     const form_permission_mode = String(form.get('permission_mode') ?? '').trim() || null;
 
+    // Parse optionalArgs[*] toggles.
+    const optionalArgs: Record<string, boolean> = {};
+    for (const [key, val] of form.entries()) {
+      const m = /^optionalArgs\[(.+)\]$/.exec(key);
+      if (m?.[1]) optionalArgs[m[1]] = val === 'true';
+    }
+
+    // Field bag re-rendered into the form on validation failure so the user
+    // doesn't lose what they typed.
     const fields = {
       role_id,
       repo_id,
@@ -81,187 +121,43 @@ export const actions: Actions = {
       permission_mode: form_permission_mode
     };
 
-    if (!role_id || !repo_id) {
-      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.roleRepoRequired') });
-    }
-    if (!task_title) {
-      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.titleRequired') });
+    const raw: RawSpawnInputs = {
+      roleId: role_id,
+      repoId: repo_id,
+      taskTitle: task_title,
+      taskBody: task_body,
+      targetUrl: target_url,
+      branch: form_branch,
+      withWorktreeExplicit: with_worktree_explicit,
+      model: form_model,
+      permissionMode: form_permission_mode,
+      optionalArgs
+    };
+
+    const validation = await validateSpawnInputs(raw, locals.user.id, locals.supervisor.registry);
+    if (!validation.ok) {
+      const key = spawnErrorToTranslationKey(validation.error);
+      const params = validation.error.message ? { message: validation.error.message } : undefined;
+      const status = validation.error.code === 'titleTaken' ? 409 : 400;
+      return fail(status, { ...fields, error: t(locals.locale, key, params) });
     }
 
-    const slug = slugifyTitle(task_title);
-    if (!slug) {
-      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.titleUnslugifiable') });
-    }
-
-    const role = getRole(role_id);
-    if (!role || role.user_id !== locals.user.id) {
-      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.unknownRole') });
-    }
-    const repo: RepoRow | undefined = getRepo(repo_id);
-    if (!repo || repo.user_id !== locals.user.id) {
-      return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.unknownRepo') });
-    }
-
-    // Browser agents need a target URL for the iframe + reverse proxy.
-    // Validate up front so a typo doesn't reach the supervisor.
-    let browserTarget: { target_url: string; target_port: number } | undefined;
-    if (isBrowserKind(role.cli_kind)) {
-      const parsed = parseBrowserTargetUrl(target_url);
-      if (!parsed.ok) {
-        return fail(400, {
+    const result = await performSpawn(validation.value, locals.user.id, locals.supervisor);
+    if (!result.ok) {
+      const key = spawnErrorToTranslationKey(result.error);
+      const params = result.error.message ? { message: result.error.message } : undefined;
+      const status =
+        result.error.code === 'titleTaken' ? 409 :
+        result.error.code === 'spawnFailed' ? 500 : 400;
+      if (result.error.code === 'spawnFailed') {
+        return fail(status, {
           ...fields,
-          error: t(locals.locale, `spawn.error.browserUrl.${parsed.error}`)
+          error: `${t(locals.locale, key)}: ${result.error.message ?? ''}`
         });
       }
-      browserTarget = { target_url: parsed.url, target_port: parsed.port };
+      return fail(status, { ...fields, error: t(locals.locale, key, params) });
     }
 
-    const cfg = getConfig();
-    const wtm = new WorktreeManager(cfg.worktreeRoot);
-    // Adapter capability: whether this kind supports worktree creation at all.
-    // Browser/shell adapters opt out via `createWorktree: false` in JSONC, in
-    // which case the per-spawn checkbox is ignored.
-    const adapterSupportsWorktree = locals.supervisor.registry.shouldCreateWorktree(
-      role.cli_kind
-    );
-    // Per-spawn opt-in: default to the adapter capability when the form
-    // didn't send the field (the dialog hides the checkbox for non-git kinds).
-    const shouldCreate =
-      adapterSupportsWorktree &&
-      (with_worktree_explicit ?? adapterSupportsWorktree);
-
-    // Resolve the start point for branch creation / checkout. The form value
-    // takes precedence; fall back to repo default → project default → 'main'.
-    const startPoint =
-      form_branch ||
-      repo.default_branch ||
-      (repo.project_id ? getProject(repo.project_id)?.default_branch : null) ||
-      'main';
-
-    const agentId = ulid();
-
-    let worktreePath: string;
-    let worktreeBranch: string;
-    let baseSha: string | null = null;
-
-    if (shouldCreate) {
-      const targetPath = join(cfg.worktreeRoot, slug);
-      if (findWorktreeByPath(targetPath) || existsSync(targetPath)) {
-        return fail(409, { ...fields, error: t(locals.locale, 'spawn.error.titleTaken') });
-      }
-      // Branch name is the slug (no `maw/<ulid>` prefix any more). Two agents
-      // sharing a task title get `<slug>`, `<slug>-2`, … via the helper so
-      // `git worktree add -B` doesn't clobber an existing branch.
-      let resolvedBranch: string;
-      try {
-        resolvedBranch = await WorktreeManager.nextFreeBranchName(repo.path, slug);
-      } catch (err) {
-        return fail(400, {
-          ...fields,
-          error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
-        });
-      }
-      try {
-        const created = await wtm.create({
-          repoPath: repo.path,
-          agentId,
-          branch: resolvedBranch,
-          startPoint,
-          dirName: slug
-        });
-        worktreePath = created.path;
-        baseSha = created.baseSha;
-      } catch (err) {
-        return fail(400, {
-          ...fields,
-          error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
-        });
-      }
-      worktreeBranch = resolvedBranch;
-    } else if (adapterSupportsWorktree) {
-      // User opted out of a dedicated worktree on a git-enabled adapter:
-      // check the selected branch out in the repo and run the agent there.
-      try {
-        await WorktreeManager.checkout(repo.path, startPoint);
-      } catch (err) {
-        return fail(400, {
-          ...fields,
-          error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
-        });
-      }
-      worktreePath = repo.path;
-      worktreeBranch = startPoint;
-      baseSha = await resolveSha(repo.path, startPoint);
-    } else {
-      // Adapter has createWorktree=false (shell, browser, …): run directly
-      // in the repo root on whatever branch is already checked out. No
-      // throwaway branch, no slug/targetPath collision check — we aren't
-      // taking a worktree dir.
-      worktreePath = repo.path;
-      worktreeBranch = startPoint;
-      baseSha = await resolveSha(repo.path, startPoint);
-    }
-
-    const worktreeId = ulid();
-    insertWorktree({
-      id: worktreeId,
-      user_id: locals.user.id,
-      repo_id: repo.id,
-      path: worktreePath,
-      branch: worktreeBranch,
-      status: 'active'
-    });
-
-    const task = { title: task_title, body: task_body };
-
-    // Parse optionalArgs[*] toggles from form data.
-    const optionalArgs: Record<string, boolean> = {};
-    for (const [key, val] of form.entries()) {
-      const m = /^optionalArgs\[(.+)\]$/.exec(key);
-      if (m?.[1]) optionalArgs[m[1]] = val === 'true';
-    }
-
-    try {
-      await locals.supervisor.spawn({
-        agentId,
-        userId: locals.user.id,
-        roleId: role.id,
-        repoId: repo.id,
-        repoPath: repo.path,
-        worktreeId,
-        worktreePath,
-        baseSha,
-        task,
-        optionalArgs,
-        model: form_model,
-        permissionMode: form_permission_mode,
-        sourceBranch: worktreeBranch,
-        browser: browserTarget
-      });
-    } catch (err) {
-      return fail(500, {
-        ...fields,
-        error: `${t(locals.locale, 'spawn.error.spawnFailed')}: ${(err as Error).message}`
-      });
-    }
-
-    // Persist the task so the dashboard caption can render it. The agent row
-    // is inserted inside supervisor.spawn(), so we can now safely FK back to
-    // it and set current_task_id — which listAgentCardsForUser joins on.
-    if (task) {
-      const taskId = ulid();
-      insertTask({
-        id: taskId,
-        user_id: locals.user.id,
-        agent_id: agentId,
-        title: task.title,
-        body: task.body,
-        status: 'active',
-        assigned_by_agent_id: null
-      });
-      updateAgentCurrentTask(agentId, taskId);
-    }
-
-    throw redirect(303, `/agents/${agentId}`);
+    throw redirect(303, `/agents/${result.agentId}`);
   }
 };

@@ -26,6 +26,8 @@ import type {
   MessageRow,
   ProjectRow,
   PushSubscriptionRow,
+  QueueEntryRow,
+  QueueEntryStatus,
   RepoRow,
   RoleRow,
   TaskRow,
@@ -1175,4 +1177,391 @@ export function getSpawnDefaultsAll(
     if (defaults) result[kind] = defaults;
   }
   return result;
+}
+
+// --------------- queue entries (v0.3 scheduler) ---------------
+//
+// The queue captures every spawn-form input plus priority / deps /
+// scheduled-for / exclusivity. The scheduler in src/lib/server/queue/
+// promotes entries to running agents; see docs/plans/v0.2-v0-3-queue-scheduler.md.
+
+/**
+ * Settings stored in `user_settings` under `QUEUE_CONCURRENCY_KEY`. Scheduler
+ * slot accounting reads these; `perRepoOverrides` lets the user raise (or
+ * lower) the per-repo cap for a specific repo without changing the default.
+ */
+export interface QueueConcurrencySettings {
+  maxConcurrentGlobal: number;
+  maxConcurrentPerRepo: number;
+  perRepoOverrides: Record<string, number>;
+}
+
+export const QUEUE_CONCURRENCY_KEY = 'queue.concurrency.v1';
+
+export const DEFAULT_QUEUE_CONCURRENCY: QueueConcurrencySettings = {
+  maxConcurrentGlobal: 1,
+  maxConcurrentPerRepo: 1,
+  perRepoOverrides: {}
+};
+
+export function getQueueConcurrency(userId: string): QueueConcurrencySettings {
+  const raw = getUserSetting(userId, QUEUE_CONCURRENCY_KEY);
+  if (!raw) return { ...DEFAULT_QUEUE_CONCURRENCY, perRepoOverrides: {} };
+  try {
+    const parsed = JSON.parse(raw) as Partial<QueueConcurrencySettings>;
+    return {
+      maxConcurrentGlobal: clampConcurrency(parsed.maxConcurrentGlobal, DEFAULT_QUEUE_CONCURRENCY.maxConcurrentGlobal),
+      maxConcurrentPerRepo: clampConcurrency(parsed.maxConcurrentPerRepo, DEFAULT_QUEUE_CONCURRENCY.maxConcurrentPerRepo),
+      perRepoOverrides:
+        parsed.perRepoOverrides && typeof parsed.perRepoOverrides === 'object'
+          ? Object.fromEntries(
+              Object.entries(parsed.perRepoOverrides)
+                .filter(([, v]) => typeof v === 'number' && v >= 0 && Number.isFinite(v))
+                .map(([k, v]) => [k, Math.floor(v as number)])
+            )
+          : {}
+    };
+  } catch {
+    return { ...DEFAULT_QUEUE_CONCURRENCY, perRepoOverrides: {} };
+  }
+}
+
+function clampConcurrency(raw: unknown, fallback: number): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return fallback;
+  return Math.min(Math.floor(raw), 1000);
+}
+
+export function setQueueConcurrency(
+  userId: string,
+  settings: QueueConcurrencySettings
+): void {
+  setUserSetting(userId, QUEUE_CONCURRENCY_KEY, JSON.stringify(settings));
+}
+
+export interface InsertQueueEntryInput {
+  id: string;
+  user_id: string;
+  role_id: string;
+  repo_id: string;
+  title: string;
+  body: string | null;
+  target_url: string | null;
+  model: string | null;
+  permission_mode: string | null;
+  source_branch: string | null;
+  with_worktree: boolean;
+  optional_args_json: string;
+  priority: number;
+  depends_on_json: string;
+  scheduled_for: number | null;
+  exclusive: boolean;
+  status: QueueEntryStatus;
+  external_source_json: string | null;
+}
+
+export function insertQueueEntry(input: InsertQueueEntryInput): void {
+  const ts = now();
+  prep<
+    [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string | null,
+      string | null,
+      string | null,
+      string | null,
+      string | null,
+      number,
+      string,
+      number,
+      string,
+      number | null,
+      number,
+      QueueEntryStatus,
+      string | null,
+      number,
+      number
+    ]
+  >(
+    `INSERT INTO queue_entries (
+       id, user_id, role_id, repo_id, title, body, target_url,
+       model, permission_mode, source_branch, with_worktree,
+       optional_args_json, priority, depends_on_json, scheduled_for, exclusive,
+       status, external_source_json, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.id,
+    input.user_id,
+    input.role_id,
+    input.repo_id,
+    input.title,
+    input.body,
+    input.target_url,
+    input.model,
+    input.permission_mode,
+    input.source_branch,
+    input.with_worktree ? 1 : 0,
+    input.optional_args_json,
+    input.priority,
+    input.depends_on_json,
+    input.scheduled_for,
+    input.exclusive ? 1 : 0,
+    input.status,
+    input.external_source_json,
+    ts,
+    ts
+  );
+}
+
+export function getQueueEntry(id: string): QueueEntryRow | undefined {
+  return prep<[string], QueueEntryRow>('SELECT * FROM queue_entries WHERE id = ?').get(id);
+}
+
+export function getQueueEntryForUser(
+  id: string,
+  userId: string
+): QueueEntryRow | undefined {
+  return prep<[string, string], QueueEntryRow>(
+    'SELECT * FROM queue_entries WHERE id = ? AND user_id = ?'
+  ).get(id, userId);
+}
+
+export function getQueueEntryByAgentId(agentId: string): QueueEntryRow | undefined {
+  return prep<[string], QueueEntryRow>(
+    'SELECT * FROM queue_entries WHERE agent_id = ?'
+  ).get(agentId);
+}
+
+export interface ListQueueEntriesFilter {
+  status?: QueueEntryStatus[];
+  repoId?: string;
+}
+
+export function listQueueEntriesForUser(
+  userId: string,
+  filter: ListQueueEntriesFilter = {}
+): QueueEntryRow[] {
+  const params: unknown[] = [userId];
+  let sql =
+    'SELECT * FROM queue_entries WHERE user_id = ?';
+  if (filter.status && filter.status.length > 0) {
+    const placeholders = filter.status.map(() => '?').join(',');
+    sql += ` AND status IN (${placeholders})`;
+    params.push(...filter.status);
+  }
+  if (filter.repoId) {
+    sql += ' AND repo_id = ?';
+    params.push(filter.repoId);
+  }
+  sql += ' ORDER BY priority DESC, created_at ASC';
+  return prep<unknown[], QueueEntryRow>(sql).all(...params) as QueueEntryRow[];
+}
+
+export function listQueueEntriesByIds(
+  ids: string[],
+  userId: string
+): QueueEntryRow[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  return prep<unknown[], QueueEntryRow>(
+    `SELECT * FROM queue_entries WHERE user_id = ? AND id IN (${placeholders})`
+  ).all(userId, ...ids) as QueueEntryRow[];
+}
+
+/**
+ * All entries the scheduler needs to look at on a tick — anything that is
+ * not already in a terminal state. Ordered for tick efficiency.
+ */
+export function listSchedulableQueueEntries(userId: string): QueueEntryRow[] {
+  return prep<[string], QueueEntryRow>(
+    `SELECT * FROM queue_entries
+      WHERE user_id = ? AND status IN ('pending','blocked','ready','running')
+      ORDER BY priority DESC, created_at ASC`
+  ).all(userId);
+}
+
+/**
+ * Repo ids where the user currently has a running queue entry, for slot
+ * accounting. agent_id is included so the scheduler can cross-reference the
+ * agent row when checking exclusive locking.
+ */
+export function listRunningQueueEntriesForUser(
+  userId: string
+): Array<Pick<QueueEntryRow, 'id' | 'repo_id' | 'agent_id' | 'exclusive'>> {
+  return prep<
+    [string],
+    Pick<QueueEntryRow, 'id' | 'repo_id' | 'agent_id' | 'exclusive'>
+  >(
+    `SELECT id, repo_id, agent_id, exclusive
+       FROM queue_entries
+      WHERE user_id = ? AND status = 'running'`
+  ).all(userId);
+}
+
+/**
+ * Count entries the sidebar badge cares about (non-terminal). Cheap path that
+ * avoids loading rows.
+ */
+export function countOpenQueueEntries(userId: string): number {
+  const row = prep<[string], { n: number }>(
+    `SELECT COUNT(*) AS n FROM queue_entries
+       WHERE user_id = ? AND status IN ('pending','blocked','ready','running')`
+  ).get(userId);
+  return row?.n ?? 0;
+}
+
+export function countOpenQueueEntriesByRepo(
+  userId: string
+): Array<{ repo_id: string; n: number }> {
+  return prep<[string], { repo_id: string; n: number }>(
+    `SELECT repo_id, COUNT(*) AS n FROM queue_entries
+       WHERE user_id = ? AND status IN ('pending','blocked','ready','running')
+       GROUP BY repo_id`
+  ).all(userId);
+}
+
+export interface UpdateQueueEntryStatusInput {
+  status: QueueEntryStatus;
+  last_error?: string | null;
+  agent_id?: string | null;
+  started_at?: number | null;
+  completed_at?: number | null;
+}
+
+/**
+ * Status transition write. Only the columns supplied in `patch` (plus
+ * `updated_at`) are touched — preserves agent_id / started_at when the
+ * caller just wants to flip status (e.g. pending → blocked).
+ */
+export function updateQueueEntryStatus(
+  id: string,
+  patch: UpdateQueueEntryStatusInput
+): void {
+  const sets: string[] = ['status = ?', 'updated_at = ?'];
+  const params: unknown[] = [patch.status, now()];
+  if ('last_error' in patch) {
+    sets.push('last_error = ?');
+    params.push(patch.last_error ?? null);
+  }
+  if ('agent_id' in patch) {
+    sets.push('agent_id = ?');
+    params.push(patch.agent_id ?? null);
+  }
+  if ('started_at' in patch) {
+    sets.push('started_at = ?');
+    params.push(patch.started_at ?? null);
+  }
+  if ('completed_at' in patch) {
+    sets.push('completed_at = ?');
+    params.push(patch.completed_at ?? null);
+  }
+  params.push(id);
+  prep<unknown[]>(
+    `UPDATE queue_entries SET ${sets.join(', ')} WHERE id = ?`
+  ).run(...params);
+}
+
+export interface UpdateQueueEntryFieldsInput {
+  title?: string;
+  body?: string | null;
+  target_url?: string | null;
+  model?: string | null;
+  permission_mode?: string | null;
+  source_branch?: string | null;
+  with_worktree?: boolean;
+  optional_args_json?: string;
+  priority?: number;
+  depends_on_json?: string;
+  scheduled_for?: number | null;
+  exclusive?: boolean;
+  role_id?: string;
+}
+
+/**
+ * Edit the user-controlled fields. Only the keys present in `patch` are
+ * touched. Caller is responsible for re-running validation (capabilities,
+ * dependency cycles) before invoking this.
+ */
+export function updateQueueEntryFields(
+  id: string,
+  patch: UpdateQueueEntryFieldsInput
+): boolean {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  const push = (col: string, val: unknown): void => {
+    sets.push(`${col} = ?`);
+    params.push(val);
+  };
+  if (patch.title !== undefined) push('title', patch.title);
+  if (patch.body !== undefined) push('body', patch.body);
+  if (patch.target_url !== undefined) push('target_url', patch.target_url);
+  if (patch.model !== undefined) push('model', patch.model);
+  if (patch.permission_mode !== undefined) push('permission_mode', patch.permission_mode);
+  if (patch.source_branch !== undefined) push('source_branch', patch.source_branch);
+  if (patch.with_worktree !== undefined) push('with_worktree', patch.with_worktree ? 1 : 0);
+  if (patch.optional_args_json !== undefined) push('optional_args_json', patch.optional_args_json);
+  if (patch.priority !== undefined) push('priority', patch.priority);
+  if (patch.depends_on_json !== undefined) push('depends_on_json', patch.depends_on_json);
+  if (patch.scheduled_for !== undefined) push('scheduled_for', patch.scheduled_for);
+  if (patch.exclusive !== undefined) push('exclusive', patch.exclusive ? 1 : 0);
+  if (patch.role_id !== undefined) push('role_id', patch.role_id);
+  if (sets.length === 0) return false;
+  sets.push('updated_at = ?');
+  params.push(now());
+  params.push(id);
+  const res = prep<unknown[], unknown>(
+    `UPDATE queue_entries SET ${sets.join(', ')} WHERE id = ?`
+  ).run(...params) as { changes: number };
+  return res.changes > 0;
+}
+
+/**
+ * Bulk priority rewrite from the queue UI's drag-reorder action. Done in a
+ * single transaction so the relative order is consistent for any tick that
+ * lands mid-write.
+ */
+export function setQueueEntriesPriorities(
+  userId: string,
+  updates: Array<{ id: string; priority: number }>
+): number {
+  if (updates.length === 0) return 0;
+  const ts = now();
+  const stmt = prep<[number, number, string, string]>(
+    'UPDATE queue_entries SET priority = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+  );
+  let changed = 0;
+  const tx = getDb().transaction(() => {
+    for (const u of updates) {
+      const res = stmt.run(u.priority, ts, u.id, userId) as { changes: number };
+      changed += res.changes;
+    }
+  });
+  tx();
+  return changed;
+}
+
+/** Earliest future `scheduled_for` across the user's blocked entries, or
+ *  null when nothing is waiting on a timer. Drives the scheduler's
+ *  setTimeout re-arm. */
+export function earliestQueuedScheduledFor(
+  userId: string,
+  afterTs: number
+): number | null {
+  const row = prep<[string, number], { ts: number | null }>(
+    `SELECT MIN(scheduled_for) AS ts FROM queue_entries
+       WHERE user_id = ?
+         AND status IN ('pending','blocked','ready')
+         AND scheduled_for IS NOT NULL
+         AND scheduled_for > ?`
+  ).get(userId, afterTs);
+  return row?.ts ?? null;
+}
+
+export function deleteQueueEntry(id: string, userId: string): boolean {
+  const res = prep<[string, string]>(
+    'DELETE FROM queue_entries WHERE id = ? AND user_id = ?'
+  ).run(id, userId);
+  return res.changes > 0;
 }

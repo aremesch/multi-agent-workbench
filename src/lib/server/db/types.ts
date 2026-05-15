@@ -21,6 +21,22 @@ export type WorktreeStatus = 'active' | 'orphaned' | 'removed';
 export type TaskStatus = 'queued' | 'active' | 'done' | 'cancelled';
 export type AlertSeverity = 'info' | 'warning' | 'error' | 'critical';
 
+/**
+ * queue_entries.status — see migrations/010_queue_entries.sql for the
+ * lifecycle. `pending` is the initial state; the scheduler classifies it as
+ * either `blocked` (waiting on deps / time / transient validation) or
+ * `ready` (eligible) on every tick. `running` is set when supervisor.spawn
+ * succeeds; `done` / `failed` / `cancelled` are terminal.
+ */
+export type QueueEntryStatus =
+  | 'pending'
+  | 'blocked'
+  | 'ready'
+  | 'running'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
+
 export interface UserRow {
   id: string;
   username: string;
@@ -220,6 +236,33 @@ export interface PushSubscriptionRow {
   ua: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface QueueEntryRow {
+  id: string;
+  user_id: string;
+  role_id: string;
+  repo_id: string;
+  title: string;
+  body: string | null;
+  target_url: string | null;
+  model: string | null;
+  permission_mode: string | null;
+  source_branch: string | null;
+  with_worktree: number;
+  optional_args_json: string;
+  priority: number;
+  depends_on_json: string;
+  scheduled_for: number | null;
+  exclusive: number;
+  status: QueueEntryStatus;
+  agent_id: string | null;
+  external_source_json: string | null;
+  last_error: string | null;
+  created_at: number;
+  updated_at: number;
+  started_at: number | null;
+  completed_at: number | null;
 }
 
 export interface LlmOversightVerdictRow {

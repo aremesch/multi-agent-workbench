@@ -9,11 +9,18 @@
   let {
     activeRepos,
     archivedRepos,
-    collapsed
+    collapsed,
+    queueOpenTotal = 0,
+    queueOpenByRepo = {}
   }: {
     activeRepos: SidebarRepoNode[];
     archivedRepos: SidebarRepoNode[];
     collapsed: boolean;
+    /** Total non-terminal queue entries owned by the current user. */
+    queueOpenTotal?: number;
+    /** Non-terminal entry count grouped by repo id; renders a small badge
+     *  next to each repo with pending queue work. */
+    queueOpenByRepo?: Record<string, number>;
   } = $props();
 
   let openRepos = $state<Record<string, boolean>>({});
@@ -74,6 +81,16 @@
 <aside class="sidebar" class:collapsed={collapsed}>
   {#if !collapsed}
     <nav class="tree">
+      <a
+        class="section-label queue-link"
+        class:active={page.url.pathname === '/queue'}
+        href="/queue"
+      >
+        {t('sidebar.queue')}
+        {#if queueOpenTotal > 0}
+          <span class="count">{queueOpenTotal}</span>
+        {/if}
+      </a>
       <div class="section-label">{t('sidebar.repositories')}</div>
       {#if activeRepos.length === 0}
         <div class="empty">{t('sidebar.noRepos')}</div>
@@ -103,6 +120,11 @@
                   title={repo.projectName ? `${repo.projectName} — ${repo.repoPath}` : repo.repoPath}
                 >
                   <span class="label">{repoLabel(repo)}</span>
+                  {#if queueOpenByRepo[repo.repoId]}
+                    <span class="queue-badge" title={t('sidebar.queue')}>
+                      Q{queueOpenByRepo[repo.repoId]}
+                    </span>
+                  {/if}
                   {#if repo.agents.length > 0}
                     <span class="count">{repo.agents.length}</span>
                   {/if}
@@ -228,6 +250,32 @@
   a.archive-link.active {
     color: var(--md-sys-color-primary);
     background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+  }
+  a.queue-link {
+    text-decoration: none;
+    border-radius: 0.25rem;
+    display: flex;
+    align-items: center;
+  }
+  a.queue-link:hover {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 4%, transparent);
+  }
+  a.queue-link.active {
+    color: var(--md-sys-color-primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+  }
+  a.queue-link .count {
+    margin-left: auto;
+  }
+  .queue-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+    color: var(--md-sys-color-primary);
+    margin-left: 0.3rem;
   }
   ul.list,
   ul.agents {

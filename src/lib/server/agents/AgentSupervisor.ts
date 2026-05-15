@@ -110,8 +110,22 @@ function browserSentinelSession(agentId: string): string {
   return `browser-${agentId}`;
 }
 
+/**
+ * Listener fired whenever an agent transitions out of a live status into a
+ * terminal one (`exited` or `crashed`). The queue scheduler subscribes so it
+ * can mark a linked queue entry `done`/`failed` and schedule the next
+ * promotion. Listeners run synchronously after the status flip but before
+ * the optional commit snapshot / push notification — keep them fast and
+ * non-throwing.
+ */
+export type AgentTerminationListener = (
+  agentId: string,
+  status: 'exited' | 'crashed'
+) => void;
+
 export class AgentSupervisor {
   private runtimes = new Map<string, AgentRuntime>();
+  private terminationListeners = new Set<AgentTerminationListener>();
   /**
    * Latched to true when the process begins shutting down. All paths that
    * would flip a DB row to `exited` (periodic reaper, exit-watcher success)
@@ -126,6 +140,23 @@ export class AgentSupervisor {
 
   markShuttingDown(): void {
     this.shuttingDown = true;
+  }
+
+  /** Register a listener for agent termination events. Returns a disposer
+   *  for symmetric cleanup in tests / shutdown. */
+  onAgentTerminated(listener: AgentTerminationListener): () => void {
+    this.terminationListeners.add(listener);
+    return () => this.terminationListeners.delete(listener);
+  }
+
+  private fireTerminated(agentId: string, status: 'exited' | 'crashed'): void {
+    for (const l of this.terminationListeners) {
+      try {
+        l(agentId, status);
+      } catch (err) {
+        console.warn('[AgentSupervisor] termination listener threw:', err);
+      }
+    }
   }
   /**
    * One `tmux wait-for` subprocess per live agent. Resolves the instant the
@@ -414,6 +445,7 @@ export class AgentSupervisor {
     // this emit, clients only learn the agent ended on their next snapshot
     // poll, which means the modal stays stuck until the user closes it.
     runtime.emit('state', 'exited');
+    this.fireTerminated(agentId, 'exited');
 
     // Snapshot git commits into agent_commits. Fire-and-forget: UI status
     // transitions are instant regardless of git latency.
@@ -683,11 +715,13 @@ export class AgentSupervisor {
         await getPlaywrightSessions().stop(agentId);
       }
       updateAgentStatus(agentId, 'exited');
+      this.fireTerminated(agentId, 'exited');
       return;
     }
     await Tmux.killSession(row.tmux_session);
     updateAgentStatus(agentId, 'exited');
     runtime?.emit('state', 'exited');
+    this.fireTerminated(agentId, 'exited');
     snapshotAgentCommits(agentId)
       .then((r) => {
         if ('error' in r) {

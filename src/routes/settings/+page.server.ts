@@ -1,6 +1,11 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { getSpawnDefaultsAll, getUserSetting } from '$lib/server/db/queries';
+import {
+  getQueueConcurrency,
+  getSpawnDefaultsAll,
+  getUserSetting,
+  listReposWithProjectForUser
+} from '$lib/server/db/queries';
 import { getConfig } from '$lib/server/config';
 import { PUSH_PREFS_KEY, parseNotifyKinds } from '$lib/server/push/pushPrefs';
 import {
@@ -27,13 +32,21 @@ export const load: PageServerLoad = async ({ locals }) => {
   const mobileQuickKeysMode = parseMobileQuickKeysMode(
     getUserSetting(locals.user.id, MOBILE_QUICK_KEYS_SETTING_KEY)
   );
+  const queueConcurrency = getQueueConcurrency(locals.user.id);
+  const queueRepos = listReposWithProjectForUser(locals.user.id).map((r) => ({
+    id: r.id,
+    path: r.path,
+    projectName: r.project_name
+  }));
   return {
     cliKinds,
     spawnDefaults,
     pushNotifyKinds,
     vapidConfigured,
     gitIdentity,
-    mobileQuickKeysMode
+    mobileQuickKeysMode,
+    queueConcurrency,
+    queueRepos
   };
 };
 

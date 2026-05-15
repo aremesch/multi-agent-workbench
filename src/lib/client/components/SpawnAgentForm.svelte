@@ -53,6 +53,40 @@
     };
   }
   export type SpawnDefaults = Record<string, { optionalArgs: Record<string, boolean> }>;
+  /**
+   * Existing queue entry the user can pick as a dependency in queue mode.
+   * Only entries that can still meaningfully gate another are passed in
+   * (pending / blocked / ready / running); the parent filters out terminal
+   * entries because depending on a `done` / `failed` / `cancelled` entry
+   * has no effect.
+   */
+  export interface QueueDepOption {
+    id: string;
+    title: string;
+    status: string;
+  }
+  /**
+   * Form submission mode. 'spawn' (default) posts to /agents/new and
+   * redirects to the new agent. 'queue' bypasses the SvelteKit action and
+   * hands a structured payload to `onQueue` so the parent can POST it to
+   * /api/queue with its own queue-specific fields (priority, deps, …).
+   */
+  export interface QueuePayload {
+    role_id: string;
+    repo_id: string;
+    task_title: string;
+    task_body: string;
+    target_url: string;
+    branch: string;
+    with_worktree: boolean | null;
+    model: string | null;
+    permission_mode: string | null;
+    optional_args: Record<string, boolean>;
+    priority: number;
+    scheduled_for: number | null;
+    exclusive: boolean;
+    depends_on: string[];
+  }
 
   let {
     roles,
@@ -60,12 +94,15 @@
     cliKinds,
     spawnDefaults = {},
     defaultRepoId,
+    mode = 'spawn',
+    queueDepOptions = [],
     /**
      * Called with the new agent id after a successful spawn. The dashboard
      * uses this to close the modal + navigate to the agent detail page.
      * If omitted, the component falls back to a plain navigation.
      */
     onSuccess,
+    onQueue,
     onCancel
   }: {
     roles: SpawnRoleOption[];
@@ -75,7 +112,13 @@
     /** Pre-select this repo when the dialog mounts (e.g. the sidebar's
      *  currently-selected repo). Falls back to repos[0] when null/unknown. */
     defaultRepoId?: string | null;
+    mode?: 'spawn' | 'queue';
+    queueDepOptions?: QueueDepOption[];
     onSuccess?: (agentId: string) => void;
+    /** Required when mode='queue'. Receives the assembled payload; the
+     *  parent owns the API call + error mapping. Resolves with true on
+     *  success so the form can clear its submitting state. */
+    onQueue?: (payload: QueuePayload) => Promise<{ ok: boolean; error?: string }>;
     onCancel?: () => void;
   } = $props();
 
@@ -99,8 +142,9 @@
   let savingRepo = $state(false);
   let pickerOpen = $state(false);
 
-  // ── Task title + slug preview ──────────────────────────────────────────
+  // ── Task title + body + slug preview ───────────────────────────────────
   let taskTitle = $state('');
+  let taskBodyValue = $state('');
   const taskSlug = $derived(
     taskTitle
       .normalize('NFKD')
@@ -243,9 +287,64 @@
   let targetUrl = $state(DEFAULT_BROWSER_TARGET_URL);
   const targetUrlValid = $derived(parseBrowserTargetUrl(targetUrl).ok);
 
+  // ── Queue-mode extras (priority, deps, scheduled-for, exclusive) ──────
+  let queuePriority = $state(0);
+  let queueScheduledForLocal = $state(''); // 'YYYY-MM-DDTHH:mm' or empty
+  let queueExclusive = $state(false);
+  let queueDeps = $state<string[]>([]);
+  // worktree=off implies exclusive — surface that in the UI when applicable.
+  const exclusiveForced = $derived(mode === 'queue' && showGitFields && !withWorktree);
+  const effectiveExclusive = $derived(exclusiveForced || queueExclusive);
+
   // ── Spawn form ──────────────────────────────────────────────────────────
   let error = $state<string | null>(null);
   let submitting = $state(false);
+
+  /** Convert datetime-local input string to unix seconds, or null. */
+  function parseScheduledFor(local: string): number | null {
+    if (!local) return null;
+    const d = new Date(local);
+    const ts = d.getTime();
+    if (Number.isNaN(ts)) return null;
+    return Math.floor(ts / 1000);
+  }
+
+  /** Gather every form field into the queue-API payload shape. */
+  function gatherQueuePayload(): QueuePayload {
+    return {
+      role_id: selectedRoleId,
+      repo_id: selectedRepoId,
+      task_title: taskTitle,
+      task_body: showTaskBody ? (taskBodyValue ?? '') : '',
+      target_url: isBrowserSelected ? targetUrl : '',
+      branch: showGitFields ? selectedBranch : '',
+      with_worktree: showGitFields ? withWorktree : null,
+      model: selectedModel,
+      permission_mode: selectedPermissionMode,
+      optional_args: { ...optArgToggles },
+      priority: Math.floor(Number.isFinite(queuePriority) ? queuePriority : 0),
+      scheduled_for: parseScheduledFor(queueScheduledForLocal),
+      exclusive: effectiveExclusive,
+      depends_on: [...queueDeps]
+    };
+  }
+
+  /** Queue-mode submit handler. type=button button calls this — the
+   *  surrounding <form> never submits, and we never hit the SvelteKit
+   *  /agents/new action. */
+  async function submitQueue(): Promise<void> {
+    if (!onQueue) return;
+    error = null;
+    submitting = true;
+    try {
+      const result = await onQueue(gatherQueuePayload());
+      if (!result.ok) error = result.error ?? t('queue.error.saveFailed');
+    } catch (err) {
+      error = (err as Error).message ?? t('queue.error.saveFailed');
+    } finally {
+      submitting = false;
+    }
+  }
 
   const anyInlineOpen = $derived(showNewRepo);
 
@@ -337,13 +436,24 @@
 </script>
 
 <div class="wrap">
+  <!-- In queue mode the form never POSTs to /agents/new; the submit button is
+       type=button and routes through `submitQueue()`. We still wrap fields in
+       a <form> so native HTML field validation (required, type=url) fires. -->
   <form
-    method="post"
-    action="/agents/new"
-    use:enhance={() => {
-      onSubmitStart();
-      return submit();
-    }}
+    method={mode === 'spawn' ? 'post' : 'dialog'}
+    action={mode === 'spawn' ? '/agents/new' : undefined}
+    use:enhance={mode === 'spawn'
+      ? () => {
+          onSubmitStart();
+          return submit();
+        }
+      : undefined}
+    onsubmit={mode === 'queue'
+      ? (e) => {
+          e.preventDefault();
+          void submitQueue();
+        }
+      : undefined}
   >
     <!-- Role field -->
     <div class="field">
@@ -501,7 +611,7 @@
     {:else if showTaskBody}
       <label>
         <span>{t('spawn.taskBody')} <span class="muted">({t('spawn.sentAsInitialInput')})</span></span>
-        <textarea name="task_body" rows="6"></textarea>
+        <textarea name="task_body" rows="6" bind:value={taskBodyValue}></textarea>
       </label>
     {/if}
     {#if selectedOptionalArgs.length > 0}
@@ -540,6 +650,69 @@
         {/if}
       </div>
     {/if}
+    {#if mode === 'queue'}
+      <fieldset class="queue-extras">
+        <legend>{t('queue.action.addToQueue')}</legend>
+        <label class="queue-field">
+          <span>{t('queue.field.priority')}</span>
+          <input
+            type="number"
+            step="1"
+            bind:value={queuePriority}
+          />
+          <span class="muted hint">{t('queue.field.priorityHint')}</span>
+        </label>
+        <label class="queue-field">
+          <span>{t('queue.field.scheduledFor')}</span>
+          <input
+            type="datetime-local"
+            bind:value={queueScheduledForLocal}
+          />
+          <span class="muted hint">{t('queue.field.scheduledForHint')}</span>
+        </label>
+        <label class="queue-toggle">
+          <input
+            type="checkbox"
+            bind:checked={queueExclusive}
+            disabled={exclusiveForced}
+          />
+          <span>
+            {t('queue.field.exclusive')}
+            {#if exclusiveForced}
+              <span class="muted"> (worktree off → required)</span>
+            {/if}
+          </span>
+        </label>
+        <span class="muted hint">{t('queue.field.exclusiveHint')}</span>
+        <div class="queue-deps">
+          <span class="deps-title">{t('queue.field.dependsOn')}</span>
+          {#if queueDepOptions.length === 0}
+            <p class="muted hint">{t('queue.field.dependsOnEmpty')}</p>
+          {:else}
+            <div class="deps-list">
+              {#each queueDepOptions as dep (dep.id)}
+                <label class="dep-row">
+                  <input
+                    type="checkbox"
+                    checked={queueDeps.includes(dep.id)}
+                    onchange={(e) => {
+                      const checked = (e.currentTarget as HTMLInputElement).checked;
+                      if (checked) queueDeps = [...queueDeps, dep.id];
+                      else queueDeps = queueDeps.filter((id) => id !== dep.id);
+                    }}
+                  />
+                  <span class="dep-label">
+                    {dep.title}
+                    <span class="muted"> ({dep.status})</span>
+                  </span>
+                </label>
+              {/each}
+            </div>
+            <span class="muted hint">{t('queue.field.dependsOnHint')}</span>
+          {/if}
+        </div>
+      </fieldset>
+    {/if}
     {#if error}
       <p class="err">{error}</p>
     {/if}
@@ -560,7 +733,13 @@
           !taskSlug ||
           (isBrowserSelected && !targetUrlValid)}
       >
-        {submitting ? t('spawn.spawning') : t('spawn.spawn')}
+        {submitting
+          ? mode === 'queue'
+            ? t('queue.action.addToQueue')
+            : t('spawn.spawning')
+          : mode === 'queue'
+            ? t('queue.action.addToQueue')
+            : t('spawn.spawn')}
       </button>
     </div>
   </form>
@@ -829,5 +1008,70 @@
   .toggle-desc {
     color: #6b7280;
     font-size: 0.8rem;
+  }
+  .queue-extras {
+    border: 1px solid #1f2937;
+    border-radius: 0.4rem;
+    padding: 0.6rem 0.8rem 0.7rem;
+    display: grid;
+    gap: 0.5rem;
+    background: #0d1117;
+  }
+  .queue-extras legend {
+    padding: 0 0.4rem;
+    color: #93c5fd;
+    font-size: 0.85rem;
+  }
+  .queue-field {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .queue-field input[type='number'] {
+    max-width: 8rem;
+  }
+  .queue-field input[type='datetime-local'] {
+    max-width: 14rem;
+  }
+  .queue-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .queue-toggle input[type='checkbox'] {
+    width: auto;
+  }
+  .queue-deps {
+    display: grid;
+    gap: 0.3rem;
+  }
+  .deps-title {
+    color: #e5e7eb;
+    font-size: 0.85rem;
+  }
+  .deps-list {
+    display: grid;
+    gap: 0.25rem;
+    max-height: 9rem;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+    border-left: 2px solid #374151;
+    padding-left: 0.6rem;
+  }
+  .dep-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    font-size: 0.85rem;
+  }
+  .dep-row input[type='checkbox'] {
+    width: auto;
+  }
+  .dep-label {
+    color: #e5e7eb;
+  }
+  .hint {
+    color: #6b7280;
+    font-size: 0.75rem;
   }
 </style>
