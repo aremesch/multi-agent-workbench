@@ -4,6 +4,8 @@ import type { SimpleGit } from 'simple-git';
 const rawMock = vi.fn();
 const statusMock = vi.fn();
 const revparseMock = vi.fn();
+const branchLocalMock = vi.fn();
+const checkoutMock = vi.fn();
 const getGitMock = vi.fn();
 const existsSyncMock = vi.fn();
 
@@ -22,11 +24,15 @@ beforeEach(() => {
   rawMock.mockReset();
   statusMock.mockReset();
   revparseMock.mockReset();
+  branchLocalMock.mockReset();
+  checkoutMock.mockReset();
   getGitMock.mockReset();
   getGitMock.mockReturnValue({
     raw: rawMock,
     status: statusMock,
-    revparse: revparseMock
+    revparse: revparseMock,
+    branchLocal: branchLocalMock,
+    checkout: checkoutMock
   } as unknown as SimpleGit);
   existsSyncMock.mockReset();
   existsSyncMock.mockReturnValue(false);
@@ -319,5 +325,106 @@ describe('WorktreeManager.ensureDefaultBranch', () => {
     });
     const out = await WorktreeManager.ensureDefaultBranch('/r', 'main', { name: 'Alice', email: 'a@b.c' });
     expect(out).toEqual({ kind: 'no_master', current: null });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// listBranches()
+// -----------------------------------------------------------------------------
+
+describe('WorktreeManager.listBranches', () => {
+  it('returns sorted branch names and the current branch', async () => {
+    branchLocalMock.mockResolvedValueOnce({
+      all: ['main', 'feature/x', 'release'],
+      branches: {
+        main: { current: true, name: 'main', commit: 'sha', label: 'main' },
+        'feature/x': { current: false, name: 'feature/x', commit: 'sha', label: '' },
+        release: { current: false, name: 'release', commit: 'sha', label: '' }
+      },
+      current: 'main',
+      detached: false
+    });
+    const out = await WorktreeManager.listBranches('/r');
+    expect(out.current).toBe('main');
+    expect(out.branches).toEqual(['feature/x', 'main', 'release']);
+    expect(getGitMock).toHaveBeenCalledWith('/r');
+  });
+
+  it("coerces simple-git's empty-string `current` (detached HEAD) to null", async () => {
+    branchLocalMock.mockResolvedValueOnce({
+      branches: { dev: { current: false, name: 'dev', commit: 'sha', label: '' } },
+      current: '',
+      detached: true
+    });
+    const out = await WorktreeManager.listBranches('/r');
+    expect(out.current).toBeNull();
+    expect(out.branches).toEqual(['dev']);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// nextFreeBranchName()
+// -----------------------------------------------------------------------------
+
+describe('WorktreeManager.nextFreeBranchName', () => {
+  it('returns the desired name when no branch with that name exists', async () => {
+    routeRaw([
+      {
+        match: (a) => a.includes('rev-parse') && a.includes('refs/heads/my-task'),
+        result: { throws: true }
+      }
+    ]);
+    const out = await WorktreeManager.nextFreeBranchName('/r', 'my-task');
+    expect(out).toBe('my-task');
+  });
+
+  it('appends -2 when desired exists', async () => {
+    rawMock.mockImplementation((args: string[]) => {
+      if (args.includes('refs/heads/my-task')) return Promise.resolve('sha');
+      if (args.includes('refs/heads/my-task-2')) throw new Error('');
+      throw new Error(`unexpected: ${args.join(' ')}`);
+    });
+    const out = await WorktreeManager.nextFreeBranchName('/r', 'my-task');
+    expect(out).toBe('my-task-2');
+  });
+
+  it('keeps incrementing -N until a free slot is found', async () => {
+    rawMock.mockImplementation((args: string[]) => {
+      if (
+        args.includes('refs/heads/my-task') ||
+        args.includes('refs/heads/my-task-2') ||
+        args.includes('refs/heads/my-task-3')
+      ) {
+        return Promise.resolve('sha');
+      }
+      if (args.includes('refs/heads/my-task-4')) throw new Error('');
+      throw new Error(`unexpected: ${args.join(' ')}`);
+    });
+    const out = await WorktreeManager.nextFreeBranchName('/r', 'my-task');
+    expect(out).toBe('my-task-4');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// checkout()
+// -----------------------------------------------------------------------------
+
+describe('WorktreeManager.checkout', () => {
+  it('runs git checkout when the working tree is clean', async () => {
+    statusMock.mockResolvedValueOnce({ files: [] });
+    checkoutMock.mockResolvedValueOnce(undefined);
+    await WorktreeManager.checkout('/repo', 'feat/x');
+    expect(getGitMock).toHaveBeenCalledWith('/repo');
+    expect(checkoutMock).toHaveBeenCalledWith('feat/x');
+  });
+
+  it("refuses to checkout when the working tree has uncommitted changes", async () => {
+    statusMock.mockResolvedValueOnce({
+      files: [{ path: 'a.ts', index: ' ', working_dir: 'M' }]
+    });
+    await expect(WorktreeManager.checkout('/repo', 'feat/x')).rejects.toThrow(
+      /uncommitted changes/
+    );
+    expect(checkoutMock).not.toHaveBeenCalled();
   });
 });

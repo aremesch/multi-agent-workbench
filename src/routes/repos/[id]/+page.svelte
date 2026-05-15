@@ -265,6 +265,7 @@
       repos={data.spawnRepos}
       cliKinds={data.spawnCliKinds}
       spawnDefaults={data.spawnDefaults}
+      defaultRepoId={data.repo.id}
       onSuccess={onSpawnSuccess}
       onCancel={() => (spawnOpen = false)}
     />

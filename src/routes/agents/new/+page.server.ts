@@ -61,8 +61,25 @@ export const actions: Actions = {
     const task_title = String(form.get('task_title') ?? '').trim();
     const task_body = String(form.get('task_body') ?? '');
     const target_url = String(form.get('target_url') ?? '').trim();
+    const form_branch = String(form.get('branch') ?? '').trim();
+    // Three-state checkbox: 'true' / 'false' / absent. Absent = use adapter's
+    // default (the spawn dialog only emits the field for git-enabled adapters).
+    const raw_with_worktree = form.get('with_worktree');
+    const with_worktree_explicit =
+      raw_with_worktree == null ? null : String(raw_with_worktree) === 'true';
+    const form_model = String(form.get('model') ?? '').trim() || null;
+    const form_permission_mode = String(form.get('permission_mode') ?? '').trim() || null;
 
-    const fields = { role_id, repo_id, task_title, task_body, target_url };
+    const fields = {
+      role_id,
+      repo_id,
+      task_title,
+      task_body,
+      target_url,
+      branch: form_branch,
+      model: form_model,
+      permission_mode: form_permission_mode
+    };
 
     if (!role_id || !repo_id) {
       return fail(400, { ...fields, error: t(locals.locale, 'spawn.error.roleRepoRequired') });
@@ -99,20 +116,29 @@ export const actions: Actions = {
       browserTarget = { target_url: parsed.url, target_port: parsed.port };
     }
 
-    const startPoint =
-      repo.default_branch ??
-      (repo.project_id ? getProject(repo.project_id)?.default_branch : null) ??
-      'main';
-
-    // Pre-generate agent id so the branch name + agent row stay in lock-step;
-    // branch stays ULID-based so it's globally unique even if titles are
-    // reused across repos.
-    const agentId = ulid();
-    const branch = `maw/${agentId}`;
-
     const cfg = getConfig();
     const wtm = new WorktreeManager(cfg.worktreeRoot);
-    const shouldCreate = locals.supervisor.registry.shouldCreateWorktree(role.cli_kind);
+    // Adapter capability: whether this kind supports worktree creation at all.
+    // Browser/shell adapters opt out via `createWorktree: false` in JSONC, in
+    // which case the per-spawn checkbox is ignored.
+    const adapterSupportsWorktree = locals.supervisor.registry.shouldCreateWorktree(
+      role.cli_kind
+    );
+    // Per-spawn opt-in: default to the adapter capability when the form
+    // didn't send the field (the dialog hides the checkbox for non-git kinds).
+    const shouldCreate =
+      adapterSupportsWorktree &&
+      (with_worktree_explicit ?? adapterSupportsWorktree);
+
+    // Resolve the start point for branch creation / checkout. The form value
+    // takes precedence; fall back to repo default → project default → 'main'.
+    const startPoint =
+      form_branch ||
+      repo.default_branch ||
+      (repo.project_id ? getProject(repo.project_id)?.default_branch : null) ||
+      'main';
+
+    const agentId = ulid();
 
     let worktreePath: string;
     let worktreeBranch: string;
@@ -123,11 +149,23 @@ export const actions: Actions = {
       if (findWorktreeByPath(targetPath) || existsSync(targetPath)) {
         return fail(409, { ...fields, error: t(locals.locale, 'spawn.error.titleTaken') });
       }
+      // Branch name is the slug (no `maw/<ulid>` prefix any more). Two agents
+      // sharing a task title get `<slug>`, `<slug>-2`, … via the helper so
+      // `git worktree add -B` doesn't clobber an existing branch.
+      let resolvedBranch: string;
+      try {
+        resolvedBranch = await WorktreeManager.nextFreeBranchName(repo.path, slug);
+      } catch (err) {
+        return fail(400, {
+          ...fields,
+          error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
+        });
+      }
       try {
         const created = await wtm.create({
           repoPath: repo.path,
           agentId,
-          branch,
+          branch: resolvedBranch,
           startPoint,
           dirName: slug
         });
@@ -139,13 +177,26 @@ export const actions: Actions = {
           error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
         });
       }
-      worktreeBranch = branch;
+      worktreeBranch = resolvedBranch;
+    } else if (adapterSupportsWorktree) {
+      // User opted out of a dedicated worktree on a git-enabled adapter:
+      // check the selected branch out in the repo and run the agent there.
+      try {
+        await WorktreeManager.checkout(repo.path, startPoint);
+      } catch (err) {
+        return fail(400, {
+          ...fields,
+          error: t(locals.locale, 'spawn.error.worktreeFailed', { message: (err as Error).message })
+        });
+      }
+      worktreePath = repo.path;
+      worktreeBranch = startPoint;
+      baseSha = await resolveSha(repo.path, startPoint);
     } else {
-      // Adapter opted out: run directly in the repo root on whatever branch
-      // is already checked out. No throwaway `maw/<agentId>` branch, and no
-      // slug/targetPath collision check — we aren't taking a worktree dir.
-      // Resolve baseSha from the current HEAD so commit attribution still
-      // anchors to a real SHA on branches MAW didn't create.
+      // Adapter has createWorktree=false (shell, browser, …): run directly
+      // in the repo root on whatever branch is already checked out. No
+      // throwaway branch, no slug/targetPath collision check — we aren't
+      // taking a worktree dir.
       worktreePath = repo.path;
       worktreeBranch = startPoint;
       baseSha = await resolveSha(repo.path, startPoint);
@@ -182,6 +233,9 @@ export const actions: Actions = {
         baseSha,
         task,
         optionalArgs,
+        model: form_model,
+        permissionMode: form_permission_mode,
+        sourceBranch: worktreeBranch,
         browser: browserTarget
       });
     } catch (err) {

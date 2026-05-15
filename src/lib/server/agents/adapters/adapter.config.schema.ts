@@ -42,6 +42,71 @@ export const mobileQuickKeySchema = z.object({
 });
 export type MobileQuickKeyConfig = z.infer<typeof mobileQuickKeySchema>;
 
+/**
+ * How the user-supplied task body is delivered to the CLI at spawn time.
+ *
+ *   `none`     — the CLI has no usable initial-prompt mechanism. The spawn
+ *                dialog hides the task-body field for adapters configured
+ *                this way. Useful for shells, browser agents, and any TUI
+ *                where post-launch keystroke injection is unreliable.
+ *
+ *   `cli-arg`  — the body is shell-quoted and baked into the CLI's argv
+ *                at launch. `template` is substituted via the standard
+ *                `{{var}}` resolver (typically `{{task.body}}`).
+ *                `placement = 'positional-last'` appends the substituted
+ *                text after every other arg (matches `claude [prompt]` and
+ *                `gemini [query..]`). `placement = { flag: '--prompt' }`
+ *                inserts `--prompt <text>` instead. `omitWhenEmpty`
+ *                (default true) skips emitting the extra arg when the
+ *                substituted template is empty/whitespace so we don't ship
+ *                a phantom empty positional.
+ *
+ * No paste-buffer or `tmux send-keys` fallback: if a CLI doesn't support
+ * `cli-arg`, the adapter declares `none` and the UI removes the input.
+ */
+export const initialInputSchema = z.discriminatedUnion('delivery', [
+  z.object({ delivery: z.literal('none') }),
+  z.object({
+    delivery: z.literal('cli-arg'),
+    template: z.string().min(1),
+    placement: z.union([
+      z.literal('positional-last'),
+      z.object({ flag: z.string().min(1) })
+    ]),
+    omitWhenEmpty: z.boolean().default(true)
+  })
+]);
+export type InitialInputConfig = z.infer<typeof initialInputSchema>;
+
+/**
+ * One value-bearing CLI capability (model selection, permission mode, …).
+ * `values` populates the spawn-dialog dropdown. `default` is the id that's
+ * pre-selected when the role has no override. `arg` is the substituted
+ * template that gets appended to the CLI argv when the chosen value is
+ * not the special `default` id — use `{{value}}` for the picked id.
+ *
+ * Convention: include a `default` entry in `values` whose `arg` is empty,
+ * representing "let the CLI decide" (e.g. Claude Code's own default
+ * model). When that id is picked, no flag is added to argv.
+ */
+export const capabilitySchema = z.object({
+  label: z.string().min(1),
+  values: z
+    .array(z.object({ id: z.string().min(1), label: z.string().min(1) }))
+    .min(1),
+  default: z.string().min(1).optional(),
+  arg: z.string().min(1)
+});
+export type CapabilityConfig = z.infer<typeof capabilitySchema>;
+
+export const capabilitiesSchema = z
+  .object({
+    model: capabilitySchema.optional(),
+    permissionMode: capabilitySchema.optional()
+  })
+  .default({});
+export type CapabilitiesConfig = z.infer<typeof capabilitiesSchema>;
+
 export const adapterConfigSchema = z.object({
   $schema: z.string().optional(),
   kind: z.string().min(1),
@@ -109,8 +174,10 @@ export const adapterConfigSchema = z.object({
       )
       .default([]),
     env: z.record(z.string(), z.string()).default({}),
-    initialInput: z.string().optional()
+    initialInput: initialInputSchema.default({ delivery: 'none' })
   }),
+
+  capabilities: capabilitiesSchema,
 
   input: z.object({
     encoding: z.enum(['literal']).default('literal'),

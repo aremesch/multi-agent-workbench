@@ -7,6 +7,7 @@ const en = {
   'nav.appTitle': 'Multi-Agent Workbench',
   'nav.settings': 'Settings',
   'nav.account': 'Account',
+  'nav.roles': 'Agent roles',
   'nav.about': 'About',
   'nav.logout': 'Logout',
   'nav.userMenu': 'User menu',
@@ -174,7 +175,14 @@ const en = {
   'spawn.error.failedCreateProject': 'Failed to create project',
   'spawn.error.failedAddRepo': 'Failed to add repo',
   'spawn.error.networkError': 'Network error',
+  'spawn.error.branchListFailed': 'Could not list branches: {message}',
   'spawn.advanced': 'Advanced',
+  'spawn.branch': 'Branch',
+  'spawn.withWorktree': 'Run in a dedicated worktree',
+  'spawn.currentBranch': 'current',
+  'spawn.loadingBranches': 'Loading branches…',
+  'spawn.manageRoles': 'Manage roles →',
+  'spawn.manageRolesHint': 'Edit roles, system prompts and defaults',
 
   // ── Browser-agent spawn fields ───────────────────────────────────
   'spawn.sessionLabel': 'Session label',
@@ -248,10 +256,24 @@ const en = {
   'agentTerminal.image.error.upload': 'Upload failed. Please try again.',
 
   // ── Roles ────────────────────────────────────────────────────────
-  'roles.title': 'Roles',
+  'roles.title': 'Agent roles',
   'roles.newRole': 'New role',
+  'roles.editRole': 'Edit role',
   'roles.noRoles': 'No roles yet. A role bundles a CLI adapter + system prompt.',
   'roles.backToDashboard': '\u2190 Back to dashboard',
+  'roles.noSystemPrompt': '(none)',
+  'roles.colName': 'Name',
+  'roles.colCliKind': 'CLI kind',
+  'roles.colModel': 'Model',
+  'roles.colMode': 'Permission mode',
+  'roles.colSystemPrompt': 'System prompt',
+  'roles.colActions': 'Actions',
+  'roles.confirmDeleteTitle': 'Delete role',
+  'roles.confirmDeleteBody': 'Delete role "{name}"? This cannot be undone.',
+  'roles.deleting': 'Deleting\u2026',
+  'roles.error.notFound': 'Role not found',
+  'roles.error.inUse': 'Cannot delete \u2014 {count} agent(s) still reference this role',
+  'roles.error.deleteFailed': 'Delete failed',
 
   // ── New role ─────────────────────────────────────────────────────
   'newRole.title': 'New role',
@@ -323,6 +345,9 @@ const en = {
   // ── Common / API errors ──────────────────────────────────────────
   'common.close': 'Close',
   'common.cancel': 'Cancel',
+  'common.save': 'Save',
+  'common.edit': 'Edit',
+  'common.delete': 'Delete',
   'common.error.unauthorized': 'Unauthorized',
   'common.error.invalidJson': 'Invalid JSON',
   'common.error.invalidTheme': 'Invalid theme',

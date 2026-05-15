@@ -10,8 +10,6 @@ export interface SpawnSpec {
   args: string[];
   env: Record<string, string>;
   cwd: string;
-  /** Optional text to type into the pane after the CLI is ready. */
-  initialInput?: string;
 }
 
 export type AdapterEventKind =
@@ -67,6 +65,14 @@ export interface BuildSpawnSpecOpts {
   agent: { id: string; cliSessionId?: string | null };
   /** Per-spawn toggle overrides keyed by optionalArg id. */
   optionalArgs?: Record<string, boolean>;
+  /**
+   * Per-spawn value picks for the adapter's `capabilities.*` selectors.
+   * Keyed by capability name (currently `model`, `permissionMode`). Each
+   * value is the id of one option from `capability.values`. Absent / null
+   * means "use the capability's `default`". Substituted into the
+   * capability's `arg` template under `{{value}}` and appended to argv.
+   */
+  capabilityValues?: Record<string, string | null | undefined>;
 }
 
 export interface CliAdapter {

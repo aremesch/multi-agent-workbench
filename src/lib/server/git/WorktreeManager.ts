@@ -35,6 +35,72 @@ function commitIdentityFlags(identity: GitIdentity): string[] {
 export class WorktreeManager {
   constructor(private readonly worktreeRoot: string) {}
 
+  /**
+   * List local branch names, with the currently checked-out branch flagged.
+   * Returns `{ branches: ['main', 'feat/foo', ...], current: 'main' }`.
+   * Detached HEAD yields `current: null`.
+   *
+   * Used by `GET /api/repos/:id/branches` to power the spawn dialog's branch
+   * dropdown. Local-only in v1 — remote (origin/foo) branches are out of
+   * scope until we add an explicit "fetch & branch from remote" flow.
+   */
+  static async listBranches(
+    repoPath: string
+  ): Promise<{ branches: string[]; current: string | null }> {
+    const git = getGit(repoPath);
+    const summary = await git.branchLocal();
+    const branches = Object.keys(summary.branches).sort((a, b) => a.localeCompare(b));
+    // `branchLocal()` reports `current: ''` on detached HEAD; coerce to null.
+    const current = summary.current && summary.current.length > 0 ? summary.current : null;
+    return { branches, current };
+  }
+
+  /**
+   * Pick the next free branch name starting from `desired`. Tries `desired`
+   * first, then `desired-2`, `desired-3`, … until one doesn't exist locally.
+   * Bounded at 100 attempts; throws if all candidates collide (vanishingly
+   * unlikely outside of tests that fabricate hundreds of duplicates).
+   *
+   * Used by the spawn route after the task-title slug is computed, so two
+   * agents sharing a title don't clobber each other's branch via the
+   * existing `-B` (force-create) semantics in `create()`.
+   */
+  static async nextFreeBranchName(repoPath: string, desired: string): Promise<string> {
+    const git = getGit(repoPath);
+    const exists = async (name: string): Promise<boolean> => {
+      try {
+        await git.raw(['rev-parse', '--verify', `refs/heads/${name}`]);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    if (!(await exists(desired))) return desired;
+    for (let i = 2; i <= 100; i++) {
+      const candidate = `${desired}-${i}`;
+      if (!(await exists(candidate))) return candidate;
+    }
+    throw new Error(`no free branch name available after 100 tries starting from '${desired}'`);
+  }
+
+  /**
+   * Check out `branch` in `repoPath`. Used when the user opted out of a
+   * dedicated worktree — we still need the repo to be on the right branch
+   * before the agent's CLI starts. Throws if the working tree is dirty
+   * (preserves the user's in-progress changes); the caller is expected to
+   * surface that as a user-friendly form error.
+   */
+  static async checkout(repoPath: string, branch: string): Promise<void> {
+    const git = getGit(repoPath);
+    const status = await git.status();
+    if (status.files.length > 0) {
+      throw new Error(
+        `repo at ${repoPath} has uncommitted changes; aborting checkout to keep your work safe`
+      );
+    }
+    await git.checkout(branch);
+  }
+
   /** `git worktree list --porcelain` parsed into structured entries. */
   static async list(repoPath: string): Promise<WorktreeEntry[]> {
     const stdout = await getGit(repoPath).raw(['worktree', 'list', '--porcelain']);

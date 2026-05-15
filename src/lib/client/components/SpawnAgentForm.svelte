@@ -17,6 +17,8 @@
     id: string;
     name: string;
     cli_kind: string;
+    default_model: string | null;
+    default_permission_mode: string | null;
   }
   export interface SpawnRepoOption {
     id: string;
@@ -30,10 +32,25 @@
     description?: string;
     default: boolean;
   }
+  export interface CapabilityValueMeta {
+    id: string;
+    label: string;
+  }
+  export interface CapabilityMeta {
+    label: string;
+    values: CapabilityValueMeta[];
+    default: string | null;
+  }
   export interface CliKindOption {
     kind: string;
     displayName: string;
+    createWorktree: boolean;
+    initialInputDelivery: 'none' | 'cli-arg';
     optionalArgs: OptionalArgMeta[];
+    capabilities: {
+      model: CapabilityMeta | null;
+      permissionMode: CapabilityMeta | null;
+    };
   }
   export type SpawnDefaults = Record<string, { optionalArgs: Record<string, boolean> }>;
 
@@ -42,6 +59,7 @@
     repos,
     cliKinds,
     spawnDefaults = {},
+    defaultRepoId,
     /**
      * Called with the new agent id after a successful spawn. The dashboard
      * uses this to close the modal + navigate to the agent detail page.
@@ -54,25 +72,23 @@
     repos: SpawnRepoOption[];
     cliKinds: CliKindOption[];
     spawnDefaults?: SpawnDefaults;
+    /** Pre-select this repo when the dialog mounts (e.g. the sidebar's
+     *  currently-selected repo). Falls back to repos[0] when null/unknown. */
+    defaultRepoId?: string | null;
     onSuccess?: (agentId: string) => void;
     onCancel?: () => void;
   } = $props();
 
-  // Mutable copies that grow as the user creates new items inline.
-  // untrack() intentionally captures the initial prop values — we don't want
-  // these to re-derive when props change; mutations come from inline creation.
-  let roleOptions = $state<SpawnRoleOption[]>(untrack(() => [...roles]));
+  // Roles are read-only here. CRUD lives at /roles.
   let repoOptions = $state<SpawnRepoOption[]>(untrack(() => [...repos]));
 
   let selectedRoleId = $state(untrack(() => roles[0]?.id ?? ''));
-  let selectedRepoId = $state(untrack(() => repos[0]?.id ?? ''));
-
-  // ── Inline role creation ────────────────────────────────────────────────
-  let showNewRole = $state(false);
-  let newRoleName = $state('');
-  let newRoleCliKind = $state(untrack(() => cliKinds[0]?.kind ?? ''));
-  let newRoleError = $state<string | null>(null);
-  let savingRole = $state(false);
+  let selectedRepoId = $state(
+    untrack(() => {
+      if (defaultRepoId && repos.some((r) => r.id === defaultRepoId)) return defaultRepoId;
+      return repos[0]?.id ?? '';
+    })
+  );
 
   // ── Inline repo creation ────────────────────────────────────────────────
   let showNewRepo = $state(false);
@@ -88,7 +104,7 @@
   const taskSlug = $derived(
     taskTitle
       .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[̀-ͯ]/g, '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
@@ -101,44 +117,137 @@
   /** Toggle states keyed by optionalArg id. Recomputed when the selected role changes. */
   let optArgToggles = $state<Record<string, boolean>>({});
 
+  // ── Selected adapter (resolved from role) ────────────────────────────────
+  const selectedRole = $derived(roles.find((r) => r.id === selectedRoleId) ?? null);
+  const selectedAdapter = $derived(
+    selectedRole ? cliKinds.find((k) => k.kind === selectedRole.cli_kind) ?? null : null
+  );
+
   /** The optionalArgs metadata for the currently selected role's CLI kind. */
-  const selectedOptionalArgs = $derived.by(() => {
-    const role = roleOptions.find((r) => r.id === selectedRoleId);
-    if (!role) return [];
-    const kind = cliKinds.find((k) => k.kind === role.cli_kind);
-    return kind?.optionalArgs ?? [];
-  });
+  const selectedOptionalArgs = $derived(selectedAdapter?.optionalArgs ?? []);
 
   /** True when the currently selected role is either browser flavor.
    *  Hides the task body field and reveals the preview URL field. */
   const isBrowserSelected = $derived.by(() => {
-    const role = roleOptions.find((r) => r.id === selectedRoleId);
-    return !!role && isAnyBrowserKind(role.cli_kind);
+    if (!selectedRole) return false;
+    return isAnyBrowserKind(selectedRole.cli_kind);
   });
 
-  // ── Browser-kind preview URL ────────────────────────────────────────────
-  let targetUrl = $state(DEFAULT_BROWSER_TARGET_URL);
-  const targetUrlValid = $derived(parseBrowserTargetUrl(targetUrl).ok);
+  // Worktree / branch UI is shown only for adapters that take a worktree.
+  const showGitFields = $derived(selectedAdapter?.createWorktree ?? false);
+
+  // Task body field is shown only when the adapter accepts an initial prompt
+  // via CLI argv. delivery: 'none' means the adapter has no way to receive
+  // the body, so we hide the field entirely (the user puts preamble in the
+  // role's system prompt instead).
+  const showTaskBody = $derived(
+    !isBrowserSelected && selectedAdapter?.initialInputDelivery === 'cli-arg'
+  );
+
+  // ── Branch picker (fetched per repo) ────────────────────────────────────
+  interface BranchData {
+    branches: string[];
+    current: string | null;
+  }
+  let branchCache = $state<Record<string, BranchData>>({});
+  let branchLoading = $state(false);
+  let branchError = $state<string | null>(null);
+  let selectedBranch = $state('');
+  let withWorktree = $state(true);
+
+  async function loadBranches(repoId: string): Promise<void> {
+    if (!repoId) return;
+    if (branchCache[repoId]) {
+      const cached = branchCache[repoId];
+      selectedBranch = cached.current ?? cached.branches[0] ?? '';
+      return;
+    }
+    branchLoading = true;
+    branchError = null;
+    try {
+      const res = await apiFetch(`/api/repos/${encodeURIComponent(repoId)}/branches`);
+      const data = (await res.json()) as { branches?: string[]; current?: string | null; error?: string };
+      if (!res.ok || !Array.isArray(data.branches)) {
+        branchError = data.error ?? t('spawn.error.branchListFailed', { message: '' });
+        return;
+      }
+      const cached: BranchData = {
+        branches: data.branches,
+        current: data.current ?? null
+      };
+      branchCache = { ...branchCache, [repoId]: cached };
+      selectedBranch = cached.current ?? cached.branches[0] ?? '';
+    } catch {
+      branchError = t('spawn.error.networkError');
+    } finally {
+      branchLoading = false;
+    }
+  }
+
+  // ── Capability picks (model, permission_mode) ───────────────────────────
+  let selectedModel = $state<string | null>(null);
+  let selectedPermissionMode = $state<string | null>(null);
+
+  // ── Reactive resets when role / repo / adapter changes ──────────────────
 
   // Re-derive toggle values when the selected role (and thus CLI kind) changes.
   $effect(() => {
-    const role = roleOptions.find((r) => r.id === selectedRoleId);
-    if (!role) return;
-    const kind = role.cli_kind;
-    const userDefs = spawnDefaults[kind]?.optionalArgs ?? {};
-    const meta = cliKinds.find((k) => k.kind === kind)?.optionalArgs ?? [];
+    if (!selectedRole || !selectedAdapter) {
+      optArgToggles = {};
+      return;
+    }
+    const userDefs = spawnDefaults[selectedRole.cli_kind]?.optionalArgs ?? {};
     const toggles: Record<string, boolean> = {};
-    for (const opt of meta) {
+    for (const opt of selectedAdapter.optionalArgs) {
       toggles[opt.id] = userDefs[opt.id] ?? opt.default;
     }
     optArgToggles = toggles;
   });
 
+  // Pre-fill model / permission_mode from the role default, falling back to
+  // the adapter's own default.
+  $effect(() => {
+    if (!selectedRole || !selectedAdapter) {
+      selectedModel = null;
+      selectedPermissionMode = null;
+      return;
+    }
+    const modelCap = selectedAdapter.capabilities.model;
+    if (modelCap) {
+      const roleDefault = selectedRole.default_model;
+      const valid = roleDefault && modelCap.values.some((v) => v.id === roleDefault);
+      selectedModel = valid ? roleDefault : modelCap.default ?? modelCap.values[0]?.id ?? null;
+    } else {
+      selectedModel = null;
+    }
+    const modeCap = selectedAdapter.capabilities.permissionMode;
+    if (modeCap) {
+      const roleDefault = selectedRole.default_permission_mode;
+      const valid = roleDefault && modeCap.values.some((v) => v.id === roleDefault);
+      selectedPermissionMode = valid
+        ? roleDefault
+        : modeCap.default ?? modeCap.values[0]?.id ?? null;
+    } else {
+      selectedPermissionMode = null;
+    }
+  });
+
+  // Load branches whenever a git-enabled repo+role pair becomes active.
+  $effect(() => {
+    if (!showGitFields) return;
+    if (!selectedRepoId) return;
+    void loadBranches(selectedRepoId);
+  });
+
+  // Browser-kind preview URL
+  let targetUrl = $state(DEFAULT_BROWSER_TARGET_URL);
+  const targetUrlValid = $derived(parseBrowserTargetUrl(targetUrl).ok);
+
   // ── Spawn form ──────────────────────────────────────────────────────────
   let error = $state<string | null>(null);
   let submitting = $state(false);
 
-  const anyInlineOpen = $derived(showNewRole || showNewRepo);
+  const anyInlineOpen = $derived(showNewRepo);
 
   /**
    * We POST to `/agents/new` (its action handler owns the whole spawn
@@ -163,7 +272,6 @@
     }): Promise<void> => {
       submitting = false;
       if (result.type === 'redirect' && result.location) {
-        // The action redirects to /agents/:id on success.
         const match = /\/agents\/([^/?#]+)/.exec(result.location);
         const agentId = match?.[1];
         if (agentId && onSuccess) {
@@ -189,35 +297,6 @@
   function onSubmitStart(): void {
     error = null;
     submitting = true;
-  }
-
-  // ── Inline creation handlers ────────────────────────────────────────────
-
-  async function createRole(): Promise<void> {
-    newRoleError = null;
-    savingRole = true;
-    try {
-      const res = await apiFetch('/api/roles', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: newRoleName, cli_kind: newRoleCliKind })
-      });
-      const data = (await res.json()) as { id?: string; name?: string; cli_kind?: string; error?: string };
-      if (!res.ok || !data.id) {
-        newRoleError = data.error ?? t('spawn.error.failedCreateRole');
-        return;
-      }
-      const created: SpawnRoleOption = { id: data.id, name: data.name ?? newRoleName, cli_kind: data.cli_kind ?? newRoleCliKind };
-      roleOptions = [...roleOptions, created];
-      selectedRoleId = created.id;
-      showNewRole = false;
-      newRoleName = '';
-      newRoleCliKind = cliKinds[0]?.kind ?? '';
-    } catch {
-      newRoleError = t('spawn.error.networkError');
-    } finally {
-      savingRole = false;
-    }
   }
 
   async function createRepo(): Promise<void> {
@@ -272,53 +351,15 @@
         <label class="grow">
           <span>{t('spawn.role')}</span>
           <select name="role_id" bind:value={selectedRoleId} required>
-            {#each roleOptions as r (r.id)}
+            {#each roles as r (r.id)}
               <option value={r.id}>{r.name} ({r.cli_kind})</option>
             {/each}
           </select>
         </label>
-        <button
-          type="button"
-          class="inline-add"
-          onclick={() => { showNewRole = !showNewRole; newRoleError = null; }}
-          title={t('spawn.titleCreateRole')}
-        >
-          {showNewRole ? t('spawn.collapseRole') : t('spawn.newRole')}
-        </button>
+        <a href="/roles" class="manage-link" title={t('spawn.manageRolesHint')}>
+          {t('spawn.manageRoles')}
+        </a>
       </div>
-
-      {#if showNewRole}
-        <div class="inline-form">
-          <label>
-            <span>{t('spawn.name')}</span>
-            <input bind:value={newRoleName} placeholder="e.g. Coder" />
-          </label>
-          <label>
-            <span>{t('spawn.cliKind')}</span>
-            <select bind:value={newRoleCliKind}>
-              {#each cliKinds as k (k.kind)}
-                <option value={k.kind}>{k.displayName} ({k.kind})</option>
-              {/each}
-            </select>
-          </label>
-          {#if newRoleError}
-            <p class="err">{newRoleError}</p>
-          {/if}
-          <div class="inline-actions">
-            <button
-              type="button"
-              class="cancel"
-              onclick={() => { showNewRole = false; newRoleError = null; newRoleName = ''; }}
-              disabled={savingRole}
-            >{t('spawn.cancel')}</button>
-            <button
-              type="button"
-              onclick={createRole}
-              disabled={savingRole || !newRoleName || !newRoleCliKind}
-            >{savingRole ? t('spawn.creating') : t('spawn.createRole')}</button>
-          </div>
-        </div>
-      {/if}
     </div>
 
     <!-- Repo field -->
@@ -382,10 +423,61 @@
       {/if}
     </div>
 
+    {#if showGitFields}
+      <div class="field">
+        <label>
+          <span>{t('spawn.branch')}</span>
+          {#if branchLoading}
+            <span class="muted slug-preview">{t('spawn.loadingBranches')}</span>
+          {:else if branchError}
+            <span class="err">{branchError}</span>
+          {:else}
+            {@const data = branchCache[selectedRepoId]}
+            <select name="branch" bind:value={selectedBranch} required>
+              {#if data}
+                {#each data.branches as b (b)}
+                  <option value={b}>{b}{data.current === b ? ` — ${t('spawn.currentBranch')}` : ''}</option>
+                {/each}
+              {/if}
+            </select>
+          {/if}
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" bind:checked={withWorktree} />
+          <span>{t('spawn.withWorktree')}</span>
+        </label>
+        <!-- Always submit a value so the server can distinguish "checkbox
+             present and unchecked" from "checkbox not rendered". -->
+        <input type="hidden" name="with_worktree" value={String(withWorktree)} />
+      </div>
+    {/if}
+
+    {#if selectedAdapter?.capabilities.model}
+      <label>
+        <span>{selectedAdapter.capabilities.model.label}</span>
+        <select name="model" bind:value={selectedModel}>
+          {#each selectedAdapter.capabilities.model.values as v (v.id)}
+            <option value={v.id}>{v.label}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+
+    {#if selectedAdapter?.capabilities.permissionMode}
+      <label>
+        <span>{selectedAdapter.capabilities.permissionMode.label}</span>
+        <select name="permission_mode" bind:value={selectedPermissionMode}>
+          {#each selectedAdapter.capabilities.permissionMode.values as v (v.id)}
+            <option value={v.id}>{v.label}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+
     <label>
       <span>{isBrowserSelected ? t('spawn.sessionLabel') : t('spawn.taskTitle')}</span>
       <input name="task_title" bind:value={taskTitle} required />
-      {#if !isBrowserSelected && taskSlug}
+      {#if !isBrowserSelected && taskSlug && showGitFields}
         <span class="slug-preview">worktree: {taskSlug}/</span>
       {/if}
     </label>
@@ -406,7 +498,7 @@
           <span class="err">{t('spawn.error.browserUrl.invalid')}</span>
         {/if}
       </label>
-    {:else}
+    {:else if showTaskBody}
       <label>
         <span>{t('spawn.taskBody')} <span class="muted">({t('spawn.sentAsInitialInput')})</span></span>
         <textarea name="task_body" rows="6"></textarea>
@@ -419,7 +511,7 @@
           class="advanced-toggle"
           onclick={() => { showAdvanced = !showAdvanced; }}
         >
-          <span class="arrow">{showAdvanced ? '\u25BE' : '\u25B8'}</span>
+          <span class="arrow">{showAdvanced ? '▾' : '▸'}</span>
           {t('spawn.advanced')}
         </button>
         {#if showAdvanced}
@@ -553,6 +645,28 @@
   }
   .inline-add:hover {
     background: #1e293b;
+  }
+  .manage-link {
+    align-self: flex-end;
+    padding: 0.45rem 0.2rem;
+    font-size: 0.8rem;
+    color: #93c5fd;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .manage-link:hover {
+    color: #bfdbfe;
+    text-decoration: underline;
+  }
+  .checkbox-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .checkbox-row input[type='checkbox'] {
+    width: auto;
   }
   .inline-form {
     border-left: 2px solid #2563eb;

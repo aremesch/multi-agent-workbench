@@ -40,7 +40,13 @@ async function call(opts: CallOpts = {}): Promise<Response> {
       user: opts.user === undefined ? { id: 'user-1' } : opts.user,
       locale: 'en',
       supervisor: {
-        registry: { list: () => kinds.map((k) => ({ kind: k })) }
+        registry: {
+          list: () =>
+            kinds.map((k) => ({
+              kind: k,
+              capabilities: { model: null, permissionMode: null }
+            }))
+        }
       }
     },
     request,

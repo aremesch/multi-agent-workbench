@@ -21,6 +21,8 @@ interface DashboardRoleOption {
   id: string;
   name: string;
   cli_kind: string;
+  default_model: string | null;
+  default_permission_mode: string | null;
 }
 
 function loadRepoOptions(userId: string): DashboardRepoOption[] {
@@ -54,7 +56,9 @@ export const load: PageServerLoad = async ({ locals }) => {
   const spawnRoles: DashboardRoleOption[] = listRoles(locals.user.id).map((r) => ({
     id: r.id,
     name: r.name,
-    cli_kind: r.cli_kind
+    cli_kind: r.cli_kind,
+    default_model: r.default_model,
+    default_permission_mode: r.default_permission_mode
   }));
   const spawnRepos = loadRepoOptions(locals.user.id);
   const spawnCliKinds = locals.supervisor.registry.list();

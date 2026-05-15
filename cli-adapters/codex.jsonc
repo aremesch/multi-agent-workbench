@@ -24,7 +24,13 @@
     "env": {
       "OPENAI_API_KEY": "{{env.OPENAI_API_KEY}}"
     },
-    "initialInput": "{{task.body}}"
+    // TODO(verify): Codex CLI's positional-prompt support has not been
+    // verified against a real install. Until someone confirms `codex
+    // "<prompt>"` keeps the TUI interactive (and doesn't exit non-
+    // interactive like `-p` would), keep delivery = 'none' so the spawn
+    // dialog hides the task-body textarea for this adapter. Flip to
+    // 'cli-arg' / 'positional-last' once verified.
+    "initialInput": { "delivery": "none" }
   },
 
   "input": {

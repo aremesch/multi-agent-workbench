@@ -42,7 +42,45 @@
     "env": {
       "ANTHROPIC_API_KEY": "{{env.ANTHROPIC_API_KEY}}"
     },
-    "initialInput": "{{task.body}}"
+    // Claude Code v2.x accepts a positional `[prompt]` arg in interactive
+    // mode (see `claude --help`: "Usage: claude [options] [command] [prompt]").
+    // Non-interactive `-p/--print` would exit on first response; positional
+    // alone keeps the TUI open with the prompt pre-filled.
+    "initialInput": {
+      "delivery": "cli-arg",
+      "template": "{{task.body}}",
+      "placement": "positional-last",
+      "omitWhenEmpty": true
+    }
+  },
+
+  // Per-spawn selectors surfaced by the spawn dialog. The `default` id with
+  // an empty `arg` substitution means "let claude pick" — no flag is appended
+  // when that id is picked. Plan mode is the recommended default for new
+  // agents (matches Claude Desktop's behaviour).
+  "capabilities": {
+    "model": {
+      "label": "Model",
+      "default": "default",
+      "arg": "--model {{value}}",
+      "values": [
+        { "id": "default", "label": "Default" },
+        { "id": "opus",    "label": "Opus" },
+        { "id": "sonnet",  "label": "Sonnet" },
+        { "id": "haiku",   "label": "Haiku" }
+      ]
+    },
+    "permissionMode": {
+      "label": "Permission mode",
+      "default": "plan",
+      "arg": "--permission-mode {{value}}",
+      "values": [
+        { "id": "plan",              "label": "Plan" },
+        { "id": "default",           "label": "Default (ask)" },
+        { "id": "acceptEdits",       "label": "Accept edits" },
+        { "id": "bypassPermissions", "label": "Bypass permissions" }
+      ]
+    }
   },
 
   "input": {

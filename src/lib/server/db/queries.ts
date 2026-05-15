@@ -337,12 +337,30 @@ export function insertRole(row: {
   default_args_json: string;
   tool_config_json: string;
   repo_scope_json: string;
+  default_model?: string | null;
+  default_permission_mode?: string | null;
 }): void {
   const ts = now();
-  prep<[string, string, string, string, string, string, string, string, number, number]>(
+  prep<
+    [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string | null,
+      string | null,
+      number,
+      number
+    ]
+  >(
     `INSERT INTO roles
-       (id, user_id, name, system_prompt, cli_kind, default_args_json, tool_config_json, repo_scope_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, user_id, name, system_prompt, cli_kind, default_args_json, tool_config_json, repo_scope_json,
+        default_model, default_permission_mode, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     row.id,
     row.user_id,
@@ -352,9 +370,83 @@ export function insertRole(row: {
     row.default_args_json,
     row.tool_config_json,
     row.repo_scope_json,
+    row.default_model ?? null,
+    row.default_permission_mode ?? null,
     ts,
     ts
   );
+}
+
+export function updateRole(row: {
+  id: string;
+  user_id: string;
+  name: string;
+  system_prompt: string;
+  cli_kind: string;
+  default_args_json: string;
+  tool_config_json: string;
+  repo_scope_json: string;
+  default_model: string | null;
+  default_permission_mode: string | null;
+}): boolean {
+  const res = prep<
+    [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string | null,
+      string | null,
+      number,
+      string,
+      string
+    ]
+  >(
+    `UPDATE roles
+        SET name = ?,
+            system_prompt = ?,
+            cli_kind = ?,
+            default_args_json = ?,
+            tool_config_json = ?,
+            repo_scope_json = ?,
+            default_model = ?,
+            default_permission_mode = ?,
+            updated_at = ?
+      WHERE id = ? AND user_id = ?`
+  ).run(
+    row.name,
+    row.system_prompt,
+    row.cli_kind,
+    row.default_args_json,
+    row.tool_config_json,
+    row.repo_scope_json,
+    row.default_model,
+    row.default_permission_mode,
+    now(),
+    row.id,
+    row.user_id
+  );
+  return res.changes > 0;
+}
+
+export function deleteRole(id: string, userId: string): boolean {
+  const res = prep<[string, string], void>(
+    'DELETE FROM roles WHERE id = ? AND user_id = ?'
+  ).run(id, userId);
+  return res.changes > 0;
+}
+
+/** Count agents referencing this role. Used by DELETE /api/roles/:id to refuse
+ *  removal while any agent (including archived/exited ones) still points at
+ *  it — the agent row would otherwise dangle with no joinable role_name on the
+ *  archive view. */
+export function countAgentsUsingRole(roleId: string): number {
+  const row = prep<[string], { n: number }>(
+    'SELECT COUNT(*) AS n FROM agents WHERE role_id = ?'
+  ).get(roleId);
+  return row?.n ?? 0;
 }
 
 // --------------- agents ---------------
@@ -494,6 +586,9 @@ export function insertAgent(row: {
   target_url?: string | null;
   target_port?: number | null;
   hook_token?: string | null;
+  model?: string | null;
+  permission_mode?: string | null;
+  source_branch?: string | null;
 }): void {
   const ts = now();
   prep<
@@ -512,6 +607,9 @@ export function insertAgent(row: {
       string | null,
       number | null,
       string | null,
+      string | null,
+      string | null,
+      string | null,
       number,
       number
     ]
@@ -519,8 +617,8 @@ export function insertAgent(row: {
     `INSERT INTO agents
        (id, user_id, role_id, repo_id, worktree_id, cli_kind, tmux_session, status,
         cli_session_id, base_sha, committer_email, target_url, target_port,
-        hook_token, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        hook_token, model, permission_mode, source_branch, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     row.id,
     row.user_id,
@@ -536,6 +634,9 @@ export function insertAgent(row: {
     row.target_url ?? null,
     row.target_port ?? null,
     row.hook_token ?? null,
+    row.model ?? null,
+    row.permission_mode ?? null,
+    row.source_branch ?? null,
     ts,
     ts
   );

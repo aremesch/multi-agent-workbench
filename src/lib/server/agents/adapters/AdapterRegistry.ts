@@ -21,6 +21,43 @@ interface LoadedEntry {
   loadedAt: number;
 }
 
+/**
+ * Public-facing description of one loaded adapter, returned from `list()`.
+ * Surfaces every piece of UI-relevant metadata the spawn dialog needs to
+ * decide which fields to render. Kept in this file (rather than a shared
+ * type) because consumers are server-side `+page.server.ts` loaders that
+ * import the registry directly; the client receives this via SvelteKit's
+ * structured-clone serializer.
+ */
+export interface AdapterCapabilityValue {
+  id: string;
+  label: string;
+}
+export interface AdapterCapabilityListing {
+  label: string;
+  values: AdapterCapabilityValue[];
+  default: string | null;
+}
+export interface AdapterListing {
+  kind: string;
+  displayName: string;
+  createWorktree: boolean;
+  acceptsImageAttachment: boolean;
+  initialInputDelivery: 'none' | 'cli-arg';
+  optionalArgs: Array<{
+    id: string;
+    flag: string;
+    label: string;
+    description?: string;
+    default: boolean;
+  }>;
+  mobileQuickKeys: Array<{ id: string; label: string; keys: string }>;
+  capabilities: {
+    model: AdapterCapabilityListing | null;
+    permissionMode: AdapterCapabilityListing | null;
+  };
+}
+
 export class AdapterRegistry {
   private entries = new Map<string, LoadedEntry>();
   private watcher: FSWatcher | null = null;
@@ -89,36 +126,48 @@ export class AdapterRegistry {
     return this.entries.has(kind);
   }
 
-  list(): {
-    kind: string;
-    displayName: string;
-    acceptsImageAttachment: boolean;
-    optionalArgs: Array<{
-      id: string;
-      flag: string;
-      label: string;
-      description?: string;
-      default: boolean;
-    }>;
-    mobileQuickKeys: Array<{ id: string; label: string; keys: string }>;
-  }[] {
-    return Array.from(this.entries.values()).map((e) => ({
-      kind: e.config.kind,
-      displayName: e.config.displayName,
-      acceptsImageAttachment: e.config.acceptsImageAttachment,
-      optionalArgs: e.config.spawn.optionalArgs.map((o) => ({
-        id: o.id,
-        flag: o.flag,
-        label: o.label,
-        description: o.description,
-        default: o.default
-      })),
-      mobileQuickKeys: e.config.mobileQuickKeys.map((k) => ({
-        id: k.id,
-        label: k.label,
-        keys: k.keys
-      }))
-    }));
+  list(): AdapterListing[] {
+    return Array.from(this.entries.values()).map((e) => {
+      const caps = e.config.capabilities ?? {};
+      return {
+        kind: e.config.kind,
+        displayName: e.config.displayName,
+        createWorktree: e.config.createWorktree,
+        acceptsImageAttachment: e.config.acceptsImageAttachment,
+        initialInputDelivery: e.config.spawn.initialInput.delivery,
+        optionalArgs: e.config.spawn.optionalArgs.map((o) => ({
+          id: o.id,
+          flag: o.flag,
+          label: o.label,
+          description: o.description,
+          default: o.default
+        })),
+        mobileQuickKeys: e.config.mobileQuickKeys.map((k) => ({
+          id: k.id,
+          label: k.label,
+          keys: k.keys
+        })),
+        capabilities: {
+          model: caps.model
+            ? {
+                label: caps.model.label,
+                values: caps.model.values.map((v) => ({ id: v.id, label: v.label })),
+                default: caps.model.default ?? null
+              }
+            : null,
+          permissionMode: caps.permissionMode
+            ? {
+                label: caps.permissionMode.label,
+                values: caps.permissionMode.values.map((v) => ({
+                  id: v.id,
+                  label: v.label
+                })),
+                default: caps.permissionMode.default ?? null
+              }
+            : null
+        }
+      };
+    });
   }
 
   /** Build a new adapter instance for a kind. Each agent gets its own. */

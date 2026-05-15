@@ -82,6 +82,8 @@ export interface RoleRow {
   default_args_json: string;
   tool_config_json: string;
   repo_scope_json: string;
+  default_model: string | null;
+  default_permission_mode: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -105,6 +107,9 @@ export interface AgentRow {
   target_url: string | null;
   target_port: number | null;
   hook_token: string | null;
+  model: string | null;
+  permission_mode: string | null;
+  source_branch: string | null;
   created_at: number;
   updated_at: number;
 }

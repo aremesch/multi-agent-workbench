@@ -66,7 +66,45 @@
           "type": "object",
           "additionalProperties": { "type": "string" }
         },
-        "initialInput": { "type": "string" }
+        "initialInput": {
+          "description": "How the task body is delivered to the CLI on spawn. 'none' hides the task-body field in the spawn dialog entirely. 'cli-arg' bakes the substituted template into argv at launch (positional or via a flag).",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["delivery"],
+              "properties": {
+                "delivery": { "type": "string", "const": "none" }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["delivery", "template", "placement"],
+              "properties": {
+                "delivery": { "type": "string", "const": "cli-arg" },
+                "template": { "type": "string", "minLength": 1, "description": "Substituted via {{var}} (typically {{task.body}})." },
+                "placement": {
+                  "oneOf": [
+                    { "type": "string", "const": "positional-last" },
+                    {
+                      "type": "object",
+                      "required": ["flag"],
+                      "properties": { "flag": { "type": "string", "minLength": 1 } }
+                    }
+                  ]
+                },
+                "omitWhenEmpty": { "type": "boolean", "description": "Skip the extra arg when substituted template is empty. Default true." }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Value-bearing CLI selectors exposed in the spawn dialog (model, permission/approval mode, …). The 'arg' template is substituted with {{value}} = the picked option id and appended to argv at spawn.",
+      "properties": {
+        "model": { "$ref": "#/$defs/capability" },
+        "permissionMode": { "$ref": "#/$defs/capability" }
       }
     },
     "input": {
@@ -132,6 +170,29 @@
             }
           }
         }
+      }
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "required": ["label", "values", "arg"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "default": { "type": "string", "minLength": 1 },
+        "arg": { "type": "string", "minLength": 1, "description": "Substituted template using {{value}} = picked id. Empty result after substitution means 'don't append any arg' (good for a 'default' id)." }
       }
     }
   }

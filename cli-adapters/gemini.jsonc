@@ -24,7 +24,40 @@
     "env": {
       "GEMINI_API_KEY": "{{env.GEMINI_API_KEY}}"
     },
-    "initialInput": "{{task.body}}"
+    // Gemini CLI's `--help` shows `gemini [query..]` as the positional —
+    // "Initial prompt. Runs in interactive mode by default; use -p/--prompt
+    // for non-interactive." So a positional prompt keeps the TUI open.
+    "initialInput": {
+      "delivery": "cli-arg",
+      "template": "{{task.body}}",
+      "placement": "positional-last",
+      "omitWhenEmpty": true
+    }
+  },
+
+  // Mirrors claude-code's capability shape. `-m/--model` is the Gemini flag.
+  // `--approval-mode` accepts default | auto_edit | yolo | plan (from
+  // `gemini --help`).
+  "capabilities": {
+    "model": {
+      "label": "Model",
+      "default": "default",
+      "arg": "--model {{value}}",
+      "values": [
+        { "id": "default", "label": "Default" }
+      ]
+    },
+    "permissionMode": {
+      "label": "Approval mode",
+      "default": "plan",
+      "arg": "--approval-mode {{value}}",
+      "values": [
+        { "id": "plan",      "label": "Plan (read-only)" },
+        { "id": "default",   "label": "Default (ask)" },
+        { "id": "auto_edit", "label": "Auto-edit" },
+        { "id": "yolo",      "label": "YOLO" }
+      ]
+    }
   },
 
   "input": {

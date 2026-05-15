@@ -5,6 +5,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   'nav.appTitle': 'Multi-Agent Workbench',
   'nav.settings': 'Einstellungen',
   'nav.account': 'Konto',
+  'nav.roles': 'Agentenrollen',
   'nav.logout': 'Abmelden',
   'nav.userMenu': 'Benutzermen\u00fc',
   'nav.showSidebar': 'Seitenleiste einblenden',
@@ -157,7 +158,14 @@ const de: Partial<Record<TranslationKey, string>> = {
   'spawn.error.failedCreateProject': 'Projekt konnte nicht erstellt werden',
   'spawn.error.failedAddRepo': 'Repo konnte nicht hinzugef\u00fcgt werden',
   'spawn.error.networkError': 'Netzwerkfehler',
+  'spawn.error.branchListFailed': 'Branches konnten nicht geladen werden: {message}',
   'spawn.advanced': 'Erweitert',
+  'spawn.branch': 'Branch',
+  'spawn.withWorktree': 'Eigenes Worktree verwenden',
+  'spawn.currentBranch': 'aktuell',
+  'spawn.loadingBranches': 'Branches werden geladen\u2026',
+  'spawn.manageRoles': 'Rollen verwalten \u2192',
+  'spawn.manageRolesHint': 'Rollen, Systemprompts und Standardwerte bearbeiten',
 
   // ── Browser-Agent Spawn-Felder ─────────────────────────────────
   'spawn.sessionLabel': 'Sitzungsname',
@@ -230,10 +238,24 @@ const de: Partial<Record<TranslationKey, string>> = {
   'agent.dragHandle': 'Zum Umsortieren ziehen',
 
   // ── Roles ────────────────────────────────────────────────────────
-  'roles.title': 'Rollen',
+  'roles.title': 'Agentenrollen',
   'roles.newRole': 'Neue Rolle',
+  'roles.editRole': 'Rolle bearbeiten',
   'roles.noRoles': 'Noch keine Rollen. Eine Rolle b\u00fcndelt einen CLI-Adapter + Systemprompt.',
   'roles.backToDashboard': '\u2190 Zur\u00fcck zum Dashboard',
+  'roles.noSystemPrompt': '(keiner)',
+  'roles.colName': 'Name',
+  'roles.colCliKind': 'CLI-Typ',
+  'roles.colModel': 'Modell',
+  'roles.colMode': 'Berechtigungsmodus',
+  'roles.colSystemPrompt': 'Systemprompt',
+  'roles.colActions': 'Aktionen',
+  'roles.confirmDeleteTitle': 'Rolle l\u00f6schen',
+  'roles.confirmDeleteBody': 'Rolle \u201e{name}\u201c l\u00f6schen? Dies kann nicht r\u00fcckg\u00e4ngig gemacht werden.',
+  'roles.deleting': 'Wird gel\u00f6scht\u2026',
+  'roles.error.notFound': 'Rolle nicht gefunden',
+  'roles.error.inUse': 'L\u00f6schen nicht m\u00f6glich \u2014 {count} Agent(en) verweisen noch auf diese Rolle',
+  'roles.error.deleteFailed': 'L\u00f6schen fehlgeschlagen',
 
   'newRole.title': 'Neue Rolle',
 
@@ -283,6 +305,9 @@ const de: Partial<Record<TranslationKey, string>> = {
   // ── Common / API errors ──────────────────────────────────────────
   'common.close': 'Schlie\u00dfen',
   'common.cancel': 'Abbrechen',
+  'common.save': 'Speichern',
+  'common.edit': 'Bearbeiten',
+  'common.delete': 'L\u00f6schen',
   'common.error.unauthorized': 'Nicht autorisiert',
   'common.error.invalidJson': 'Ung\u00fcltiges JSON',
   'common.error.invalidTheme': 'Ung\u00fcltiges Theme',

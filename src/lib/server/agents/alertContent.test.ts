@@ -108,6 +108,9 @@ const baseAgent = (over: Partial<AgentRow> = {}): AgentRow => ({
   target_url: null,
   target_port: null,
   hook_token: null,
+  model: null,
+  permission_mode: null,
+  source_branch: null,
   created_at: 0,
   updated_at: 0,
   ...over

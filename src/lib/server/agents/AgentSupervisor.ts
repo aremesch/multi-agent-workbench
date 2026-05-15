@@ -62,6 +62,21 @@ export interface SpawnAgentArgs {
   /** Per-spawn optional arg overrides keyed by optionalArg id. */
   optionalArgs?: Record<string, boolean>;
   /**
+   * Per-spawn value picks for the adapter's `capabilities.*` selectors
+   * (currently `model` and `permissionMode`). Falls back to the role's
+   * stored defaults, then the adapter's own default in
+   * `ConfigDrivenAdapter.buildSpawnSpec`. Persisted on the agent row so the
+   * archive page can show what configuration this run used.
+   */
+  model?: string | null;
+  permissionMode?: string | null;
+  /**
+   * The branch the user picked as the worktree's start point (or the branch
+   * checked out in the repo when worktree creation was skipped). Stored on
+   * the agent row as `source_branch` for display purposes.
+   */
+  sourceBranch?: string | null;
+  /**
    * Browser-agent target. Captured from the spawn form when the role's
    * cli_kind is `browser`; ignored for CLI agents. The `/preview/<id>/*`
    * reverse proxy reads `target_port` to forward HTTP and WebSocket upgrade
@@ -521,6 +536,13 @@ export class AgentSupervisor {
     // JSONL transcript path is reproducible from the DB alone — see
     // ClaudeJsonlTokens.ts and the archive token-summary call sites.
     const cliSessionId = adapter.needsCliSessionId ? randomUUID() : null;
+
+    // Resolve per-spawn capability values: per-call override → role default →
+    // adapter default. The adapter has the final say on which ids are valid
+    // (the spawn route already passes the form value through unchanged).
+    const model = args.model ?? role.default_model ?? null;
+    const permissionMode = args.permissionMode ?? role.default_permission_mode ?? null;
+
     const spec = adapter.buildSpawnSpec({
       role: {
         systemPrompt: role.system_prompt,
@@ -534,7 +556,8 @@ export class AgentSupervisor {
         GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? ''
       },
       agent: { id: agentId, cliSessionId },
-      optionalArgs: args.optionalArgs
+      optionalArgs: args.optionalArgs,
+      capabilityValues: { model, permissionMode }
     });
 
     const tmuxSession = Tmux.sessionName(agentId);
@@ -566,7 +589,10 @@ export class AgentSupervisor {
       cli_session_id: cliSessionId,
       base_sha: args.baseSha,
       committer_email: committerEmail,
-      hook_token: hookToken
+      hook_token: hookToken,
+      model,
+      permission_mode: permissionMode,
+      source_branch: args.sourceBranch ?? null
     });
 
     // Write the worktree's .claude/settings.local.json so claude-code's
@@ -630,14 +656,11 @@ export class AgentSupervisor {
     });
     updateAgentStatus(agentId, 'running');
 
-    // Optional initial input after the CLI has had a beat to boot.
-    if (spec.initialInput) {
-      setTimeout(() => {
-        runtime.enqueueInput(spec.initialInput ?? '', true).catch((err) => {
-          console.error(`[AgentSupervisor] initialInput failed for ${agentId}:`, err);
-        });
-      }, 1500);
-    }
+    // No post-launch initial input. Adapters that accept an initial prompt
+    // do so via their CLI argv (`initialInput.delivery: 'cli-arg'` in the
+    // JSONC); the substituted body is already part of `spec.args`. Adapters
+    // configured `delivery: 'none'` simply have no initial prompt, and the
+    // spawn dialog hides the task-body field for them.
 
     return row;
   }
