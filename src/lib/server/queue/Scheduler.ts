@@ -41,6 +41,7 @@ import {
   listQueueEntriesByIds,
   listSchedulableQueueEntries,
   listUserIds,
+  setQueueEntryQueued,
   updateQueueEntryStatus
 } from '../db/queries.js';
 import type { QueueEntryRow, QueueEntryStatus } from '../db/types.js';
@@ -186,6 +187,33 @@ export class QueueScheduler {
   }
 
   /**
+   * Move an entry from the backlog into the queue (queued=1). Valid only on
+   * pending/blocked/ready rows. Returns false when the row isn't owned by the
+   * user, is already terminal, or is currently running.
+   */
+  queueEntry(entryId: string, userId: string): boolean {
+    const ok = setQueueEntryQueued(entryId, userId, true);
+    if (!ok) return false;
+    const refreshed = getQueueEntry(entryId);
+    if (refreshed) this.events.emit('change', { entry: refreshed, promoted: false });
+    this.scheduleTick();
+    return true;
+  }
+
+  /**
+   * Move an entry from the queue into the backlog (queued=0). Same guard as
+   * `queueEntry` — only valid on non-running, non-terminal rows.
+   */
+  backlogEntry(entryId: string, userId: string): boolean {
+    const ok = setQueueEntryQueued(entryId, userId, false);
+    if (!ok) return false;
+    const refreshed = getQueueEntry(entryId);
+    if (refreshed) this.events.emit('change', { entry: refreshed, promoted: false });
+    this.scheduleTick();
+    return true;
+  }
+
+  /**
    * Promote an entry NOW, bypassing slot caps but still respecting validation
    * and exclusive locking. Used from the queue UI's "run now" action.
    */
@@ -305,7 +333,10 @@ export class QueueScheduler {
   private async tickForUser(userId: string): Promise<void> {
     const supervisor = this.supervisor;
     if (!supervisor) return;
-    const entries = listSchedulableQueueEntries(userId);
+    // Backlog entries (queued=0) sit on the task list but are excluded from
+    // auto-promotion until the user explicitly queues them. Dependencies on
+    // backlog entries are surfaced via `last_error` in classifyOpenEntry.
+    const entries = listSchedulableQueueEntries(userId, { onlyQueued: true });
     if (entries.length === 0) return;
 
     // 1. Refresh blocked / ready classification for open entries.
@@ -383,7 +414,9 @@ export class QueueScheduler {
       return { status: 'blocked', last_error: 'invalid depends_on_json' };
     }
     if (deps.length > 0) {
-      // Look up missing deps (e.g. cross-batch) so we can detect failures.
+      // Look up missing deps (e.g. cross-batch OR backlog deps that the tick's
+      // queued-only filter doesn't surface) so we can detect failures and tell
+      // the user when their dep is parked in the backlog.
       const missingIds = deps.filter((id) => !entryById.has(id));
       const extra = missingIds.length > 0 ? listQueueEntriesByIds(missingIds, userId) : [];
       for (const e of extra) entryById.set(e.id, e);
@@ -396,6 +429,12 @@ export class QueueScheduler {
           return {
             status: 'blocked',
             last_error: `dependency ${dep.status}: ${dep.id}`
+          };
+        }
+        if (dep.queued === 0 && dep.status !== 'done') {
+          return {
+            status: 'blocked',
+            last_error: `dependency in backlog: ${dep.id}`
           };
         }
         if (dep.status !== 'done') {
@@ -449,7 +488,8 @@ export class QueueScheduler {
       withWorktreeExplicit: entry.with_worktree === 1,
       model: entry.model,
       permissionMode: entry.permission_mode,
-      optionalArgs: this.parseOptionalArgs(entry.optional_args_json)
+      optionalArgs: this.parseOptionalArgs(entry.optional_args_json),
+      planMd: entry.plan_md
     };
     const validation = await validateSpawnInputs(raw, entry.user_id, supervisor.registry, {
       verifyBranchExists: true

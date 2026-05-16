@@ -37,6 +37,15 @@ export interface QueueInput {
   /** Unix epoch seconds; null = ASAP. */
   scheduledFor: number | null;
   exclusive: boolean;
+  /** User intent: true = eligible for auto-promotion ("queue it"), false =
+   *  parked in the task list backlog. */
+  queued: boolean;
+  /** Optional markdown plan stored alongside the task; appended after the
+   *  task body when the agent eventually runs. */
+  planMd: string | null;
+  /** Optional reference path to the source plan file. Not editable via the
+   *  current UI; reserved for future automation. */
+  planSourcePath: string | null;
 }
 
 export function coerceQueueInput(
@@ -88,6 +97,17 @@ export function coerceQueueInput(
   }
   const exclusive = Boolean(b.exclusive);
 
+  // queued: default false (Backlog). The spawn dialog's "Run" submit button
+  // is the only path that POSTs queued=true. Older callers that never set
+  // the flag land in the backlog by design.
+  const queued = b.queued === undefined ? false : Boolean(b.queued);
+  const planMd =
+    typeof b.plan_md === 'string' && b.plan_md.trim() !== '' ? b.plan_md : null;
+  const planSourcePath =
+    typeof b.plan_source_path === 'string' && b.plan_source_path.trim() !== ''
+      ? b.plan_source_path.trim()
+      : null;
+
   return {
     ok: true,
     value: {
@@ -104,7 +124,10 @@ export function coerceQueueInput(
       priority,
       dependsOn,
       scheduledFor,
-      exclusive
+      exclusive,
+      queued,
+      planMd,
+      planSourcePath
     }
   };
 }
@@ -127,7 +150,8 @@ export async function validateQueueInput(
     withWorktreeExplicit: input.withWorktreeExplicit,
     model: input.model,
     permissionMode: input.permissionMode,
-    optionalArgs: input.optionalArgs
+    optionalArgs: input.optionalArgs,
+    planMd: input.planMd
   };
   // Branch existence is NOT verified at save time — the user picked from a
   // dropdown of branches that existed when the dialog opened, and the

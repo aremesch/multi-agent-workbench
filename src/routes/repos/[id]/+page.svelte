@@ -222,7 +222,7 @@
 {#if planOpen}
   <PlanViewerModal
     open={planOpen}
-    agentId={openAgent?.id ?? null}
+    source={{ kind: 'agent', agentId: openAgent?.id ?? '' }}
     onClose={() => (planOpen = false)}
   />
 {/if}

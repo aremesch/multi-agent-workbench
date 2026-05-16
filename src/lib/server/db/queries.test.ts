@@ -50,6 +50,7 @@ import {
   insertEvent,
   insertMessage,
   insertProject,
+  insertQueueEntry,
   insertRepo,
   insertRole,
   insertTask,
@@ -77,7 +78,11 @@ import {
   listWorktreesForRepo,
   markMessageRead,
   pruneTerminalLogByBytes,
+  getQueueEntry,
+  listSchedulableQueueEntries,
   setMustChangePassword,
+  setQueueEntryQueued,
+  setQueueEntryPlan,
   setUserSetting,
   summarizeTerminalActivity,
   updateAgentAttention,
@@ -1071,5 +1076,118 @@ describe('user settings', () => {
     );
     const all = getSpawnDefaultsAll('user-1', ['claude-code', 'codex']);
     expect(Object.keys(all)).toEqual(['claude-code']);
+  });
+});
+
+// ----- queue entries: queued bit + plan_md --------------------------------
+
+describe('queue entries — backlog/queue admission and plan storage', () => {
+  function seedQueueEntry(
+    id: string,
+    overrides: Partial<Parameters<typeof insertQueueEntry>[0]> = {}
+  ): void {
+    insertQueueEntry({
+      id,
+      user_id: 'user-1',
+      role_id: 'role-1',
+      repo_id: 'repo-1',
+      title: id,
+      body: null,
+      target_url: null,
+      model: null,
+      permission_mode: null,
+      source_branch: null,
+      with_worktree: true,
+      optional_args_json: '{}',
+      priority: 0,
+      depends_on_json: '[]',
+      scheduled_for: null,
+      exclusive: false,
+      queued: true,
+      plan_md: null,
+      plan_source_path: null,
+      status: 'pending',
+      external_source_json: null,
+      ...overrides
+    });
+  }
+
+  beforeEach(() => {
+    seedUser();
+    seedProject();
+    seedRepo();
+    seedRole();
+  });
+
+  it('insertQueueEntry round-trips queued/plan columns', () => {
+    seedQueueEntry('q1', {
+      queued: false,
+      plan_md: 'step 1\nstep 2',
+      plan_source_path: 'docs/plans/v0.2-foo.md'
+    });
+    const row = getQueueEntry('q1');
+    expect(row?.queued).toBe(0);
+    expect(row?.plan_md).toBe('step 1\nstep 2');
+    expect(row?.plan_source_path).toBe('docs/plans/v0.2-foo.md');
+  });
+
+  it('insertQueueEntry defaults queued=1 + null plan fields when set explicitly', () => {
+    seedQueueEntry('q2');
+    const row = getQueueEntry('q2');
+    expect(row?.queued).toBe(1);
+    expect(row?.plan_md).toBeNull();
+    expect(row?.plan_source_path).toBeNull();
+  });
+
+  it('listSchedulableQueueEntries(onlyQueued:true) excludes queued=0 rows', () => {
+    seedQueueEntry('queued', { queued: true });
+    seedQueueEntry('parked', { queued: false });
+    const all = listSchedulableQueueEntries('user-1');
+    const onlyQueued = listSchedulableQueueEntries('user-1', { onlyQueued: true });
+    expect(all.map((e) => e.id).sort()).toEqual(['parked', 'queued']);
+    expect(onlyQueued.map((e) => e.id)).toEqual(['queued']);
+  });
+
+  it('setQueueEntryQueued flips the bit on a non-terminal row owned by the user', () => {
+    seedQueueEntry('q1', { queued: false });
+    const ok = setQueueEntryQueued('q1', 'user-1', true);
+    expect(ok).toBe(true);
+    expect(getQueueEntry('q1')?.queued).toBe(1);
+  });
+
+  it('setQueueEntryQueued is a no-op on terminal rows', () => {
+    seedQueueEntry('q1', { status: 'done', queued: true });
+    const ok = setQueueEntryQueued('q1', 'user-1', false);
+    expect(ok).toBe(false);
+    // Still queued because we refused to touch a done row.
+    expect(getQueueEntry('q1')?.queued).toBe(1);
+  });
+
+  it('setQueueEntryQueued is a no-op when the user does not own the row', () => {
+    seedQueueEntry('q1', { queued: true });
+    const ok = setQueueEntryQueued('q1', 'someone-else', false);
+    expect(ok).toBe(false);
+    expect(getQueueEntry('q1')?.queued).toBe(1);
+  });
+
+  it('setQueueEntryQueued is a no-op on running rows', () => {
+    seedQueueEntry('q1', { status: 'running', queued: true });
+    const ok = setQueueEntryQueued('q1', 'user-1', false);
+    expect(ok).toBe(false);
+  });
+
+  it('setQueueEntryPlan stores and clears the plan markdown', () => {
+    seedQueueEntry('q1', { queued: true, plan_md: null });
+    expect(setQueueEntryPlan('q1', 'user-1', 'new plan', 'docs/plans/v0.2-foo.md')).toBe(
+      true
+    );
+    let row = getQueueEntry('q1');
+    expect(row?.plan_md).toBe('new plan');
+    expect(row?.plan_source_path).toBe('docs/plans/v0.2-foo.md');
+
+    expect(setQueueEntryPlan('q1', 'user-1', null, null)).toBe(true);
+    row = getQueueEntry('q1');
+    expect(row?.plan_md).toBeNull();
+    expect(row?.plan_source_path).toBeNull();
   });
 });

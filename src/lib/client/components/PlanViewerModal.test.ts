@@ -43,7 +43,7 @@ describe('PlanViewerModal — empty state', () => {
       jsonResponse({ dir: 'docs/plans', globalDir: '~/.claude/plans', files: [] })
     );
     const { findByText, container } = render(PlanViewerModal, {
-      props: { open: true, agentId: 'agent-1', onClose: vi.fn() }
+      props: { open: true, source: { kind: 'agent', agentId: 'agent-1' }, onClose: vi.fn() }
     });
     // Mock translator emits "<key> {dir=docs/plans,globalDir=~/.claude/plans}".
     expect(await findByText(/dir=docs\/plans/)).toBeInTheDocument();
@@ -64,10 +64,12 @@ describe('PlanViewerModal — single file auto-load', () => {
           files: [{ name: 'v0.2.md', modifiedMs: 1000, sizeBytes: 10, source: 'local' }]
         })
       )
-      .mockResolvedValueOnce(jsonResponse({ name: 'v0.2.md', html: '<h1>Hello</h1>' }));
+      .mockResolvedValueOnce(
+        jsonResponse({ name: 'v0.2.md', html: '<h1>Hello</h1>', markdown: '# Hello' })
+      );
 
     const { container, findByText } = render(PlanViewerModal, {
-      props: { open: true, agentId: 'agent-1', onClose: vi.fn() }
+      props: { open: true, source: { kind: 'agent', agentId: 'agent-1' }, onClose: vi.fn() }
     });
     expect(await findByText('Hello')).toBeInTheDocument();
     expect(container.querySelector('.markdown-body')?.innerHTML).toContain('<h1>Hello</h1>');
@@ -88,10 +90,12 @@ describe('PlanViewerModal — single file auto-load', () => {
           files: [{ name: 'g.md', modifiedMs: 9000, sizeBytes: 10, source: 'global' }]
         })
       )
-      .mockResolvedValueOnce(jsonResponse({ name: 'g.md', html: '<p>g</p>' }));
+      .mockResolvedValueOnce(
+        jsonResponse({ name: 'g.md', html: '<p>g</p>', markdown: 'g raw' })
+      );
 
     render(PlanViewerModal, {
-      props: { open: true, agentId: 'agent-1', onClose: vi.fn() }
+      props: { open: true, source: { kind: 'agent', agentId: 'agent-1' }, onClose: vi.fn() }
     });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const renderUrl = fetchMock.mock.calls[1]![0] as string;
@@ -113,10 +117,12 @@ describe('PlanViewerModal — multi-file switcher', () => {
           ]
         })
       )
-      .mockResolvedValueOnce(jsonResponse({ name: 'v0.2.md', html: '<p>x</p>' }));
+      .mockResolvedValueOnce(
+        jsonResponse({ name: 'v0.2.md', html: '<p>x</p>', markdown: 'x raw' })
+      );
 
     const { container } = render(PlanViewerModal, {
-      props: { open: true, agentId: 'agent-1', onClose: vi.fn() }
+      props: { open: true, source: { kind: 'agent', agentId: 'agent-1' }, onClose: vi.fn() }
     });
     await waitFor(() => {
       expect(container.querySelector('.switcher select')).toBeTruthy();
@@ -136,7 +142,7 @@ describe('PlanViewerModal — error state', () => {
   it('renders the error body and a retry button when the list fetch fails', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ code: 'boom' }, { status: 500 }));
     const { findByText, findByRole, container } = render(PlanViewerModal, {
-      props: { open: true, agentId: 'agent-1', onClose: vi.fn() }
+      props: { open: true, source: { kind: 'agent', agentId: 'agent-1' }, onClose: vi.fn() }
     });
     // Mock translator emits "<key> {error=HTTP 500}" — assert the error message flowed through.
     expect(await findByText(/error=HTTP 500/)).toBeInTheDocument();

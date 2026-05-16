@@ -39,7 +39,13 @@ type PromoteOutcome =
   | { ok: false; error: { code: 'spawnFailed'; message: string } };
 let nextPromoteOutcome: PromoteOutcome = { ok: true, agentId: 'agent-stub' };
 let promoteCounter = 0;
-const promoteCalls: Array<{ role_id: string; repo_id: string; title: string; agentId: string }> = [];
+const promoteCalls: Array<{
+  role_id: string;
+  repo_id: string;
+  title: string;
+  body: string;
+  agentId: string;
+}> = [];
 
 vi.mock('../agents/spawnFromInputs.js', async () => {
   const actual = await vi.importActual<typeof import('../agents/spawnFromInputs.js')>(
@@ -61,6 +67,7 @@ vi.mock('../agents/spawnFromInputs.js', async () => {
         role_id: validated.role.id,
         repo_id: validated.repo.id,
         title: validated.title,
+        body: validated.body,
         agentId: outcomeAgentId
       });
       if (nextPromoteOutcome.ok) {
@@ -240,6 +247,10 @@ interface EntryOpts {
   withWorktree?: boolean;
   dependsOn?: string[];
   repoId?: string;
+  /** Defaults to true so existing tests keep their auto-promote expectations.
+   *  Set to false to put the entry in the Backlog (scheduler ignores it). */
+  queued?: boolean;
+  planMd?: string | null;
 }
 
 function addEntry(
@@ -266,6 +277,9 @@ function addEntry(
     depends_on_json: JSON.stringify(opts.dependsOn ?? []),
     scheduled_for: opts.scheduledFor ?? null,
     exclusive: opts.exclusive ?? false,
+    queued: opts.queued ?? true,
+    plan_md: opts.planMd ?? null,
+    plan_source_path: null,
     status: 'pending',
     external_source_json: null
   });
@@ -489,4 +503,113 @@ describe('QueueScheduler', () => {
     expect(entry?.last_error).toMatch(/unknownRole|role/);
     scheduler.stop();
   });
+
+  it('does not promote a backlog entry (queued=0) even with capacity free', async () => {
+    const { userId, roleId, repoId } = seed();
+    addEntry(userId, roleId, repoId, { id: 'parked', queued: false });
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    await tickOnce(scheduler);
+    expect(promoteCalls).toHaveLength(0);
+    // Backlog entries don't get reclassified — they stay 'pending' until the
+    // user queues them or runs them manually.
+    expect(getQueueEntry('parked')?.status).toBe('pending');
+    expect(getQueueEntry('parked')?.queued).toBe(0);
+    scheduler.stop();
+  });
+
+  it('queueEntry flips queued=1 and lets the scheduler promote on the next tick', async () => {
+    const { userId, roleId, repoId } = seed();
+    addEntry(userId, roleId, repoId, { id: 'parked', queued: false });
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    await tickOnce(scheduler);
+    expect(promoteCalls).toHaveLength(0);
+
+    const ok = scheduler.queueEntry('parked', userId);
+    expect(ok).toBe(true);
+    expect(getQueueEntry('parked')?.queued).toBe(1);
+    await tickOnce(scheduler);
+    expect(promoteCalls).toHaveLength(1);
+    expect(getQueueEntry('parked')?.status).toBe('running');
+    scheduler.stop();
+  });
+
+  it('backlogEntry flips queued=0 and the scheduler stops considering it', async () => {
+    const { userId, roleId, repoId } = seed();
+    setQueueConcurrency(userId, {
+      maxConcurrentGlobal: 0,
+      maxConcurrentPerRepo: 0,
+      perRepoOverrides: {}
+    });
+    addEntry(userId, roleId, repoId, { id: 'demoted', queued: true });
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    await tickOnce(scheduler);
+    // Capped at 0 so it sits 'ready' but unpromoted.
+    expect(promoteCalls).toHaveLength(0);
+    expect(getQueueEntry('demoted')?.status).toBe('ready');
+
+    const ok = scheduler.backlogEntry('demoted', userId);
+    expect(ok).toBe(true);
+    expect(getQueueEntry('demoted')?.queued).toBe(0);
+
+    // Even when we open the caps, the entry should stay parked.
+    setQueueConcurrency(userId, {
+      maxConcurrentGlobal: 5,
+      maxConcurrentPerRepo: 5,
+      perRepoOverrides: {}
+    });
+    await tickOnce(scheduler);
+    expect(promoteCalls).toHaveLength(0);
+    scheduler.stop();
+  });
+
+  it('promoteEntry (Run now) works on a backlog entry without flipping queued', async () => {
+    const { userId, roleId, repoId } = seed();
+    setQueueConcurrency(userId, {
+      maxConcurrentGlobal: 0,
+      maxConcurrentPerRepo: 0,
+      perRepoOverrides: {}
+    });
+    addEntry(userId, roleId, repoId, { id: 'parked-run', queued: false });
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    await tickOnce(scheduler);
+    expect(promoteCalls).toHaveLength(0);
+
+    const result = await scheduler.promoteEntry('parked-run', userId);
+    expect(result.ok).toBe(true);
+    const entry = getQueueEntry('parked-run');
+    expect(entry?.status).toBe('running');
+    // Run-now is a one-shot override; it must NOT silently put the row in
+    // the auto-run pool. Preserves the user's intent for any future
+    // clone/edit cycle.
+    expect(entry?.queued).toBe(0);
+    scheduler.stop();
+  });
+
+  it('surfaces dependency-in-backlog as a clear last_error', async () => {
+    const { userId, roleId, repoId } = seed();
+    addEntry(userId, roleId, repoId, { id: 'dep-parked', queued: false });
+    addEntry(userId, roleId, repoId, {
+      id: 'waiter',
+      queued: true,
+      dependsOn: ['dep-parked']
+    });
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    await tickOnce(scheduler);
+    const waiter = getQueueEntry('waiter');
+    expect(waiter?.status).toBe('blocked');
+    expect(waiter?.last_error).toMatch(/dependency in backlog: dep-parked/);
+    expect(promoteCalls).toHaveLength(0);
+    scheduler.stop();
+  });
+
 });

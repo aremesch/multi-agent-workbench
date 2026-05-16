@@ -92,6 +92,9 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
     role_id: v.role.id,
     repo_id: v.repo.id,
     title: v.title,
+    // Persist the raw body the user typed (not the plan-augmented prompt) —
+    // the plan is stored separately in `plan_md` so it can be edited later
+    // and the scheduler concatenates body + plan at promote time.
     body: v.adapter.initialInputDelivery === 'cli-arg' ? coerce.value.taskBody : null,
     target_url: v.browser ? v.browser.target_url : null,
     model: v.model,
@@ -103,6 +106,9 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
     depends_on_json: JSON.stringify(coerce.value.dependsOn),
     scheduled_for: coerce.value.scheduledFor,
     exclusive: coerce.value.exclusive,
+    queued: coerce.value.queued,
+    plan_md: coerce.value.planMd,
+    plan_source_path: coerce.value.planSourcePath,
     status: 'pending',
     external_source_json: null
   });

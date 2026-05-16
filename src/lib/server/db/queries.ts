@@ -1255,6 +1255,9 @@ export interface InsertQueueEntryInput {
   depends_on_json: string;
   scheduled_for: number | null;
   exclusive: boolean;
+  queued: boolean;
+  plan_md: string | null;
+  plan_source_path: string | null;
   status: QueueEntryStatus;
   external_source_json: string | null;
 }
@@ -1279,6 +1282,9 @@ export function insertQueueEntry(input: InsertQueueEntryInput): void {
       string,
       number | null,
       number,
+      number,
+      string | null,
+      string | null,
       QueueEntryStatus,
       string | null,
       number,
@@ -1289,8 +1295,9 @@ export function insertQueueEntry(input: InsertQueueEntryInput): void {
        id, user_id, role_id, repo_id, title, body, target_url,
        model, permission_mode, source_branch, with_worktree,
        optional_args_json, priority, depends_on_json, scheduled_for, exclusive,
+       queued, plan_md, plan_source_path,
        status, external_source_json, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     input.id,
     input.user_id,
@@ -1308,6 +1315,9 @@ export function insertQueueEntry(input: InsertQueueEntryInput): void {
     input.depends_on_json,
     input.scheduled_for,
     input.exclusive ? 1 : 0,
+    input.queued ? 1 : 0,
+    input.plan_md,
+    input.plan_source_path,
     input.status,
     input.external_source_json,
     ts,
@@ -1373,13 +1383,67 @@ export function listQueueEntriesByIds(
 /**
  * All entries the scheduler needs to look at on a tick — anything that is
  * not already in a terminal state. Ordered for tick efficiency.
+ *
+ * `onlyQueued`: when true, skip rows where queued=0 (backlog). The default
+ * (false) is preserved for `reconcileOrphanedRunning`, which must still see
+ * running rows regardless of the queued bit (running implies queued=1 in
+ * practice, but the safety net stays unfiltered).
  */
-export function listSchedulableQueueEntries(userId: string): QueueEntryRow[] {
+export function listSchedulableQueueEntries(
+  userId: string,
+  opts: { onlyQueued?: boolean } = {}
+): QueueEntryRow[] {
+  if (opts.onlyQueued) {
+    return prep<[string], QueueEntryRow>(
+      `SELECT * FROM queue_entries
+        WHERE user_id = ?
+          AND queued = 1
+          AND status IN ('pending','blocked','ready','running')
+        ORDER BY priority DESC, created_at ASC`
+    ).all(userId);
+  }
   return prep<[string], QueueEntryRow>(
     `SELECT * FROM queue_entries
       WHERE user_id = ? AND status IN ('pending','blocked','ready','running')
       ORDER BY priority DESC, created_at ASC`
   ).all(userId);
+}
+
+/**
+ * Flip the queued bit on a non-terminal entry. Returns true when the row
+ * was updated, false when no row matched (foreign user or already-terminal
+ * caller error).
+ */
+export function setQueueEntryQueued(
+  id: string,
+  userId: string,
+  queued: boolean
+): boolean {
+  const res = prep<[number, number, string, string]>(
+    `UPDATE queue_entries
+        SET queued = ?, updated_at = ?
+      WHERE id = ? AND user_id = ?
+        AND status IN ('pending','blocked','ready')`
+  ).run(queued ? 1 : 0, now(), id, userId);
+  return res.changes > 0;
+}
+
+/**
+ * Replace the plan markdown + optional source path on a non-terminal entry.
+ */
+export function setQueueEntryPlan(
+  id: string,
+  userId: string,
+  plan_md: string | null,
+  plan_source_path: string | null
+): boolean {
+  const res = prep<[string | null, string | null, number, string, string]>(
+    `UPDATE queue_entries
+        SET plan_md = ?, plan_source_path = ?, updated_at = ?
+      WHERE id = ? AND user_id = ?
+        AND status IN ('pending','blocked','ready')`
+  ).run(plan_md, plan_source_path, now(), id, userId);
+  return res.changes > 0;
 }
 
 /**
@@ -1477,6 +1541,8 @@ export interface UpdateQueueEntryFieldsInput {
   scheduled_for?: number | null;
   exclusive?: boolean;
   role_id?: string;
+  plan_md?: string | null;
+  plan_source_path?: string | null;
 }
 
 /**
@@ -1507,6 +1573,8 @@ export function updateQueueEntryFields(
   if (patch.scheduled_for !== undefined) push('scheduled_for', patch.scheduled_for);
   if (patch.exclusive !== undefined) push('exclusive', patch.exclusive ? 1 : 0);
   if (patch.role_id !== undefined) push('role_id', patch.role_id);
+  if (patch.plan_md !== undefined) push('plan_md', patch.plan_md);
+  if (patch.plan_source_path !== undefined) push('plan_source_path', patch.plan_source_path);
   if (sets.length === 0) return false;
   sets.push('updated_at = ?');
   params.push(now());

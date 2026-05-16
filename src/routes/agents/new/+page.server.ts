@@ -131,7 +131,10 @@ export const actions: Actions = {
       withWorktreeExplicit: with_worktree_explicit,
       model: form_model,
       permissionMode: form_permission_mode,
-      optionalArgs
+      optionalArgs,
+      // Synchronous spawn from the dashboard doesn't capture a plan today —
+      // the queue form is where users paste in plan markdown.
+      planMd: null
     };
 
     const validation = await validateSpawnInputs(raw, locals.user.id, locals.supervisor.registry);

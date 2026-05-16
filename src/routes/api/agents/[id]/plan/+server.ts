@@ -55,7 +55,11 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
       throw err;
     }
     if (!rendered) return json({ code: 'plan_not_found' }, { status: 404 });
-    return json({ name: rendered.name, html: rendered.html });
+    return json({
+      name: rendered.name,
+      html: rendered.html,
+      markdown: rendered.markdown
+    });
   }
 
   const plansDir = await resolvePlansDir(wt.path);

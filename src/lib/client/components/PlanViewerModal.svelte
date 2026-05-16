@@ -1,16 +1,23 @@
 <script lang="ts">
   /**
-   * Markdown plan viewer for the agent-window kebab "Show Plan" action.
+   * Markdown plan viewer.
    *
-   * Lifecycle on open:
-   *   1. GET /api/agents/{id}/plan → { dir, files: [...] } sorted by mtime desc.
-   *   2. If files is empty → render the empty state with the resolved dir.
-   *      Else fetch ?file=files[0].name and render its sanitized HTML.
-   *   3. When files.length > 1, the modal header gains a small <select>
-   *      switcher; choosing another file re-fetches that file.
+   * Two sources, one component:
    *
-   * The HTML payload is already DOMPurify-sanitized server-side so we
-   * use {@html} without further work — see src/lib/server/plans/agentPlans.ts.
+   *   { kind: 'agent', agentId } — fetches the on-disk plan files in the
+   *     agent's worktree (or the global `~/.claude/plans`). Multiple files
+   *     get a file switcher in the header. Used by the agent-window kebab's
+   *     "Show Plan" action.
+   *
+   *   { kind: 'task', taskId } — fetches the single `plan_md` stored on a
+   *     queue entry. No file list, no switcher. Used by the Tasks page's
+   *     `📄 Plan` badge.
+   *
+   * Both branches surface the raw `markdown` field so the "Copy markdown"
+   * button in the header can write it to the clipboard without a second
+   * round-trip. The HTML payload is already DOMPurify-sanitized server-side
+   * so we use `{@html}` without further work — see
+   * `src/lib/server/plans/agentPlans.ts`.
    */
 
   import Modal from './Modal.svelte';
@@ -18,54 +25,76 @@
 
   const t = useT();
 
+  export type PlanSource =
+    | { kind: 'agent'; agentId: string }
+    | { kind: 'task'; taskId: string };
+
   let {
-    agentId,
+    source,
     open,
     onClose
   }: {
-    agentId: string | null;
+    source: PlanSource;
     open: boolean;
     onClose: () => void;
   } = $props();
 
-  type PlanSource = 'local' | 'global';
+  type AgentSource = 'local' | 'global';
   type FileSummary = {
     name: string;
     modifiedMs: number;
     sizeBytes: number;
-    source: PlanSource;
+    source: AgentSource;
   };
   type State =
     | { kind: 'loading' }
     | { kind: 'empty'; dir: string; globalDir: string }
     | {
-        kind: 'viewing';
+        kind: 'viewing-agent';
         current: string;
-        currentSource: PlanSource;
+        currentSource: AgentSource;
         html: string;
+        markdown: string;
         files: FileSummary[];
         dir: string;
         globalDir: string;
       }
+    | {
+        kind: 'viewing-task';
+        html: string;
+        markdown: string;
+      }
     | { kind: 'error'; message: string };
 
-  let view: State = $state({ kind: 'loading' });
-  let lastLoadedAgentId: string | null = $state(null);
+  let view = $state<State>({ kind: 'loading' });
+  let lastLoadedKey = $state<string | null>(null);
+  let copyState = $state<'idle' | 'copied' | 'error'>('idle');
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Fetch the file list the first time the modal opens for a given agent.
-  // Reads and writes to `view` would create a reactive loop, so we gate
-  // strictly on `lastLoadedAgentId` (an opaque memo, never read in the
-  // template). Retries go through the explicit retry() handler below.
+  // Memo key: source.kind + id. Only re-fetch when the user opens the
+  // modal for a different agent / task. Reading/writing `view` inside this
+  // effect would create a reactive loop, so we gate strictly on the memo.
   $effect(() => {
-    if (!open || !agentId) return;
-    const id = agentId;
-    if (lastLoadedAgentId === id) return;
-    lastLoadedAgentId = id;
+    if (!open) return;
+    const key = sourceKey(source);
+    if (!key) return;
+    if (lastLoadedKey === key) return;
+    lastLoadedKey = key;
     view = { kind: 'loading' };
-    void loadList(id);
+    copyState = 'idle';
+    if (source.kind === 'agent') {
+      void loadAgentList(source.agentId);
+    } else {
+      void loadTaskPlan(source.taskId);
+    }
   });
 
-  async function loadList(id: string): Promise<void> {
+  function sourceKey(s: PlanSource): string | null {
+    if (s.kind === 'agent') return s.agentId ? `agent:${s.agentId}` : null;
+    return s.taskId ? `task:${s.taskId}` : null;
+  }
+
+  async function loadAgentList(id: string): Promise<void> {
     try {
       const res = await fetch(`/api/agents/${encodeURIComponent(id)}/plan`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -78,15 +107,14 @@
         view = { kind: 'empty', dir: body.dir, globalDir: body.globalDir };
         return;
       }
-      // Auto-pick the most recently modified plan and render it.
       const first = body.files[0]!;
-      await loadFile(id, first, body.files, body.dir, body.globalDir);
+      await loadAgentFile(id, first, body.files, body.dir, body.globalDir);
     } catch (err) {
       view = { kind: 'error', message: err instanceof Error ? err.message : String(err) };
     }
   }
 
-  async function loadFile(
+  async function loadAgentFile(
     id: string,
     file: FileSummary,
     files: FileSummary[],
@@ -101,12 +129,17 @@
           `&source=${encodeURIComponent(file.source)}`
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { name: string; html: string };
+      const body = (await res.json()) as {
+        name: string;
+        html: string;
+        markdown: string;
+      };
       view = {
-        kind: 'viewing',
+        kind: 'viewing-agent',
         current: body.name,
         currentSource: file.source,
         html: body.html,
+        markdown: body.markdown,
         files,
         dir,
         globalDir
@@ -116,8 +149,30 @@
     }
   }
 
+  async function loadTaskPlan(taskId: string): Promise<void> {
+    try {
+      const res = await fetch(`/api/queue/${encodeURIComponent(taskId)}/plan`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          view = { kind: 'error', message: t('queue.error.noPlan') };
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const body = (await res.json()) as { markdown: string; html: string };
+      view = {
+        kind: 'viewing-task',
+        html: body.html,
+        markdown: body.markdown
+      };
+    } catch (err) {
+      view = { kind: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   function onSwitcherChange(ev: Event): void {
-    if (view.kind !== 'viewing' || !agentId) return;
+    if (view.kind !== 'viewing-agent') return;
+    if (source.kind !== 'agent') return;
     const target = ev.target as HTMLSelectElement;
     const nextValue = target.value;
     if (!nextValue) return;
@@ -125,30 +180,67 @@
     // duplicates with the same basename remain distinguishable.
     const sep = nextValue.indexOf('/');
     if (sep < 0) return;
-    const nextSource = nextValue.slice(0, sep) as PlanSource;
+    const nextSource = nextValue.slice(0, sep) as AgentSource;
     const nextName = nextValue.slice(sep + 1);
     if (nextName === view.current && nextSource === view.currentSource) return;
     const file = view.files.find(
       (f) => f.name === nextName && f.source === nextSource
     );
     if (!file) return;
-    void loadFile(agentId, file, view.files, view.dir, view.globalDir);
+    void loadAgentFile(source.agentId, file, view.files, view.dir, view.globalDir);
   }
 
   function retry(): void {
-    if (!agentId) return;
+    lastLoadedKey = null;
     view = { kind: 'loading' };
-    void loadList(agentId);
+    copyState = 'idle';
+    if (source.kind === 'agent') {
+      if (source.agentId) void loadAgentList(source.agentId);
+    } else {
+      if (source.taskId) void loadTaskPlan(source.taskId);
+    }
   }
 
+  async function copyMarkdown(): Promise<void> {
+    const md = currentMarkdown();
+    if (md === null) return;
+    try {
+      await navigator.clipboard.writeText(md);
+      copyState = 'copied';
+    } catch {
+      copyState = 'error';
+    } finally {
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => {
+        copyState = 'idle';
+        copyTimer = null;
+      }, 1500);
+    }
+  }
+
+  function currentMarkdown(): string | null {
+    if (view.kind === 'viewing-agent') return view.markdown;
+    if (view.kind === 'viewing-task') return view.markdown;
+    return null;
+  }
+
+  const showSwitcher = $derived(
+    view.kind === 'viewing-agent' && view.files.length > 1
+  );
+
+  const canCopy = $derived(
+    view.kind === 'viewing-agent' || view.kind === 'viewing-task'
+  );
+
   function modalTitle(v: State): string {
-    if (v.kind === 'viewing') {
+    if (v.kind === 'viewing-agent') {
       const name =
         v.currentSource === 'global'
           ? `${v.current} · ${t('plan.modal.sourceGlobal')}`
           : v.current;
       return t('plan.modal.title', { name });
     }
+    if (v.kind === 'viewing-task') return t('plan.modal.titleTask');
     if (v.kind === 'empty') return t('plan.modal.titleEmpty');
     if (v.kind === 'error') return t('plan.modal.titleError');
     return t('plan.modal.titleLoading');
@@ -164,28 +256,44 @@
       ? `${base} · ${t('plan.modal.sourceGlobal')}`
       : base;
   }
+
+  function copyButtonLabel(): string {
+    if (copyState === 'copied') return t('plan.modal.copied');
+    if (copyState === 'error') return t('plan.modal.copyError');
+    return t('plan.modal.copy');
+  }
 </script>
 
-{#snippet headerSwitcher()}
-  {#if view.kind === 'viewing' && view.files.length > 1}
-    <label class="switcher" aria-label={t('plan.modal.switcherLabel')}>
-      <select
-        value={`${view.currentSource}/${view.current}`}
-        onchange={onSwitcherChange}
-      >
-        {#each view.files as file (`${file.source}/${file.name}`)}
-          <option value={`${file.source}/${file.name}`}>{fileLabel(file)}</option>
-        {/each}
-      </select>
-    </label>
-  {/if}
+{#snippet headerRight()}
+  <div class="header-right">
+    {#if showSwitcher && view.kind === 'viewing-agent'}
+      <label class="switcher" aria-label={t('plan.modal.switcherLabel')}>
+        <select
+          value={`${view.currentSource}/${view.current}`}
+          onchange={onSwitcherChange}
+        >
+          {#each view.files as file (`${file.source}/${file.name}`)}
+            <option value={`${file.source}/${file.name}`}>{fileLabel(file)}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+    <button
+      type="button"
+      class="copy-btn"
+      disabled={!canCopy}
+      onclick={copyMarkdown}
+    >
+      {copyButtonLabel()}
+    </button>
+  </div>
 {/snippet}
 
 <Modal
   {open}
   {onClose}
   title={modalTitle(view)}
-  headerRight={view.kind === 'viewing' && view.files.length > 1 ? headerSwitcher : undefined}
+  headerRight={canCopy || showSwitcher ? headerRight : undefined}
 >
   <div class="plan-panel">
     {#if view.kind === 'loading'}
@@ -202,7 +310,7 @@
     {:else}
       <article class="markdown-body">
         <!-- HTML is sanitized server-side with DOMPurify. See
-             src/lib/server/plans/agentPlans.ts:renderAgentPlan. -->
+             src/lib/server/plans/agentPlans.ts:renderPlanMarkdownToHtml. -->
         {@html view.html}
       </article>
     {/if}
@@ -253,6 +361,11 @@
   .retry-btn:hover {
     background: #1f2937;
   }
+  .header-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
   .switcher select {
     background: #0b0f17;
     color: #e5e7eb;
@@ -261,6 +374,25 @@
     padding: 0.25rem 0.4rem;
     font-size: 0.8rem;
     max-width: 22rem;
+  }
+  .copy-btn {
+    background: #111827;
+    color: #93c5fd;
+    border: 1px solid #1f2937;
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.6rem;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .copy-btn:hover:not(:disabled) {
+    background: #1e293b;
+    color: #bfdbfe;
+  }
+  .copy-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .markdown-body {

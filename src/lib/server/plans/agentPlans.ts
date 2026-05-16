@@ -56,6 +56,10 @@ export interface RenderedPlan {
   name: string;
   /** Sanitized HTML ready for `{@html}`. */
   html: string;
+  /** Raw markdown the HTML was rendered from. Surfaced to the plan viewer
+   *  so the "Copy markdown" button can write the original text to the
+   *  clipboard without a second round-trip. */
+  markdown: string;
 }
 
 const DEFAULT_PLANS_DIR = 'docs/plans';
@@ -331,9 +335,19 @@ export async function renderAgentPlan(
     return null;
   }
 
-  // marked.parse with sync option to avoid promise juggling.
+  const html = renderPlanMarkdownToHtml(md);
+  return { name: filename, html, markdown: md };
+}
+
+/**
+ * Pure render path: markdown string → sanitized HTML. Exported so the
+ * task-plan endpoint can render `queue_entries.plan_md` with the exact same
+ * pipeline as the on-disk agent plans without re-implementing the marked +
+ * DOMPurify hardening.
+ */
+export function renderPlanMarkdownToHtml(md: string): string {
   const rawHtml = marked.parse(md, { async: false }) as string;
-  const html = DOMPurify.sanitize(rawHtml, {
+  return DOMPurify.sanitize(rawHtml, {
     USE_PROFILES: { html: true },
     // Strip anything that could exfil data on click/load. DOMPurify's
     // default html profile already drops <script>, but inline event
@@ -341,5 +355,4 @@ export async function renderAgentPlan(
     FORBID_ATTR: ['style', 'onerror', 'onclick', 'onload', 'onmouseover'],
     FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form']
   });
-  return { name: filename, html };
 }

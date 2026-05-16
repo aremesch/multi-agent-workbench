@@ -375,6 +375,7 @@ const de: Partial<Record<TranslationKey, string>> = {
 
   // ── Plan viewer modal ────────────────────────────────────────────
   'plan.modal.title': 'Plan: {name}',
+  'plan.modal.titleTask': 'Aufgaben-Plan',
   'plan.modal.titleEmpty': 'Plan',
   'plan.modal.titleError': 'Plan',
   'plan.modal.titleLoading': 'Plan',
@@ -384,6 +385,9 @@ const de: Partial<Record<TranslationKey, string>> = {
   'plan.modal.error': 'Plan konnte nicht geladen werden: {error}',
   'plan.modal.retry': 'Erneut versuchen',
   'plan.modal.sourceGlobal': 'global',
+  'plan.modal.copy': 'Markdown kopieren',
+  'plan.modal.copied': 'Kopiert ✓',
+  'plan.modal.copyError': 'Kopieren fehlgeschlagen',
 
   // ── Agent log modal title (running-agent variant) ────────────────
   'agent.logTitle': 'Log: {name}',
@@ -408,6 +412,12 @@ const de: Partial<Record<TranslationKey, string>> = {
   'queue.action.addToQueue': 'Als Aufgabe hinzufügen',
   'queue.action.spawnNow': 'Jetzt starten',
   'queue.action.runNow': 'Sofort ausführen',
+  'queue.action.save': 'In Backlog speichern',
+  'queue.action.run': 'Ausführen',
+  'queue.action.runHint':
+    'Speichern legt die Aufgabe im Backlog ab. Ausführen sendet sie in die Warteschlange, damit der nächste freie Agent sie übernimmt.',
+  'queue.action.sendToBacklog': 'In Backlog verschieben',
+  'queue.action.queue': 'In Warteschlange',
   'queue.action.cancel': 'Abbrechen',
   'queue.action.edit': 'Bearbeiten',
   'queue.action.delete': 'Löschen',
@@ -419,6 +429,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   'queue.section.ready': 'Bereit',
   'queue.section.blocked': 'Blockiert',
   'queue.section.scheduled': 'Geplant',
+  'queue.section.backlog': 'Backlog',
   'queue.section.completed': 'Abgeschlossen',
   'queue.column.title': 'Aufgabe',
   'queue.column.repo': 'Repository',
@@ -437,6 +448,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   'queue.status.done': 'Erledigt',
   'queue.status.failed': 'Fehlgeschlagen',
   'queue.status.cancelled': 'Abgebrochen',
+  'queue.status.backlog': 'Backlog',
   'queue.field.priority': 'Priorität',
   'queue.field.priorityHint':
     'Höhere Zahlen laufen zuerst; bei Gleichstand entscheidet die Erstellungszeit.',
@@ -451,6 +463,12 @@ const de: Partial<Record<TranslationKey, string>> = {
     'Diese Aufgabe bleibt blockiert, bis alle ausgewählten Aufgaben erfolgreich beendet sind.',
   'queue.field.dependsOnEmpty':
     'Noch keine anderen Aufgaben zum Verknüpfen vorhanden.',
+  'queue.field.plan': 'Plan (optional)',
+  'queue.field.planPlaceholder': 'Plan-Markdown hier einfügen…',
+  'queue.field.planHint':
+    'Wird beim Start des Agenten an den Aufgaben-Text angehängt.',
+  'queue.badge.plan': 'Plan',
+  'queue.badge.planHint': 'Den mit dieser Aufgabe gespeicherten Plan anzeigen',
   'queue.confirmCancel.title': 'Aufgabe abbrechen',
   'queue.confirmCancel.body':
     'Die Aufgabe wird als abgebrochen markiert; sollte sie gerade laufen, wird ihr Agent gestoppt.',
@@ -463,6 +481,11 @@ const de: Partial<Record<TranslationKey, string>> = {
     'Eine oder mehrere Abhängigkeiten wurden nicht gefunden',
   'queue.error.loadFailed': 'Aufgaben konnten nicht geladen werden',
   'queue.error.saveFailed': 'Aufgabe konnte nicht gespeichert werden',
+  'queue.error.notQueueable':
+    'Diese Aufgabe kann in ihrem aktuellen Zustand nicht in die Warteschlange verschoben werden',
+  'queue.error.notBacklogable':
+    'Diese Aufgabe kann in ihrem aktuellen Zustand nicht in den Backlog verschoben werden',
+  'queue.error.noPlan': 'Mit dieser Aufgabe ist kein Plan verknüpft',
   'queue.lastError': 'Letzter Fehler: {message}',
   'queue.settings.title': 'Aufgaben-Parallelität',
   'queue.settings.maxGlobal': 'Maximale parallele Aufgaben (global)',

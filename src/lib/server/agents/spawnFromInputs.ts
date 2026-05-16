@@ -57,6 +57,28 @@ export interface RawSpawnInputs {
   model: string | null;
   permissionMode: string | null;
   optionalArgs: Record<string, boolean>;
+  /** Optional markdown plan to append after the task body when delivering the
+   *  initial prompt to the agent. Captured by the queue UI (`plan_md` column);
+   *  the synchronous spawn endpoint passes `null` today. */
+  planMd: string | null;
+}
+
+/**
+ * Combine the task body and an optional plan markdown into a single initial
+ * prompt for the agent. The contract is intentionally trivial — adapters
+ * accept one text blob, so the plan goes after the body under a heading.
+ *
+ * Returns an empty string only when both inputs are empty (after trimming).
+ */
+export function composeBodyWithPlan(
+  body: string,
+  planMd: string | null
+): string {
+  const b = body.trimEnd();
+  const p = planMd?.trim() ?? '';
+  if (!p) return body;
+  if (!b) return `## Plan\n\n${p}`;
+  return `${b}\n\n## Plan\n\n${p}`;
 }
 
 /** Fully validated + canonicalized inputs ready for `performSpawn`. */
@@ -217,7 +239,12 @@ export async function validateSpawnInputs(
   );
 
   // Body only applies when the adapter takes an initial prompt at all.
-  const body = adapter.initialInputDelivery === 'cli-arg' ? raw.taskBody : '';
+  // For cli-arg adapters, append the plan markdown after the body when
+  // provided so the agent sees the full plan as part of its initial prompt.
+  const body =
+    adapter.initialInputDelivery === 'cli-arg'
+      ? composeBodyWithPlan(raw.taskBody, raw.planMd)
+      : '';
 
   return {
     ok: true,

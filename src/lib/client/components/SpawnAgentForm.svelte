@@ -86,6 +86,10 @@
     scheduled_for: number | null;
     exclusive: boolean;
     depends_on: string[];
+    /** User intent: true = eligible for auto-promotion ("Run" button),
+     *  false = parked in the task list backlog ("Save" button). */
+    queued: boolean;
+    plan_md: string | null;
   }
 
   let {
@@ -287,11 +291,13 @@
   let targetUrl = $state(DEFAULT_BROWSER_TARGET_URL);
   const targetUrlValid = $derived(parseBrowserTargetUrl(targetUrl).ok);
 
-  // ── Queue-mode extras (priority, deps, scheduled-for, exclusive) ──────
+  // ── Queue-mode extras (priority, deps, scheduled-for, exclusive, plan) ──
   let queuePriority = $state(0);
   let queueScheduledForLocal = $state(''); // 'YYYY-MM-DDTHH:mm' or empty
   let queueExclusive = $state(false);
   let queueDeps = $state<string[]>([]);
+  let queuePlanMd = $state('');
+  let queuePlanOpen = $state(false);
   // worktree=off implies exclusive — surface that in the UI when applicable.
   const exclusiveForced = $derived(mode === 'queue' && showGitFields && !withWorktree);
   const effectiveExclusive = $derived(exclusiveForced || queueExclusive);
@@ -309,8 +315,11 @@
     return Math.floor(ts / 1000);
   }
 
-  /** Gather every form field into the queue-API payload shape. */
-  function gatherQueuePayload(): QueuePayload {
+  /** Gather every form field into the queue-API payload shape.
+   *  `queued` is supplied by the caller — Save sends false (Backlog), Run
+   *  sends true (Queue). */
+  function gatherQueuePayload(queued: boolean): QueuePayload {
+    const planMd = queuePlanMd.trim();
     return {
       role_id: selectedRoleId,
       repo_id: selectedRepoId,
@@ -325,19 +334,21 @@
       priority: Math.floor(Number.isFinite(queuePriority) ? queuePriority : 0),
       scheduled_for: parseScheduledFor(queueScheduledForLocal),
       exclusive: effectiveExclusive,
-      depends_on: [...queueDeps]
+      depends_on: [...queueDeps],
+      queued,
+      plan_md: planMd === '' ? null : planMd
     };
   }
 
-  /** Queue-mode submit handler. type=button button calls this — the
-   *  surrounding <form> never submits, and we never hit the SvelteKit
-   *  /agents/new action. */
-  async function submitQueue(): Promise<void> {
+  /** Queue-mode submit handler. The two submit buttons pass `queued=false`
+   *  (Save → Backlog) or `queued=true` (Run → Queue). The surrounding
+   *  <form> intercepts plain submit + Enter via `submitQueue(false)`. */
+  async function submitQueue(queued: boolean): Promise<void> {
     if (!onQueue) return;
     error = null;
     submitting = true;
     try {
-      const result = await onQueue(gatherQueuePayload());
+      const result = await onQueue(gatherQueuePayload(queued));
       if (!result.ok) error = result.error ?? t('queue.error.saveFailed');
     } catch (err) {
       error = (err as Error).message ?? t('queue.error.saveFailed');
@@ -451,7 +462,10 @@
     onsubmit={mode === 'queue'
       ? (e) => {
           e.preventDefault();
-          void submitQueue();
+          // Hitting Enter inside any input defaults to Save → Backlog so
+          // the user never accidentally launches an agent. The dedicated
+          // "Run" button explicitly opts in to auto-promotion.
+          void submitQueue(false);
         }
       : undefined}
   >
@@ -711,10 +725,26 @@
             <span class="muted hint">{t('queue.field.dependsOnHint')}</span>
           {/if}
         </div>
+        <details
+          class="queue-plan"
+          bind:open={queuePlanOpen}
+        >
+          <summary>{t('queue.field.plan')}</summary>
+          <textarea
+            class="plan-textarea"
+            rows="8"
+            placeholder={t('queue.field.planPlaceholder')}
+            bind:value={queuePlanMd}
+          ></textarea>
+          <span class="muted hint">{t('queue.field.planHint')}</span>
+        </details>
       </fieldset>
     {/if}
     {#if error}
       <p class="err">{error}</p>
+    {/if}
+    {#if mode === 'queue'}
+      <p class="muted hint actions-hint">{t('queue.action.runHint')}</p>
     {/if}
     <div class="actions">
       {#if onCancel}
@@ -724,23 +754,50 @@
       {:else}
         <a href="/" class="cancel">{t('spawn.cancel')}</a>
       {/if}
-      <button
-        type="submit"
-        disabled={submitting ||
-          anyInlineOpen ||
-          !selectedRoleId ||
-          !selectedRepoId ||
-          !taskSlug ||
-          (isBrowserSelected && !targetUrlValid)}
-      >
-        {submitting
-          ? mode === 'queue'
-            ? t('queue.action.addToQueue')
-            : t('spawn.spawning')
-          : mode === 'queue'
-            ? t('queue.action.addToQueue')
-            : t('spawn.spawn')}
-      </button>
+      {#if mode === 'queue'}
+        <!-- Save → Backlog (queued=0). Default action so pressing Enter
+             inside any field never accidentally launches an agent. -->
+        <button
+          type="button"
+          class="btn-save"
+          onclick={() => void submitQueue(false)}
+          disabled={submitting ||
+            anyInlineOpen ||
+            !selectedRoleId ||
+            !selectedRepoId ||
+            !taskSlug ||
+            (isBrowserSelected && !targetUrlValid)}
+        >
+          {t('queue.action.save')}
+        </button>
+        <!-- Run → Queue (queued=1). Lets the scheduler auto-promote when a
+             slot opens; subject to the user's concurrency caps. -->
+        <button
+          type="button"
+          class="btn-run"
+          onclick={() => void submitQueue(true)}
+          disabled={submitting ||
+            anyInlineOpen ||
+            !selectedRoleId ||
+            !selectedRepoId ||
+            !taskSlug ||
+            (isBrowserSelected && !targetUrlValid)}
+        >
+          {t('queue.action.run')}
+        </button>
+      {:else}
+        <button
+          type="submit"
+          disabled={submitting ||
+            anyInlineOpen ||
+            !selectedRoleId ||
+            !selectedRepoId ||
+            !taskSlug ||
+            (isBrowserSelected && !targetUrlValid)}
+        >
+          {submitting ? t('spawn.spawning') : t('spawn.spawn')}
+        </button>
+      {/if}
     </div>
   </form>
 </div>
@@ -946,17 +1003,61 @@
   .cancel:hover:not(:disabled) {
     color: #e5e7eb;
   }
-  button[type='submit'] {
+  button[type='submit'],
+  .btn-run,
+  .btn-save {
     padding: 0.55rem 1rem;
     border-radius: 0.375rem;
-    background: #2563eb;
     border: none;
     color: #fff;
     cursor: pointer;
+    font: inherit;
   }
-  button[type='submit']:disabled {
+  button[type='submit'],
+  .btn-run {
+    background: #2563eb;
+  }
+  .btn-save {
+    background: transparent;
+    color: #e5e7eb;
+    border: 1px solid #374151;
+  }
+  .btn-save:hover:not(:disabled) {
+    background: #1f2937;
+  }
+  button[type='submit']:disabled,
+  .btn-run:disabled,
+  .btn-save:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+  .actions-hint {
+    margin: -0.25rem 0 0;
+    text-align: right;
+  }
+  .queue-plan summary {
+    cursor: pointer;
+    color: #93c5fd;
+    font-size: 0.85rem;
+    padding: 0.1rem 0;
+  }
+  .queue-plan summary:hover {
+    color: #bfdbfe;
+  }
+  .queue-plan[open] summary {
+    margin-bottom: 0.35rem;
+  }
+  .plan-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.8rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.375rem;
+    border: 1px solid #374151;
+    background: #111;
+    color: #e5e5e5;
+    resize: vertical;
   }
   a {
     color: #93c5fd;

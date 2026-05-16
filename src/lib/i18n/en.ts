@@ -414,6 +414,7 @@ const en = {
 
   // ── Plan viewer modal ────────────────────────────────────────────
   'plan.modal.title': 'Plan: {name}',
+  'plan.modal.titleTask': 'Task plan',
   'plan.modal.titleEmpty': 'Plan',
   'plan.modal.titleError': 'Plan',
   'plan.modal.titleLoading': 'Plan',
@@ -423,6 +424,9 @@ const en = {
   'plan.modal.error': 'Failed to load plan: {error}',
   'plan.modal.retry': 'Retry',
   'plan.modal.sourceGlobal': 'global',
+  'plan.modal.copy': 'Copy markdown',
+  'plan.modal.copied': 'Copied ✓',
+  'plan.modal.copyError': 'Copy failed',
 
   // ── Agent log modal title (running-agent variant) ────────────────
   'agent.logTitle': 'Log: {name}',
@@ -446,6 +450,12 @@ const en = {
   'queue.action.addToQueue': 'Add to tasks',
   'queue.action.spawnNow': 'Spawn now',
   'queue.action.runNow': 'Run now',
+  'queue.action.save': 'Save to backlog',
+  'queue.action.run': 'Run',
+  'queue.action.runHint':
+    'Save keeps it in your task list. Run sends it to the queue so an agent picks it up when one is free.',
+  'queue.action.sendToBacklog': 'Send to backlog',
+  'queue.action.queue': 'Queue',
   'queue.action.cancel': 'Cancel',
   'queue.action.edit': 'Edit',
   'queue.action.delete': 'Delete',
@@ -457,6 +467,7 @@ const en = {
   'queue.section.ready': 'Ready',
   'queue.section.blocked': 'Blocked',
   'queue.section.scheduled': 'Scheduled',
+  'queue.section.backlog': 'Backlog',
   'queue.section.completed': 'Completed',
   'queue.column.title': 'Task',
   'queue.column.repo': 'Repository',
@@ -475,6 +486,7 @@ const en = {
   'queue.status.done': 'Done',
   'queue.status.failed': 'Failed',
   'queue.status.cancelled': 'Cancelled',
+  'queue.status.backlog': 'Backlog',
   'queue.field.priority': 'Priority',
   'queue.field.priorityHint': 'Higher numbers run first; ties broken by creation time.',
   'queue.field.scheduledFor': 'Not before',
@@ -486,6 +498,11 @@ const en = {
   'queue.field.dependsOnHint':
     'This task stays blocked until every selected task has finished successfully.',
   'queue.field.dependsOnEmpty': 'No other tasks to depend on yet.',
+  'queue.field.plan': 'Plan (optional)',
+  'queue.field.planPlaceholder': 'Paste plan markdown here…',
+  'queue.field.planHint': 'Appended after the task body when the agent starts.',
+  'queue.badge.plan': 'Plan',
+  'queue.badge.planHint': 'View the plan stored with this task',
   'queue.confirmCancel.title': 'Cancel task',
   'queue.confirmCancel.body':
     'This will mark the task as cancelled and, if it is currently running, stop its agent.',
@@ -497,6 +514,9 @@ const en = {
   'queue.error.unknownDependency': 'One or more dependencies were not found',
   'queue.error.loadFailed': 'Failed to load tasks',
   'queue.error.saveFailed': 'Failed to save task',
+  'queue.error.notQueueable': 'This task can’t be queued in its current state',
+  'queue.error.notBacklogable': 'This task can’t be sent to the backlog in its current state',
+  'queue.error.noPlan': 'This task has no plan attached',
   'queue.lastError': 'Last error: {message}',
   'queue.settings.title': 'Task concurrency',
   'queue.settings.maxGlobal': 'Max task agents running globally',

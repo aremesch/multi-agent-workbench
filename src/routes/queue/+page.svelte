@@ -3,6 +3,7 @@
   import { apiFetch } from '$lib/client/api';
   import { useT } from '$lib/client/i18n.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
+  import PlanViewerModal from '$lib/client/components/PlanViewerModal.svelte';
   import SpawnAgentForm, {
     type QueuePayload,
     type QueueDepOption
@@ -28,17 +29,37 @@
     ).length
   );
 
+  /**
+   * Bucket rows for display. Non-terminal entries split on `queued`:
+   *   queued=1 → running / ready / blocked (the auto-promotion queue)
+   *   queued=0 → backlog (parked on the task list, scheduler ignores)
+   * Terminal rows land in `completed` regardless of `queued`.
+   */
   function groupEntries(rows: QueueEntryRow[]): {
     running: QueueEntryRow[];
     ready: QueueEntryRow[];
     blocked: QueueEntryRow[];
+    backlog: QueueEntryRow[];
     completed: QueueEntryRow[];
   } {
     const running: QueueEntryRow[] = [];
     const ready: QueueEntryRow[] = [];
     const blocked: QueueEntryRow[] = [];
+    const backlog: QueueEntryRow[] = [];
     const completed: QueueEntryRow[] = [];
     for (const e of rows) {
+      const terminal = e.status === 'done' || e.status === 'failed' || e.status === 'cancelled';
+      if (terminal) {
+        completed.push(e);
+        continue;
+      }
+      // Backlog rows are pending/blocked/ready entries the user hasn't queued.
+      // `running` always implies queued=1 in practice (the scheduler only
+      // promotes queued rows), so it's safe to skip the queued check there.
+      if (e.queued === 0 && e.status !== 'running') {
+        backlog.push(e);
+        continue;
+      }
       switch (e.status) {
         case 'running':
           running.push(e);
@@ -50,14 +71,9 @@
         case 'blocked':
           blocked.push(e);
           break;
-        case 'done':
-        case 'failed':
-        case 'cancelled':
-          completed.push(e);
-          break;
       }
     }
-    return { running, ready, blocked, completed };
+    return { running, ready, blocked, backlog, completed };
   }
 
   function statusLabel(s: QueueEntryStatus): string {
@@ -119,7 +135,9 @@
           priority: payload.priority,
           scheduled_for: payload.scheduled_for,
           exclusive: payload.exclusive,
-          depends_on: payload.depends_on
+          depends_on: payload.depends_on,
+          queued: payload.queued,
+          plan_md: payload.plan_md
         })
       });
       const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
@@ -155,6 +173,39 @@
     await invalidateAll();
   }
 
+  async function onSendToBacklog(id: string): Promise<void> {
+    const res = await apiFetch(`/api/queue/${encodeURIComponent(id)}/backlog`, {
+      method: 'POST'
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(body.error ?? t('queue.error.saveFailed'));
+      return;
+    }
+    await invalidateAll();
+  }
+
+  async function onQueueEntry(id: string): Promise<void> {
+    const res = await apiFetch(`/api/queue/${encodeURIComponent(id)}/queue`, {
+      method: 'POST'
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(body.error ?? t('queue.error.saveFailed'));
+      return;
+    }
+    await invalidateAll();
+  }
+
+  // ── Plan viewer modal ────────────────────────────────────────────────────
+  let planTaskId = $state<string | null>(null);
+  function openTaskPlan(id: string): void {
+    planTaskId = id;
+  }
+  function closeTaskPlan(): void {
+    planTaskId = null;
+  }
+
   void invalidate;
 </script>
 
@@ -179,6 +230,25 @@
     <p class="empty">{t('queue.empty')}</p>
   {/if}
 
+  {#snippet planBadge(e: QueueEntryRow)}
+    {#if e.plan_md}
+      <button
+        type="button"
+        class="plan-badge"
+        title={t('queue.badge.planHint')}
+        onclick={() => openTaskPlan(e.id)}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm0 7V3.5L19.5 9H14ZM8 13h8v2H8v-2Zm0 4h5v2H8v-2Z"
+          />
+        </svg>
+        {t('queue.badge.plan')}
+      </button>
+    {/if}
+  {/snippet}
+
   {#if grouped.running.length > 0}
     <section>
       <h2>{t('queue.section.running')} ({grouped.running.length})</h2>
@@ -188,6 +258,7 @@
             <div class="entry-main">
               <span class={statusClass(e.status)}>{statusLabel(e.status)}</span>
               <span class="entry-title">{e.title}</span>
+              {@render planBadge(e)}
               <span class="muted entry-meta">
                 {roleName(e.role_id)} · {repoLabel(e.repo_id)}
                 {#if e.model}· {e.model}{/if}
@@ -217,6 +288,7 @@
             <div class="entry-main">
               <span class={statusClass(e.status)}>{statusLabel(e.status)}</span>
               <span class="entry-title">{e.title}</span>
+              {@render planBadge(e)}
               <span class="muted entry-meta">
                 {roleName(e.role_id)} · {repoLabel(e.repo_id)}
                 {#if e.model}· {e.model}{/if}
@@ -226,6 +298,9 @@
             <div class="entry-actions">
               <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
                 {t('queue.action.runNow')}
+              </button>
+              <button type="button" class="link" onclick={() => onSendToBacklog(e.id)}>
+                {t('queue.action.sendToBacklog')}
               </button>
               <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
                 {t('queue.action.cancel')}
@@ -246,6 +321,7 @@
             <div class="entry-main">
               <span class={statusClass(e.status)}>{statusLabel(e.status)}</span>
               <span class="entry-title">{e.title}</span>
+              {@render planBadge(e)}
               <span class="muted entry-meta">
                 {roleName(e.role_id)} · {repoLabel(e.repo_id)}
                 {#if e.scheduled_for}· {t('queue.column.scheduledFor')}: {formatScheduledFor(e.scheduled_for)}{/if}
@@ -264,6 +340,53 @@
               {/if}
             </div>
             <div class="entry-actions">
+              <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
+                {t('queue.action.runNow')}
+              </button>
+              <button type="button" class="link" onclick={() => onSendToBacklog(e.id)}>
+                {t('queue.action.sendToBacklog')}
+              </button>
+              <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
+                {t('queue.action.cancel')}
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
+  {#if grouped.backlog.length > 0}
+    <section>
+      <h2>{t('queue.section.backlog')} ({grouped.backlog.length})</h2>
+      <ul class="entries">
+        {#each grouped.backlog as e (e.id)}
+          <li class="entry">
+            <div class="entry-main">
+              <span class="status status-backlog">{t('queue.status.backlog')}</span>
+              <span class="entry-title">{e.title}</span>
+              {@render planBadge(e)}
+              <span class="muted entry-meta">
+                {roleName(e.role_id)} · {repoLabel(e.repo_id)}
+                {#if e.scheduled_for}· {t('queue.column.scheduledFor')}: {formatScheduledFor(e.scheduled_for)}{/if}
+                {#if e.priority !== 0}· prio {e.priority}{/if}
+              </span>
+              {#if e.depends_on_json && e.depends_on_json !== '[]'}
+                <span class="deps-line muted">
+                  {t('queue.column.dependsOn')}:
+                  {(JSON.parse(e.depends_on_json) as string[])
+                    .map((id) => depTitle(id))
+                    .join(', ')}
+                </span>
+              {/if}
+              {#if e.last_error}
+                <span class="err">{t('queue.lastError', { message: e.last_error })}</span>
+              {/if}
+            </div>
+            <div class="entry-actions">
+              <button type="button" class="link" onclick={() => onQueueEntry(e.id)}>
+                {t('queue.action.queue')}
+              </button>
               <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
                 {t('queue.action.runNow')}
               </button>
@@ -286,6 +409,7 @@
             <div class="entry-main">
               <span class={statusClass(e.status)}>{statusLabel(e.status)}</span>
               <span class="entry-title">{e.title}</span>
+              {@render planBadge(e)}
               <span class="muted entry-meta">
                 {roleName(e.role_id)} · {repoLabel(e.repo_id)}
               </span>
@@ -328,6 +452,12 @@
     />
   </Modal>
 {/if}
+
+<PlanViewerModal
+  source={planTaskId ? { kind: 'task', taskId: planTaskId } : { kind: 'task', taskId: '' }}
+  open={planTaskId !== null}
+  onClose={closeTaskPlan}
+/>
 
 <style>
   .page {
@@ -453,6 +583,28 @@
   .status-pending {
     background: #1f2937;
     color: #9ca3af;
+  }
+  .status-backlog {
+    background: #312e81;
+    color: #c7d2fe;
+  }
+  .plan-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.05rem 0.4rem 0.05rem 0.35rem;
+    margin-left: 0.4rem;
+    border: 1px solid #1f2937;
+    border-radius: 999px;
+    background: #0f172a;
+    color: #93c5fd;
+    font: inherit;
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+  .plan-badge:hover {
+    background: #1e293b;
+    color: #bfdbfe;
   }
   .status-done {
     background: #064e3b;

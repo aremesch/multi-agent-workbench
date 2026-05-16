@@ -77,7 +77,9 @@ export const PUT: RequestHandler = async ({ locals, params, request, cookies }) 
 
   // Re-evaluation: status flips back to 'pending' so the scheduler can
   // re-classify deps / scheduled_for next tick. last_error cleared because
-  // the saved values are now valid as far as we can tell.
+  // the saved values are now valid as far as we can tell. The `queued` bit
+  // is intentionally NOT updated here — admission is controlled by the
+  // dedicated /queue and /backlog endpoints.
   updateQueueEntryFields(params.id, {
     role_id: v.role.id,
     title: v.title,
@@ -91,7 +93,9 @@ export const PUT: RequestHandler = async ({ locals, params, request, cookies }) 
     priority: coerce.value.priority,
     depends_on_json: JSON.stringify(coerce.value.dependsOn),
     scheduled_for: coerce.value.scheduledFor,
-    exclusive: coerce.value.exclusive
+    exclusive: coerce.value.exclusive,
+    plan_md: coerce.value.planMd,
+    plan_source_path: coerce.value.planSourcePath
   });
 
   getScheduler().scheduleTick();

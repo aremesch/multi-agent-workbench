@@ -255,6 +255,9 @@ export interface QueueEntryRow {
   depends_on_json: string;
   scheduled_for: number | null;
   exclusive: number;
+  queued: number;
+  plan_md: string | null;
+  plan_source_path: string | null;
   status: QueueEntryStatus;
   agent_id: string | null;
   external_source_json: string | null;
