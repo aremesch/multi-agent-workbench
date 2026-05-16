@@ -172,9 +172,6 @@
       <span class="muted concurrency-summary">
         {concurrency.maxConcurrentGlobal} / {concurrency.maxConcurrentPerRepo}
       </span>
-      <button type="button" class="primary" onclick={() => { createOpen = true; }}>
-        + {t('queue.action.create')}
-      </button>
     </div>
   </header>
 
@@ -308,6 +305,15 @@
   {/if}
 </div>
 
+<button
+  type="button"
+  class="fab"
+  aria-label={t('queue.action.create')}
+  onclick={() => { createOpen = true; }}
+>
+  <span aria-hidden="true">+</span>
+</button>
+
 {#if createOpen}
   <Modal open={createOpen} title={t('queue.action.create')} onClose={() => { createOpen = false; }}>
     <SpawnAgentForm
@@ -356,17 +362,24 @@
     font-family: ui-monospace, Menlo, monospace;
     font-size: 0.8rem;
   }
-  .primary {
-    padding: 0.55rem 0.9rem;
-    border-radius: 0.4rem;
-    background: #2563eb;
+  /* Floating action button — matches the repo dashboard's pattern. */
+  .fab {
+    position: fixed;
+    right: 2rem;
+    bottom: 2rem;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
     border: none;
-    color: #fff;
+    font-size: 1.75rem;
     cursor: pointer;
-    font: inherit;
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
+    z-index: 30;
   }
-  .primary:hover {
-    background: #1d4ed8;
+  .fab:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 85%, black);
   }
   section {
     display: grid;

@@ -9,6 +9,9 @@
   // into the prompt — see docs/plans/v0.2-image-paste-into-agent.md.
   "acceptsImageAttachment": true,
 
+  // Agentic coding CLI — eligible for the /queue scheduler.
+  "agenticCodingCli": true,
+
   // Phone soft keyboards hide arrow keys, Esc and Shift+Tab — every one of
   // which Claude Code needs constantly (history recall, menu navigation,
   // plan/thinking tab cycling, dismissing popovers). The user asked for

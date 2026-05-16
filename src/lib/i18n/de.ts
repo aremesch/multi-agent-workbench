@@ -396,16 +396,16 @@ const de: Partial<Record<TranslationKey, string>> = {
   'exitAgent.confirm.confirm': 'Agent stoppen',
   'exitAgent.error': 'Agent konnte nicht gestoppt werden: {error}',
 
-  // ── Warteschlange + Scheduler (v0.3) ─────────────────────────────
-  'nav.queue': 'Warteschlange',
-  'sidebar.queue': 'Warteschlange',
+  // ── Aufgaben + Scheduler (v0.3) ──────────────────────────────────
+  'nav.queue': 'Aufgaben',
+  'sidebar.queue': 'Aufgaben',
   'sidebar.queueBadge': '{n} offen',
-  'queue.title': 'Warteschlange',
+  'queue.title': 'Aufgaben',
   'queue.subtitle':
     'Agenten-Aufgaben vorbereiten — der Scheduler arbeitet sie nacheinander ab.',
-  'queue.empty': 'Noch keine Aufgaben in der Warteschlange.',
-  'queue.action.create': 'Neuer Eintrag',
-  'queue.action.addToQueue': 'Zur Warteschlange hinzufügen',
+  'queue.empty': 'Noch keine Aufgaben geplant.',
+  'queue.action.create': 'Neue Aufgabe',
+  'queue.action.addToQueue': 'Als Aufgabe hinzufügen',
   'queue.action.spawnNow': 'Jetzt starten',
   'queue.action.runNow': 'Sofort ausführen',
   'queue.action.cancel': 'Abbrechen',
@@ -442,29 +442,29 @@ const de: Partial<Record<TranslationKey, string>> = {
     'Höhere Zahlen laufen zuerst; bei Gleichstand entscheidet die Erstellungszeit.',
   'queue.field.scheduledFor': 'Nicht vor',
   'queue.field.scheduledForHint':
-    'Optional. Der Eintrag bleibt bis zu diesem Zeitpunkt blockiert.',
+    'Optional. Die Aufgabe bleibt bis zu diesem Zeitpunkt blockiert.',
   'queue.field.exclusive': 'Exklusiv für dieses Repository',
   'queue.field.exclusiveHint':
-    'Solange dieser Eintrag läuft, läuft kein anderer Agent (Warteschlange oder manuell) auf diesem Repository.',
+    'Solange diese Aufgabe läuft, läuft kein anderer Agent (geplant oder manuell) auf diesem Repository.',
   'queue.field.dependsOn': 'Abhängig von',
   'queue.field.dependsOnHint':
-    'Dieser Eintrag bleibt blockiert, bis alle ausgewählten Einträge erfolgreich beendet sind.',
+    'Diese Aufgabe bleibt blockiert, bis alle ausgewählten Aufgaben erfolgreich beendet sind.',
   'queue.field.dependsOnEmpty':
-    'Noch keine anderen Warteschlangen-Einträge zum Verknüpfen vorhanden.',
-  'queue.confirmCancel.title': 'Warteschlangeneintrag abbrechen',
+    'Noch keine anderen Aufgaben zum Verknüpfen vorhanden.',
+  'queue.confirmCancel.title': 'Aufgabe abbrechen',
   'queue.confirmCancel.body':
-    'Der Eintrag wird als abgebrochen markiert; sollte er gerade laufen, wird sein Agent gestoppt.',
-  'queue.confirmCancel.confirm': 'Eintrag abbrechen',
+    'Die Aufgabe wird als abgebrochen markiert; sollte sie gerade laufen, wird ihr Agent gestoppt.',
+  'queue.confirmCancel.confirm': 'Aufgabe abbrechen',
   'queue.confirmCancel.cancel': 'Behalten',
-  'queue.error.notFound': 'Warteschlangeneintrag nicht gefunden',
-  'queue.error.notEditable': 'Dieser Eintrag kann nicht mehr bearbeitet werden',
-  'queue.error.dependsOnSelf': 'Ein Eintrag kann nicht von sich selbst abhängen',
+  'queue.error.notFound': 'Aufgabe nicht gefunden',
+  'queue.error.notEditable': 'Diese Aufgabe kann nicht mehr bearbeitet werden',
+  'queue.error.dependsOnSelf': 'Eine Aufgabe kann nicht von sich selbst abhängen',
   'queue.error.unknownDependency':
     'Eine oder mehrere Abhängigkeiten wurden nicht gefunden',
-  'queue.error.loadFailed': 'Warteschlange konnte nicht geladen werden',
-  'queue.error.saveFailed': 'Warteschlangeneintrag konnte nicht gespeichert werden',
+  'queue.error.loadFailed': 'Aufgaben konnten nicht geladen werden',
+  'queue.error.saveFailed': 'Aufgabe konnte nicht gespeichert werden',
   'queue.lastError': 'Letzter Fehler: {message}',
-  'queue.settings.title': 'Warteschlangen-Parallelität',
+  'queue.settings.title': 'Aufgaben-Parallelität',
   'queue.settings.maxGlobal': 'Maximale parallele Aufgaben (global)',
   'queue.settings.maxPerRepo':
     'Maximale parallele Agenten pro Repository (Standard)',

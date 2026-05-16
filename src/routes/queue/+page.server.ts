@@ -23,11 +23,26 @@ export const load: PageServerLoad = async ({ locals }) => {
     path: r.path,
     projectName: r.project_name
   }));
+
+  // Only "agentic coding CLI" adapters (claude-code, codex, gemini) belong
+  // in the queue role picker — interactive tools (shell, browser*) can't be
+  // automated and would just confuse the dropdown. Adapters opt in via the
+  // `agenticCodingCli` flag in their JSONC; default false.
+  const agenticKinds = new Set(
+    cliKinds.filter((k) => k.agenticCodingCli).map((k) => k.kind)
+  );
+  const queueRoles = listRoles(locals.user.id).filter((r) =>
+    agenticKinds.has(r.cli_kind)
+  );
+
   return {
     entries: listQueueEntriesForUser(locals.user.id),
     concurrency: getQueueConcurrency(locals.user.id),
-    roles: listRoles(locals.user.id),
+    roles: queueRoles,
     repos,
+    // cliKinds stays unfiltered: SpawnAgentForm joins role.cli_kind → cliKind
+    // for capability lookups (model picker, branch-vs-no-branch, etc.), and
+    // a stale-after-filter listing would render those wrong.
     cliKinds,
     spawnDefaults: getSpawnDefaultsAll(
       locals.user.id,

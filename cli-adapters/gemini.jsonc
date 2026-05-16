@@ -7,6 +7,9 @@
   // docs/plans/v0.2-image-paste-into-agent.md.
   "acceptsImageAttachment": true,
 
+  // Agentic coding CLI — eligible for the /queue scheduler.
+  "agenticCodingCli": true,
+
   // Mobile quick-keys for the phone PWA. Starter set — tune against a
   // real gemini session.
   "mobileQuickKeys": [

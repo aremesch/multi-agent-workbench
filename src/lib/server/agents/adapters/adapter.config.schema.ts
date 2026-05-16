@@ -136,6 +136,17 @@ export const adapterConfigSchema = z.object({
   acceptsImageAttachment: z.boolean().default(false),
 
   /**
+   * Whether this adapter wraps an agentic coding CLI that makes sense to
+   * queue and run unattended. True for claude-code, codex, gemini and any
+   * future model-driven coding assistant; false for interactive shells and
+   * browser sessions where a human is in the loop. The /queue page filters
+   * the role picker on this flag — non-agentic adapters never show up as
+   * an option for a queued task. Defaults to false so a new adapter has to
+   * opt in deliberately.
+   */
+  agenticCodingCli: z.boolean().default(false),
+
+  /**
    * On-screen key-chord buttons rendered under xterm on touch devices (or
    * whenever the user toggles `ui.mobileQuickKeys` to `"always"`). Empty by
    * default — an adapter opts in by listing keys. `id` must be unique within

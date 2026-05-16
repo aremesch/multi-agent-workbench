@@ -117,6 +117,7 @@ interface FakeRegistry {
     displayName: string;
     createWorktree: boolean;
     acceptsImageAttachment: boolean;
+    agenticCodingCli: boolean;
     initialInputDelivery: 'none' | 'cli-arg';
     optionalArgs: Array<{ id: string; flag: string; label: string; default: boolean }>;
     mobileQuickKeys: Array<{ id: string; label: string; keys: string }>;
@@ -134,6 +135,10 @@ function makeFakeRegistry(): FakeRegistry {
         displayName: 'Shell',
         createWorktree: true,
         acceptsImageAttachment: false,
+        // The scheduler itself doesn't filter on agenticCodingCli (that's the
+        // queue page's job); set true here so any future test that does
+        // care about the queue role-list filter sees a queueable adapter.
+        agenticCodingCli: true,
         initialInputDelivery: 'none',
         optionalArgs: [],
         mobileQuickKeys: [],

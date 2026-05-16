@@ -43,6 +43,12 @@ export interface AdapterListing {
   displayName: string;
   createWorktree: boolean;
   acceptsImageAttachment: boolean;
+  /**
+   * Whether this adapter is queue-eligible. The /queue role picker filters
+   * by this flag so non-automatable CLIs (shell, browser, browser-stream)
+   * never appear as a scheduled task option.
+   */
+  agenticCodingCli: boolean;
   initialInputDelivery: 'none' | 'cli-arg';
   optionalArgs: Array<{
     id: string;
@@ -134,6 +140,7 @@ export class AdapterRegistry {
         displayName: e.config.displayName,
         createWorktree: e.config.createWorktree,
         acceptsImageAttachment: e.config.acceptsImageAttachment,
+        agenticCodingCli: e.config.agenticCodingCli,
         initialInputDelivery: e.config.spawn.initialInput.delivery,
         optionalArgs: e.config.spawn.optionalArgs.map((o) => ({
           id: o.id,

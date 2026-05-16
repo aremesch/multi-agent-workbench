@@ -16,6 +16,10 @@
       "type": "boolean",
       "description": "Whether this CLI accepts image attachments via a file path in the prompt body (claude-code, codex, gemini all accept @<path> mentions). When true, MAW renders a paperclip button + paste/drop UI on the agent terminal modal that uploads the image into <worktree>/.maw/uploads/ and types the relative path into the prompt. Defaults to false."
     },
+    "agenticCodingCli": {
+      "type": "boolean",
+      "description": "Whether this adapter wraps an agentic coding CLI that makes sense to queue and run unattended. True for claude-code, codex, gemini and any future model-driven coding assistant; false for interactive shells and browser sessions where a human is in the loop. The /queue page filters the role picker on this flag. Defaults to false."
+    },
     "mobileQuickKeys": {
       "type": "array",
       "description": "On-screen key-chord buttons rendered under xterm on touch devices. Phone soft keyboards don't expose arrow keys, Esc, Shift+Tab or Ctrl+C — declare the ones this CLI needs here. Empty by default.",

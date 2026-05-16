@@ -7,6 +7,9 @@
   // docs/plans/v0.2-image-paste-into-agent.md.
   "acceptsImageAttachment": true,
 
+  // Agentic coding CLI — eligible for the /queue scheduler.
+  "agenticCodingCli": true,
+
   // Mobile quick-keys for the phone PWA. Starter set — same rationale as
   // claude-code.jsonc. Tune against a real codex session.
   "mobileQuickKeys": [
