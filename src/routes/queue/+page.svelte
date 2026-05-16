@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidate, invalidateAll } from '$app/navigation';
+  import { slide } from 'svelte/transition';
   import { apiFetch } from '$lib/client/api';
   import { useT } from '$lib/client/i18n.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
@@ -23,11 +24,6 @@
   const concurrency = $derived(data.concurrency);
 
   const grouped = $derived(groupEntries(entries));
-  const openEntriesCount = $derived(
-    entries.filter((e) =>
-      ['pending', 'blocked', 'ready', 'running'].includes(e.status as string)
-    ).length
-  );
 
   /**
    * Bucket rows for display. Non-terminal entries split on `queued`:
@@ -76,12 +72,8 @@
     return { running, ready, blocked, backlog, completed };
   }
 
-  function statusLabel(s: QueueEntryStatus): string {
-    return t(`queue.status.${s}` as never);
-  }
-
-  function statusClass(s: QueueEntryStatus): string {
-    return `status status-${s}`;
+  function statusLabel(key: string): string {
+    return t(`queue.status.${key}` as never);
   }
 
   function roleName(roleId: string): string {
@@ -97,12 +89,35 @@
     return entries.find((e) => e.id === id)?.title ?? id;
   }
 
-  function formatScheduledFor(ts: number | null): string {
+  function depsOf(e: QueueEntryRow): string[] {
+    if (!e.depends_on_json || e.depends_on_json === '[]') return [];
+    try {
+      return JSON.parse(e.depends_on_json) as string[];
+    } catch {
+      return [];
+    }
+  }
+
+  function fmtTs(ts: number | null): string {
     if (!ts) return '—';
     try {
       return new Date(ts * 1000).toLocaleString();
     } catch {
       return String(ts);
+    }
+  }
+
+  // ── Inline expand ────────────────────────────────────────────────────────
+  // Multiple rows may be open at once (M3 expandable list, not a single-open
+  // accordion). Reassign the record so the access is reactive.
+  let expanded = $state<Record<string, boolean>>({});
+  function toggleExpand(id: string): void {
+    expanded = { ...expanded, [id]: !expanded[id] };
+  }
+  function onRowKey(ev: KeyboardEvent, id: string): void {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      toggleExpand(id);
     }
   }
 
@@ -236,7 +251,10 @@
         type="button"
         class="plan-badge"
         title={t('queue.badge.planHint')}
-        onclick={() => openTaskPlan(e.id)}
+        onclick={(ev) => {
+          ev.stopPropagation();
+          openTaskPlan(e.id);
+        }}
       >
         <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -249,31 +267,148 @@
     {/if}
   {/snippet}
 
+  {#snippet metaItem(label: string, value: string)}
+    <div class="meta-item">
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  {/snippet}
+
+  {#snippet taskRow(
+    e: QueueEntryRow,
+    statusKey: string,
+    actions: import('svelte').Snippet<[QueueEntryRow]>
+  )}
+    <li class="entry" class:is-expanded={expanded[e.id]}>
+      <div class="entry-row">
+        <div
+          class="entry-head"
+          role="button"
+          tabindex="0"
+          aria-expanded={expanded[e.id] ? 'true' : 'false'}
+          aria-label={expanded[e.id] ? t('queue.action.collapse') : t('queue.action.expand')}
+          onclick={() => toggleExpand(e.id)}
+          onkeydown={(ev) => onRowKey(ev, e.id)}
+        >
+          <svg
+            class="chevron"
+            class:open={expanded[e.id]}
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path fill="currentColor" d="M7 10l5 5 5-5H7Z" />
+          </svg>
+          <span class={`status status-${statusKey}`}>{statusLabel(statusKey)}</span>
+          <span class="entry-title">{e.title}</span>
+          {@render planBadge(e)}
+        </div>
+        <div class="entry-actions">{@render actions(e)}</div>
+      </div>
+
+      {#if expanded[e.id]}
+        <div class="entry-detail" transition:slide={{ duration: 150 }}>
+          <section class="detail-block">
+            <h3>{t('queue.detail.content')}</h3>
+            {#if e.body && e.body.trim()}
+              <pre class="detail-body">{e.body}</pre>
+            {:else}
+              <p class="detail-empty">{t('queue.detail.noContent')}</p>
+            {/if}
+          </section>
+
+          <dl class="detail-meta">
+            {@render metaItem(t('queue.column.role'), roleName(e.role_id))}
+            {@render metaItem(t('queue.column.repo'), repoLabel(e.repo_id))}
+            {#if e.model}{@render metaItem(t('queue.column.model'), e.model)}{/if}
+            {#if e.source_branch}
+              {@render metaItem(t('queue.column.branch'), e.source_branch)}
+            {/if}
+            {#if e.priority !== 0}
+              {@render metaItem(t('queue.column.priority'), String(e.priority))}
+            {/if}
+            {#if e.scheduled_for}
+              {@render metaItem(
+                t('queue.column.scheduledFor'),
+                fmtTs(e.scheduled_for)
+              )}
+            {/if}
+            {#if depsOf(e).length > 0}
+              {@render metaItem(
+                t('queue.column.dependsOn'),
+                depsOf(e).map(depTitle).join(', ')
+              )}
+            {/if}
+            {@render metaItem(t('queue.column.created'), fmtTs(e.created_at))}
+            {@render metaItem(t('queue.column.updated'), fmtTs(e.updated_at))}
+          </dl>
+
+          {#if e.last_error}
+            <p class="detail-error">{t('queue.lastError', { message: e.last_error })}</p>
+          {/if}
+        </div>
+      {/if}
+    </li>
+  {/snippet}
+
+  {#snippet runningActions(e: QueueEntryRow)}
+    {#if e.agent_id}
+      <a href={`/agents/${e.agent_id}`} class="link">{t('queue.action.openAgent')}</a>
+    {/if}
+    <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
+      {t('queue.action.cancel')}
+    </button>
+  {/snippet}
+
+  {#snippet readyActions(e: QueueEntryRow)}
+    <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
+      {t('queue.action.runNow')}
+    </button>
+    <button type="button" class="link" onclick={() => onSendToBacklog(e.id)}>
+      {t('queue.action.sendToBacklog')}
+    </button>
+    <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
+      {t('queue.action.cancel')}
+    </button>
+  {/snippet}
+
+  {#snippet blockedActions(e: QueueEntryRow)}
+    <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
+      {t('queue.action.runNow')}
+    </button>
+    <button type="button" class="link" onclick={() => onSendToBacklog(e.id)}>
+      {t('queue.action.sendToBacklog')}
+    </button>
+    <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
+      {t('queue.action.cancel')}
+    </button>
+  {/snippet}
+
+  {#snippet backlogActions(e: QueueEntryRow)}
+    <button type="button" class="link" onclick={() => onQueueEntry(e.id)}>
+      {t('queue.action.queue')}
+    </button>
+    <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
+      {t('queue.action.runNow')}
+    </button>
+    <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
+      {t('queue.action.cancel')}
+    </button>
+  {/snippet}
+
+  {#snippet completedActions(e: QueueEntryRow)}
+    {#if e.agent_id}
+      <a href={`/agents/${e.agent_id}`} class="link">{t('queue.action.openAgent')}</a>
+    {/if}
+  {/snippet}
+
   {#if grouped.running.length > 0}
     <section>
       <h2>{t('queue.section.running')} ({grouped.running.length})</h2>
       <ul class="entries">
         {#each grouped.running as e (e.id)}
-          <li class="entry">
-            <div class="entry-main">
-              <span class={statusClass(e.status)}>{statusLabel(e.status)}</span>
-              <span class="entry-title">{e.title}</span>
-              {@render planBadge(e)}
-              <span class="muted entry-meta">
-                {roleName(e.role_id)} · {repoLabel(e.repo_id)}
-                {#if e.model}· {e.model}{/if}
-                {#if e.source_branch}· {e.source_branch}{/if}
-              </span>
-            </div>
-            <div class="entry-actions">
-              {#if e.agent_id}
-                <a href={`/agents/${e.agent_id}`} class="link">{t('queue.action.openAgent')}</a>
-              {/if}
-              <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
-                {t('queue.action.cancel')}
-              </button>
-            </div>
-          </li>
+          {@render taskRow(e, e.status, runningActions)}
         {/each}
       </ul>
     </section>
@@ -284,29 +419,7 @@
       <h2>{t('queue.section.ready')} ({grouped.ready.length})</h2>
       <ul class="entries">
         {#each grouped.ready as e (e.id)}
-          <li class="entry">
-            <div class="entry-main">
-              <span class={statusClass(e.status)}>{statusLabel(e.status)}</span>
-              <span class="entry-title">{e.title}</span>
-              {@render planBadge(e)}
-              <span class="muted entry-meta">
-                {roleName(e.role_id)} · {repoLabel(e.repo_id)}
-                {#if e.model}· {e.model}{/if}
-                {#if e.priority !== 0}· prio {e.priority}{/if}
-              </span>
-            </div>
-            <div class="entry-actions">
-              <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
-                {t('queue.action.runNow')}
-              </button>
-              <button type="button" class="link" onclick={() => onSendToBacklog(e.id)}>
-                {t('queue.action.sendToBacklog')}
-              </button>
-              <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
-                {t('queue.action.cancel')}
-              </button>
-            </div>
-          </li>
+          {@render taskRow(e, e.status, readyActions)}
         {/each}
       </ul>
     </section>
@@ -317,40 +430,7 @@
       <h2>{t('queue.section.blocked')} ({grouped.blocked.length})</h2>
       <ul class="entries">
         {#each grouped.blocked as e (e.id)}
-          <li class="entry">
-            <div class="entry-main">
-              <span class={statusClass(e.status)}>{statusLabel(e.status)}</span>
-              <span class="entry-title">{e.title}</span>
-              {@render planBadge(e)}
-              <span class="muted entry-meta">
-                {roleName(e.role_id)} · {repoLabel(e.repo_id)}
-                {#if e.scheduled_for}· {t('queue.column.scheduledFor')}: {formatScheduledFor(e.scheduled_for)}{/if}
-                {#if e.priority !== 0}· prio {e.priority}{/if}
-              </span>
-              {#if e.depends_on_json && e.depends_on_json !== '[]'}
-                <span class="deps-line muted">
-                  {t('queue.column.dependsOn')}:
-                  {(JSON.parse(e.depends_on_json) as string[])
-                    .map((id) => depTitle(id))
-                    .join(', ')}
-                </span>
-              {/if}
-              {#if e.last_error}
-                <span class="err">{t('queue.lastError', { message: e.last_error })}</span>
-              {/if}
-            </div>
-            <div class="entry-actions">
-              <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
-                {t('queue.action.runNow')}
-              </button>
-              <button type="button" class="link" onclick={() => onSendToBacklog(e.id)}>
-                {t('queue.action.sendToBacklog')}
-              </button>
-              <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
-                {t('queue.action.cancel')}
-              </button>
-            </div>
-          </li>
+          {@render taskRow(e, e.status, blockedActions)}
         {/each}
       </ul>
     </section>
@@ -361,40 +441,7 @@
       <h2>{t('queue.section.backlog')} ({grouped.backlog.length})</h2>
       <ul class="entries">
         {#each grouped.backlog as e (e.id)}
-          <li class="entry">
-            <div class="entry-main">
-              <span class="status status-backlog">{t('queue.status.backlog')}</span>
-              <span class="entry-title">{e.title}</span>
-              {@render planBadge(e)}
-              <span class="muted entry-meta">
-                {roleName(e.role_id)} · {repoLabel(e.repo_id)}
-                {#if e.scheduled_for}· {t('queue.column.scheduledFor')}: {formatScheduledFor(e.scheduled_for)}{/if}
-                {#if e.priority !== 0}· prio {e.priority}{/if}
-              </span>
-              {#if e.depends_on_json && e.depends_on_json !== '[]'}
-                <span class="deps-line muted">
-                  {t('queue.column.dependsOn')}:
-                  {(JSON.parse(e.depends_on_json) as string[])
-                    .map((id) => depTitle(id))
-                    .join(', ')}
-                </span>
-              {/if}
-              {#if e.last_error}
-                <span class="err">{t('queue.lastError', { message: e.last_error })}</span>
-              {/if}
-            </div>
-            <div class="entry-actions">
-              <button type="button" class="link" onclick={() => onQueueEntry(e.id)}>
-                {t('queue.action.queue')}
-              </button>
-              <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
-                {t('queue.action.runNow')}
-              </button>
-              <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
-                {t('queue.action.cancel')}
-              </button>
-            </div>
-          </li>
+          {@render taskRow(e, 'backlog', backlogActions)}
         {/each}
       </ul>
     </section>
@@ -405,24 +452,7 @@
       <h2>{t('queue.section.completed')} ({grouped.completed.length})</h2>
       <ul class="entries entries-dim">
         {#each grouped.completed as e (e.id)}
-          <li class="entry">
-            <div class="entry-main">
-              <span class={statusClass(e.status)}>{statusLabel(e.status)}</span>
-              <span class="entry-title">{e.title}</span>
-              {@render planBadge(e)}
-              <span class="muted entry-meta">
-                {roleName(e.role_id)} · {repoLabel(e.repo_id)}
-              </span>
-              {#if e.last_error}
-                <span class="err">{t('queue.lastError', { message: e.last_error })}</span>
-              {/if}
-            </div>
-            <div class="entry-actions">
-              {#if e.agent_id}
-                <a href={`/agents/${e.agent_id}`} class="link">{t('queue.action.openAgent')}</a>
-              {/if}
-            </div>
-          </li>
+          {@render taskRow(e, e.status, completedActions)}
         {/each}
       </ul>
     </section>
@@ -433,7 +463,9 @@
   type="button"
   class="fab"
   aria-label={t('queue.action.create')}
-  onclick={() => { createOpen = true; }}
+  onclick={() => {
+    createOpen = true;
+  }}
 >
   <span aria-hidden="true">+</span>
 </button>
@@ -460,8 +492,14 @@
 />
 
 <style>
+  /* Styling reads the Material Design 3 token layer defined in
+     src/app.css (--md-sys-color-*, --md-sys-shape-*, --md-sys-motion-*),
+     so the Tasks page recolors live with the active theme and stays
+     usable down to a compact (phone) window. */
   .page {
     padding: 1.25rem;
+    /* Keep the last row clear of the FAB + the device's bottom inset. */
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
     display: grid;
     gap: 1.25rem;
     max-width: 60rem;
@@ -475,12 +513,12 @@
   }
   h1 {
     margin: 0;
-    color: #e5e7eb;
+    color: var(--md-sys-color-on-surface);
     font-size: 1.3rem;
   }
   .subtitle {
     margin: 0.2rem 0 0;
-    color: #9ca3af;
+    color: var(--md-sys-color-on-surface-variant);
     font-size: 0.85rem;
   }
   .head-actions {
@@ -495,11 +533,11 @@
   /* Floating action button — matches the repo dashboard's pattern. */
   .fab {
     position: fixed;
-    right: 2rem;
-    bottom: 2rem;
+    right: calc(2rem + env(safe-area-inset-right));
+    bottom: calc(2rem + env(safe-area-inset-bottom));
     width: 3.5rem;
     height: 3.5rem;
-    border-radius: 50%;
+    border-radius: var(--md-sys-shape-corner-full);
     background: var(--md-sys-color-primary);
     color: var(--md-sys-color-on-primary);
     border: none;
@@ -517,7 +555,7 @@
   }
   section h2 {
     margin: 0;
-    color: #e5e7eb;
+    color: var(--md-sys-color-on-surface);
     font-size: 0.95rem;
     font-weight: 500;
   }
@@ -532,119 +570,246 @@
     opacity: 0.7;
   }
   .entry {
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-md);
+    background: var(--md-sys-color-surface-container-low);
+    transition: background var(--md-sys-motion-duration-short)
+      var(--md-sys-motion-easing-standard);
+  }
+  .entry.is-expanded {
+    background: var(--md-sys-color-surface-container);
+  }
+  .entry-row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.55rem 0.8rem;
-    border: 1px solid #1f2937;
-    border-radius: 0.4rem;
-    background: #0b0f17;
   }
-  .entry-main {
-    display: grid;
-    gap: 0.2rem;
-    min-width: 0;
+  .entry-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.5rem;
     flex: 1;
+    min-width: 0;
+    cursor: pointer;
+    user-select: none;
+    background: transparent;
+    border-radius: var(--md-sys-shape-corner-sm);
+  }
+  .entry-head:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+  }
+  .chevron {
+    flex-shrink: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    transform: rotate(-90deg);
+    transition: transform var(--md-sys-motion-duration-short)
+      var(--md-sys-motion-easing-standard);
+  }
+  .chevron.open {
+    transform: rotate(0deg);
   }
   .entry-title {
-    color: #e5e7eb;
+    color: var(--md-sys-color-on-surface);
     font-weight: 500;
-  }
-  .entry-meta {
-    font-size: 0.8rem;
-  }
-  .deps-line {
-    font-size: 0.8rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .muted {
-    color: #6b7280;
+    color: var(--md-sys-color-on-surface-variant);
   }
   .status {
     display: inline-block;
-    padding: 0.05rem 0.45rem;
-    border-radius: 999px;
+    flex-shrink: 0;
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    background: #1f2937;
-    color: #93c5fd;
-    margin-right: 0.4rem;
+    background: color-mix(
+      in srgb,
+      var(--md-sys-color-on-surface-variant) 16%,
+      transparent
+    );
+    color: var(--md-sys-color-on-surface-variant);
   }
-  .status-running {
-    background: #064e3b;
-    color: #6ee7b7;
+  .status-running,
+  .status-done {
+    background: color-mix(in srgb, var(--md-sys-color-success) 20%, transparent);
+    color: var(--md-sys-color-success);
   }
   .status-ready {
-    background: #1e3a8a;
-    color: #bfdbfe;
-  }
-  .status-blocked,
-  .status-pending {
-    background: #1f2937;
-    color: #9ca3af;
+    background: color-mix(in srgb, var(--md-sys-color-info) 20%, transparent);
+    color: var(--md-sys-color-info);
   }
   .status-backlog {
-    background: #312e81;
-    color: #c7d2fe;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
+  .status-failed {
+    background: color-mix(in srgb, var(--md-sys-color-error) 20%, transparent);
+    color: var(--md-sys-color-error);
+  }
+  /* blocked / pending / cancelled keep the neutral base. */
   .plan-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.2rem;
-    padding: 0.05rem 0.4rem 0.05rem 0.35rem;
-    margin-left: 0.4rem;
-    border: 1px solid #1f2937;
-    border-radius: 999px;
-    background: #0f172a;
-    color: #93c5fd;
+    flex-shrink: 0;
+    padding: 0.1rem 0.45rem 0.1rem 0.4rem;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-primary);
     font: inherit;
     font-size: 0.7rem;
     cursor: pointer;
   }
   .plan-badge:hover {
-    background: #1e293b;
-    color: #bfdbfe;
-  }
-  .status-done {
-    background: #064e3b;
-    color: #a7f3d0;
-  }
-  .status-failed {
-    background: #7f1d1d;
-    color: #fecaca;
-  }
-  .status-cancelled {
-    background: #374151;
-    color: #d1d5db;
+    background: var(--md-sys-color-surface-container-highest);
   }
   .entry-actions {
     display: flex;
     gap: 0.6rem;
     align-items: center;
+    flex-shrink: 0;
+  }
+  .entry-actions:empty {
+    display: none;
   }
   .link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: none;
-    color: #93c5fd;
+    color: var(--md-sys-color-primary);
     cursor: pointer;
     font: inherit;
-    padding: 0;
     font-size: 0.85rem;
+    padding: 0.3rem 0.25rem;
+    min-height: 1.75rem;
     text-decoration: none;
+    border-radius: var(--md-sys-shape-corner-sm);
   }
   .link:hover {
     text-decoration: underline;
   }
   .link.danger {
-    color: #fca5a5;
+    color: var(--md-sys-color-error);
   }
-  .empty {
-    color: #9ca3af;
+  /* ── Expanded detail panel ──────────────────────────────────────── */
+  .entry-detail {
+    display: grid;
+    gap: 0.85rem;
+    padding: 0.75rem 0.8rem 0.9rem;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .detail-block {
+    display: grid;
+    gap: 0.35rem;
+  }
+  .detail-block h3 {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .detail-body {
+    margin: 0;
+    max-height: 22rem;
+    overflow: auto;
+    padding: 0.6rem 0.7rem;
+    background: var(--md-sys-color-surface-container-lowest);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-sm);
+    color: var(--md-sys-color-on-surface);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .detail-empty {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.85rem;
     font-style: italic;
   }
-  .err {
-    color: #fca5a5;
+  .detail-meta {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem 1.25rem;
+  }
+  .meta-item {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+  .meta-item dt {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .meta-item dd {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--md-sys-color-on-surface);
+    overflow-wrap: anywhere;
+  }
+  .detail-error {
+    margin: 0;
+    color: var(--md-sys-color-error);
     font-size: 0.8rem;
+    overflow-wrap: anywhere;
+  }
+  .empty {
+    color: var(--md-sys-color-on-surface-variant);
+    font-style: italic;
+  }
+
+  /* ── Compact window (M3 "compact" width class, < 600dp) ───────────
+     Phones: stack the action cluster under the row, give every control
+     a comfortable touch target, and collapse the metadata to one
+     column so nothing is truncated or cramped. */
+  @media (max-width: 600px) {
+    .page {
+      padding: 0.9rem;
+      padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+      gap: 1rem;
+    }
+    .page-head {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.4rem;
+    }
+    .entry-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.55rem;
+    }
+    .entry-actions {
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      border-top: 1px solid var(--md-sys-color-outline-variant);
+      padding-top: 0.45rem;
+    }
+    .link {
+      flex: 1 1 auto;
+      min-height: 48px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+    }
+    .detail-meta {
+      grid-template-columns: 1fr;
+      gap: 0.55rem;
+    }
   }
 </style>

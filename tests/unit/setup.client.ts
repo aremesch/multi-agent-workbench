@@ -61,3 +61,33 @@ if (typeof globalThis.WebSocket === 'undefined') {
   }
   (globalThis as { WebSocket: unknown }).WebSocket = NoopWebSocket;
 }
+
+// jsdom has no Web Animations API. Svelte 5's built-in transitions
+// (`svelte/transition` — used e.g. by the Tasks page's expandable rows)
+// call `element.animate()` on intro/outro and would throw
+// "element.animate is not a function". Stub it to an immediately-finished
+// Animation: the transition is decorative, so completing it synchronously
+// keeps the {#if} mount/unmount semantics intact for assertions.
+if (
+  typeof Element !== 'undefined' &&
+  typeof Element.prototype.animate !== 'function'
+) {
+  Element.prototype.animate = function animate() {
+    const anim = {
+      cancel() {},
+      play() {},
+      pause() {},
+      finish() {},
+      reverse() {},
+      addEventListener() {},
+      removeEventListener() {},
+      onfinish: null as null | (() => void),
+      finished: Promise.resolve(),
+      currentTime: 0,
+      playState: 'finished'
+    };
+    // Drive completion so Svelte's outro removes the node promptly.
+    queueMicrotask(() => anim.onfinish?.());
+    return anim as unknown as Animation;
+  };
+}

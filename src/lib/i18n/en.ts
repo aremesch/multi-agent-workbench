@@ -503,6 +503,12 @@ const en = {
   'queue.field.planHint': 'Appended after the task body when the agent starts.',
   'queue.badge.plan': 'Plan',
   'queue.badge.planHint': 'View the plan stored with this task',
+  'queue.action.expand': 'Expand task',
+  'queue.action.collapse': 'Collapse task',
+  'queue.detail.content': 'Task content',
+  'queue.detail.noContent': 'This task has no content.',
+  'queue.column.created': 'Created',
+  'queue.column.updated': 'Updated',
   'queue.confirmCancel.title': 'Cancel task',
   'queue.confirmCancel.body':
     'This will mark the task as cancelled and, if it is currently running, stop its agent.',
