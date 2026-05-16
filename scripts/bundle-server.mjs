@@ -59,6 +59,12 @@ await build({
     'zod',
     'web-push',
     '@sveltejs/kit',
+    // simple-git's transitive @kwsites/file-exists is CJS and calls
+    // `require('fs')` at module top-level. esbuild rewrites that as a
+    // dynamic require shim that throws under ESM (`Dynamic require of
+    // "fs" is not supported`), so keep the whole simple-git chain
+    // external and let Node's CJS resolver handle it at runtime.
+    'simple-git',
     // playwright pulls in chromium-bidi via dynamic require which esbuild
     // can't statically resolve — keep the entire package external so
     // Node's loader handles the chain at runtime.
