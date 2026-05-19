@@ -28,5 +28,4 @@ Two driving goals:
   (the `-o` flag overwrites in place). If a component appears broken,
   refresh it; if it is still broken after refresh, that is an upstream
   bug or a config/registry mismatch — fix the cause, not the file.
-- **Sync:** Reflect completed tasks in this file immediately after a successful build.
 
