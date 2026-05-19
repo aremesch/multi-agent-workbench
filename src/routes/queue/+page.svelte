@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidate, invalidateAll } from '$app/navigation';
+  import { page } from '$app/state';
   import { apiFetch } from '$lib/client/api';
   import { useT } from '$lib/client/i18n.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
@@ -22,7 +23,16 @@
   const entries = $derived<QueueEntryRow[]>(data.entries);
   const concurrency = $derived(data.concurrency);
 
-  const grouped = $derived(groupEntries(entries));
+  // Optional `?repo=<id>` filter, driven by the per-repo sub-entries under
+  // the sidebar's "Tasks" headline. Grouping/empty-state run off the
+  // filtered view; dependency options stay global so cross-repo deps still
+  // resolve in the spawn form.
+  const repoFilter = $derived(page.url.searchParams.get('repo'));
+  const visibleEntries = $derived(
+    repoFilter ? entries.filter((e) => e.repo_id === repoFilter) : entries
+  );
+
+  const grouped = $derived(groupEntries(visibleEntries));
   const openEntriesCount = $derived(
     entries.filter((e) =>
       ['pending', 'blocked', 'ready', 'running'].includes(e.status as string)
@@ -217,7 +227,14 @@
   <header class="page-head">
     <div>
       <h1>{t('queue.title')}</h1>
-      <p class="subtitle">{t('queue.subtitle')}</p>
+      {#if repoFilter}
+        <p class="subtitle">
+          {t('queue.filteredByRepo', { repo: repoLabel(repoFilter) })}
+          · <a class="link" href="/queue">{t('queue.showAll')}</a>
+        </p>
+      {:else}
+        <p class="subtitle">{t('queue.subtitle')}</p>
+      {/if}
     </div>
     <div class="head-actions">
       <span class="muted concurrency-summary">
@@ -226,7 +243,7 @@
     </div>
   </header>
 
-  {#if entries.length === 0}
+  {#if visibleEntries.length === 0}
     <p class="empty">{t('queue.empty')}</p>
   {/if}
 

@@ -62,6 +62,25 @@
     return a.task_title ? `${a.role_name} — ${a.task_title}` : a.role_name;
   }
 
+  // Repos with non-terminal queue work, mirrored as per-repo sub-entries
+  // under the "Tasks" headline (same flat pattern as the Archive section).
+  const reposWithTasks = $derived(
+    activeRepos.filter((r) => (queueOpenByRepo[r.repoId] ?? 0) > 0)
+  );
+  function queueRepoHref(repoId: string): string {
+    return `/queue?repo=${repoId}`;
+  }
+  function isQueueRepoActive(repoId: string): boolean {
+    return (
+      page.url.pathname === '/queue' && page.url.searchParams.get('repo') === repoId
+    );
+  }
+  // Headline highlights only for the unfiltered "all tasks" view, so picking
+  // a repo sub-entry lights up the row instead of the section header.
+  function isQueueAllActive(): boolean {
+    return page.url.pathname === '/queue' && !page.url.searchParams.get('repo');
+  }
+
   function repoHref(repoId: string): string {
     return `/repos/${repoId}`;
   }
@@ -83,7 +102,7 @@
     <nav class="tree">
       <a
         class="section-label queue-link"
-        class:active={page.url.pathname === '/queue'}
+        class:active={isQueueAllActive()}
         href="/queue"
       >
         {t('sidebar.queue')}
@@ -91,7 +110,39 @@
           <span class="count">{queueOpenTotal}</span>
         {/if}
       </a>
-      <div class="section-label">{t('sidebar.repositories')}</div>
+      {#if reposWithTasks.length === 0}
+        <div class="empty">{t('sidebar.noTasks')}</div>
+      {:else}
+        <ul class="list">
+          {#each reposWithTasks as repo (repo.repoId)}
+            <li>
+              <div class="row" class:active={isQueueRepoActive(repo.repoId)}>
+                <span class="disclosure spacer" aria-hidden="true"></span>
+                <a
+                  class="row-link"
+                  href={queueRepoHref(repo.repoId)}
+                  title={repo.projectName ? `${repo.projectName} — ${repo.repoPath}` : repo.repoPath}
+                >
+                  <span class="label">{repoLabel(repo)}</span>
+                  <span class="count">{queueOpenByRepo[repo.repoId]}</span>
+                </a>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      <a
+        class="section-label repositories-link"
+        class:active={page.url.pathname === '/'}
+        href="/"
+        title={t('sidebar.allAgents')}
+      >
+        {t('sidebar.repositories')}
+        <span class="count" style="margin-left: auto;"
+          >{activeRepos.reduce((n, r) => n + r.agents.length, 0)}</span
+        >
+      </a>
       {#if activeRepos.length === 0}
         <div class="empty">{t('sidebar.noRepos')}</div>
       {:else}
@@ -267,6 +318,23 @@
   }
   a.queue-link .count {
     margin-left: auto;
+  }
+  a.repositories-link {
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    padding-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+    border-radius: 0.25rem;
+  }
+  a.repositories-link:hover {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 4%, transparent);
+  }
+  a.repositories-link.active {
+    color: var(--md-sys-color-primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
   }
   .queue-badge {
     font-size: 0.65rem;
