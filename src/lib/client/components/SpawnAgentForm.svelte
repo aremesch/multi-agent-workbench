@@ -91,6 +91,30 @@
     queued: boolean;
     plan_md: string | null;
   }
+  /**
+   * Pre-fill values for edit mode. When supplied the form seeds every field
+   * from an existing queue entry and swaps the Save/Run pair for a single
+   * "Save changes" button that routes through `onEdit`. Omitted (null) keeps
+   * the create/spawn behavior untouched.
+   */
+  export interface SpawnInitialValues {
+    roleId: string;
+    repoId: string;
+    taskTitle: string;
+    taskBody: string;
+    targetUrl: string;
+    branch: string;
+    withWorktree: boolean;
+    model: string | null;
+    permissionMode: string | null;
+    optionalArgs: Record<string, boolean>;
+    priority: number;
+    /** '' or a datetime-local string ('YYYY-MM-DDTHH:mm'). */
+    scheduledForLocal: string;
+    exclusive: boolean;
+    dependsOn: string[];
+    planMd: string;
+  }
 
   let {
     roles,
@@ -100,6 +124,7 @@
     defaultRepoId,
     mode = 'spawn',
     queueDepOptions = [],
+    initialValues = null,
     /**
      * Called with the new agent id after a successful spawn. The dashboard
      * uses this to close the modal + navigate to the agent detail page.
@@ -107,6 +132,7 @@
      */
     onSuccess,
     onQueue,
+    onEdit,
     onCancel
   }: {
     roles: SpawnRoleOption[];
@@ -118,20 +144,38 @@
     defaultRepoId?: string | null;
     mode?: 'spawn' | 'queue';
     queueDepOptions?: QueueDepOption[];
+    /** When set, the form pre-fills from this entry and runs in edit mode
+     *  (single "Save changes" button → `onEdit`). Only meaningful with
+     *  mode='queue'. */
+    initialValues?: SpawnInitialValues | null;
     onSuccess?: (agentId: string) => void;
     /** Required when mode='queue'. Receives the assembled payload; the
      *  parent owns the API call + error mapping. Resolves with true on
      *  success so the form can clear its submitting state. */
     onQueue?: (payload: QueuePayload) => Promise<{ ok: boolean; error?: string }>;
+    /** Required when editing (initialValues set). Same contract as onQueue;
+     *  the parent PUTs to /api/queue/:id. */
+    onEdit?: (payload: QueuePayload) => Promise<{ ok: boolean; error?: string }>;
     onCancel?: () => void;
   } = $props();
+
+  /** Edit mode = an existing entry was passed in to pre-fill. */
+  const isEdit = $derived(initialValues != null);
 
   // Roles are read-only here. CRUD lives at /roles.
   let repoOptions = $state<SpawnRepoOption[]>(untrack(() => [...repos]));
 
-  let selectedRoleId = $state(untrack(() => roles[0]?.id ?? ''));
+  let selectedRoleId = $state(
+    untrack(() => {
+      const iv = initialValues;
+      if (iv && roles.some((r) => r.id === iv.roleId)) return iv.roleId;
+      return roles[0]?.id ?? '';
+    })
+  );
   let selectedRepoId = $state(
     untrack(() => {
+      const iv = initialValues;
+      if (iv && repos.some((r) => r.id === iv.repoId)) return iv.repoId;
       if (defaultRepoId && repos.some((r) => r.id === defaultRepoId)) return defaultRepoId;
       return repos[0]?.id ?? '';
     })
@@ -147,8 +191,8 @@
   let pickerOpen = $state(false);
 
   // ── Task title + body + slug preview ───────────────────────────────────
-  let taskTitle = $state('');
-  let taskBodyValue = $state('');
+  let taskTitle = $state(untrack(() => initialValues?.taskTitle ?? ''));
+  let taskBodyValue = $state(untrack(() => initialValues?.taskBody ?? ''));
   const taskSlug = $derived(
     taskTitle
       .normalize('NFKD')
@@ -163,7 +207,9 @@
   // ── Advanced: optional args toggles ──────────────────────────────────────
   let showAdvanced = $state(false);
   /** Toggle states keyed by optionalArg id. Recomputed when the selected role changes. */
-  let optArgToggles = $state<Record<string, boolean>>({});
+  let optArgToggles = $state<Record<string, boolean>>(
+    untrack(() => ({ ...(initialValues?.optionalArgs ?? {}) }))
+  );
 
   // ── Selected adapter (resolved from role) ────────────────────────────────
   const selectedRole = $derived(roles.find((r) => r.id === selectedRoleId) ?? null);
@@ -200,14 +246,23 @@
   let branchCache = $state<Record<string, BranchData>>({});
   let branchLoading = $state(false);
   let branchError = $state<string | null>(null);
-  let selectedBranch = $state('');
-  let withWorktree = $state(true);
+  let selectedBranch = $state(untrack(() => initialValues?.branch ?? ''));
+  let withWorktree = $state(untrack(() => initialValues?.withWorktree ?? true));
+
+  /** Keep an already-selected branch if it is valid for this repo (so the
+   *  seeded edit branch survives the async load), else fall back to the
+   *  repo's current/first branch. Behavior-preserving for create, where
+   *  selectedBranch starts ''. */
+  function pickBranch(cached: BranchData): string {
+    if (selectedBranch && cached.branches.includes(selectedBranch)) return selectedBranch;
+    return cached.current ?? cached.branches[0] ?? '';
+  }
 
   async function loadBranches(repoId: string): Promise<void> {
     if (!repoId) return;
     if (branchCache[repoId]) {
       const cached = branchCache[repoId];
-      selectedBranch = cached.current ?? cached.branches[0] ?? '';
+      selectedBranch = pickBranch(cached);
       return;
     }
     branchLoading = true;
@@ -224,7 +279,7 @@
         current: data.current ?? null
       };
       branchCache = { ...branchCache, [repoId]: cached };
-      selectedBranch = cached.current ?? cached.branches[0] ?? '';
+      selectedBranch = pickBranch(cached);
     } catch {
       branchError = t('spawn.error.networkError');
     } finally {
@@ -233,17 +288,33 @@
   }
 
   // ── Capability picks (model, permission_mode) ───────────────────────────
-  let selectedModel = $state<string | null>(null);
-  let selectedPermissionMode = $state<string | null>(null);
+  let selectedModel = $state<string | null>(untrack(() => initialValues?.model ?? null));
+  let selectedPermissionMode = $state<string | null>(
+    untrack(() => initialValues?.permissionMode ?? null)
+  );
 
   // ── Reactive resets when role / repo / adapter changes ──────────────────
+
+  // Tracks the role whose capability defaults have been applied. Seeded to
+  // the initial role in edit mode so the first effect pass keeps the seeded
+  // values instead of resetting to role defaults; a genuine role change
+  // (different id) re-derives as before. Plain `let` → not reactive.
+  let optArgsRoleApplied: string | null = untrack(() =>
+    initialValues ? selectedRoleId : null
+  );
+  let modelCapsRoleApplied: string | null = untrack(() =>
+    initialValues ? selectedRoleId : null
+  );
 
   // Re-derive toggle values when the selected role (and thus CLI kind) changes.
   $effect(() => {
     if (!selectedRole || !selectedAdapter) {
       optArgToggles = {};
+      optArgsRoleApplied = null;
       return;
     }
+    if (optArgsRoleApplied === selectedRole.id) return;
+    optArgsRoleApplied = selectedRole.id;
     const userDefs = spawnDefaults[selectedRole.cli_kind]?.optionalArgs ?? {};
     const toggles: Record<string, boolean> = {};
     for (const opt of selectedAdapter.optionalArgs) {
@@ -258,8 +329,11 @@
     if (!selectedRole || !selectedAdapter) {
       selectedModel = null;
       selectedPermissionMode = null;
+      modelCapsRoleApplied = null;
       return;
     }
+    if (modelCapsRoleApplied === selectedRole.id) return;
+    modelCapsRoleApplied = selectedRole.id;
     const modelCap = selectedAdapter.capabilities.model;
     if (modelCap) {
       const roleDefault = selectedRole.default_model;
@@ -288,16 +362,22 @@
   });
 
   // Browser-kind preview URL
-  let targetUrl = $state(DEFAULT_BROWSER_TARGET_URL);
+  let targetUrl = $state(
+    untrack(() =>
+      initialValues?.targetUrl ? initialValues.targetUrl : DEFAULT_BROWSER_TARGET_URL
+    )
+  );
   const targetUrlValid = $derived(parseBrowserTargetUrl(targetUrl).ok);
 
   // ── Queue-mode extras (priority, deps, scheduled-for, exclusive, plan) ──
-  let queuePriority = $state(0);
-  let queueScheduledForLocal = $state(''); // 'YYYY-MM-DDTHH:mm' or empty
-  let queueExclusive = $state(false);
-  let queueDeps = $state<string[]>([]);
-  let queuePlanMd = $state('');
-  let queuePlanOpen = $state(false);
+  let queuePriority = $state(untrack(() => initialValues?.priority ?? 0));
+  let queueScheduledForLocal = $state(
+    untrack(() => initialValues?.scheduledForLocal ?? '')
+  ); // 'YYYY-MM-DDTHH:mm' or empty
+  let queueExclusive = $state(untrack(() => initialValues?.exclusive ?? false));
+  let queueDeps = $state<string[]>(untrack(() => [...(initialValues?.dependsOn ?? [])]));
+  let queuePlanMd = $state(untrack(() => initialValues?.planMd ?? ''));
+  let queuePlanOpen = $state(untrack(() => Boolean(initialValues?.planMd)));
   // worktree=off implies exclusive — surface that in the UI when applicable.
   const exclusiveForced = $derived(mode === 'queue' && showGitFields && !withWorktree);
   const effectiveExclusive = $derived(exclusiveForced || queueExclusive);
@@ -349,6 +429,23 @@
     submitting = true;
     try {
       const result = await onQueue(gatherQueuePayload(queued));
+      if (!result.ok) error = result.error ?? t('queue.error.saveFailed');
+    } catch (err) {
+      error = (err as Error).message ?? t('queue.error.saveFailed');
+    } finally {
+      submitting = false;
+    }
+  }
+
+  /** Edit-mode submit. Mirrors `submitQueue` but routes to `onEdit` (PUT).
+   *  `queued` is irrelevant — the PUT endpoint ignores it (admission stays
+   *  controlled by the dedicated /queue & /backlog endpoints). */
+  async function submitEdit(): Promise<void> {
+    if (!onEdit) return;
+    error = null;
+    submitting = true;
+    try {
+      const result = await onEdit(gatherQueuePayload(false));
       if (!result.ok) error = result.error ?? t('queue.error.saveFailed');
     } catch (err) {
       error = (err as Error).message ?? t('queue.error.saveFailed');
@@ -462,10 +559,12 @@
     onsubmit={mode === 'queue'
       ? (e) => {
           e.preventDefault();
-          // Hitting Enter inside any input defaults to Save → Backlog so
-          // the user never accidentally launches an agent. The dedicated
-          // "Run" button explicitly opts in to auto-promotion.
-          void submitQueue(false);
+          // In edit mode Enter saves the changes. Otherwise hitting Enter
+          // inside any input defaults to Save → Backlog so the user never
+          // accidentally launches an agent. The dedicated "Run" button
+          // explicitly opts in to auto-promotion.
+          if (isEdit) void submitEdit();
+          else void submitQueue(false);
         }
       : undefined}
   >
@@ -743,7 +842,7 @@
     {#if error}
       <p class="err">{error}</p>
     {/if}
-    {#if mode === 'queue'}
+    {#if mode === 'queue' && !isEdit}
       <p class="muted hint actions-hint">{t('queue.action.runHint')}</p>
     {/if}
     <div class="actions">
@@ -754,7 +853,24 @@
       {:else}
         <a href="/" class="cancel">{t('spawn.cancel')}</a>
       {/if}
-      {#if mode === 'queue'}
+      {#if mode === 'queue' && isEdit}
+        <!-- Edit mode: a single primary action. The PUT endpoint re-validates
+             and resets the entry to `pending`; it does not touch the queued
+             bit, so backlog stays backlog and queued stays queued. -->
+        <button
+          type="button"
+          class="btn-run"
+          onclick={() => void submitEdit()}
+          disabled={submitting ||
+            anyInlineOpen ||
+            !selectedRoleId ||
+            !selectedRepoId ||
+            !taskSlug ||
+            (isBrowserSelected && !targetUrlValid)}
+        >
+          {t('queue.action.saveEdit')}
+        </button>
+      {:else if mode === 'queue'}
         <!-- Save → Backlog (queued=0). Default action so pressing Enter
              inside any field never accidentally launches an agent. -->
         <button

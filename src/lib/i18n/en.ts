@@ -458,6 +458,8 @@ const en = {
   'queue.action.queue': 'Queue',
   'queue.action.cancel': 'Cancel',
   'queue.action.edit': 'Edit',
+  'queue.action.editTask': 'Edit task',
+  'queue.action.saveEdit': 'Save changes',
   'queue.action.delete': 'Delete',
   'queue.action.openAgent': 'Open agent',
   'queue.action.viewSourceIssue': 'View source issue',

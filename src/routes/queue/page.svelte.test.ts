@@ -16,6 +16,13 @@ vi.mock('$app/navigation', () => ({
   invalidateAll: vi.fn()
 }));
 
+// Opening the edit modal mounts SpawnAgentForm, whose <form> carries
+// `use:enhance`. The real action's DEV guard rejects a non-POST form; stub
+// it to a no-op action (same approach as the $app/navigation stub above).
+vi.mock('$app/forms', () => ({
+  enhance: () => ({ destroy() {} })
+}));
+
 import Page from './+page.svelte';
 
 afterEach(() => {
@@ -125,5 +132,48 @@ describe('Tasks page — inline expand', () => {
       getByRole('button', { name: 'queue.action.expand' })
     );
     expect(getByText('queue.detail.noContent')).toBeInTheDocument();
+  });
+});
+
+describe('Tasks page — edit task', () => {
+  // status/queued combos → bucket. Editable: backlog, ready, blocked.
+  const editable: Array<[string, Partial<QueueEntryRow>]> = [
+    ['ready', { status: 'ready', queued: 1 }],
+    ['blocked', { status: 'blocked', queued: 1 }],
+    ['backlog (pending, not queued)', { status: 'pending', queued: 0 }]
+  ];
+  it.each(editable)('shows an Edit button for %s tasks', (_label, overrides) => {
+    const { getByRole } = render(Page, {
+      props: { data: makeData([makeEntry(overrides)]) }
+    });
+    expect(
+      getByRole('button', { name: 'queue.action.edit' })
+    ).toBeInTheDocument();
+  });
+
+  const nonEditable: Array<[string, Partial<QueueEntryRow>]> = [
+    ['running', { status: 'running', queued: 1, agent_id: 'a1' }],
+    ['done', { status: 'done', queued: 1 }],
+    ['cancelled', { status: 'cancelled', queued: 0 }]
+  ];
+  it.each(nonEditable)('hides the Edit button for %s tasks', (_label, overrides) => {
+    const { queryByRole } = render(Page, {
+      props: { data: makeData([makeEntry(overrides)]) }
+    });
+    expect(queryByRole('button', { name: 'queue.action.edit' })).toBeNull();
+  });
+
+  it('opens the edit modal pre-filled with the task title', async () => {
+    const { getByRole, getByText, queryByText, getByDisplayValue } = render(Page, {
+      props: { data: makeData([makeEntry({ title: 'Fix login flake' })]) }
+    });
+
+    // Modal absent until the Edit button is clicked.
+    expect(queryByText('queue.action.editTask')).toBeNull();
+    await fireEvent.click(getByRole('button', { name: 'queue.action.edit' }));
+
+    // Modal title rendered + the form's task-title input seeded from the row.
+    expect(getByText('queue.action.editTask')).toBeInTheDocument();
+    expect(getByDisplayValue('Fix login flake')).toBeInTheDocument();
   });
 });

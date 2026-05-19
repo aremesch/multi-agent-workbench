@@ -7,7 +7,8 @@
   import PlanViewerModal from '$lib/client/components/PlanViewerModal.svelte';
   import SpawnAgentForm, {
     type QueuePayload,
-    type QueueDepOption
+    type QueueDepOption,
+    type SpawnInitialValues
   } from '$lib/client/components/SpawnAgentForm.svelte';
   import type { PageData } from './$types';
   import type { QueueEntryRow, QueueEntryStatus } from '$lib/server/db/types';
@@ -131,33 +132,146 @@
       .map((e) => ({ id: e.id, title: e.title, status: e.status }))
   );
 
+  /** The snake_case body shared by create (POST) and edit (PUT); both run
+   *  through the same `coerceQueueInput` server-side. */
+  function serializeQueueBody(payload: QueuePayload): string {
+    return JSON.stringify({
+      role_id: payload.role_id,
+      repo_id: payload.repo_id,
+      task_title: payload.task_title,
+      task_body: payload.task_body,
+      target_url: payload.target_url,
+      branch: payload.branch,
+      with_worktree: payload.with_worktree,
+      model: payload.model,
+      permission_mode: payload.permission_mode,
+      optional_args: payload.optional_args,
+      priority: payload.priority,
+      scheduled_for: payload.scheduled_for,
+      exclusive: payload.exclusive,
+      depends_on: payload.depends_on,
+      queued: payload.queued,
+      plan_md: payload.plan_md
+    });
+  }
+
   async function onQueue(payload: QueuePayload): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await apiFetch('/api/queue', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          role_id: payload.role_id,
-          repo_id: payload.repo_id,
-          task_title: payload.task_title,
-          task_body: payload.task_body,
-          target_url: payload.target_url,
-          branch: payload.branch,
-          with_worktree: payload.with_worktree,
-          model: payload.model,
-          permission_mode: payload.permission_mode,
-          optional_args: payload.optional_args,
-          priority: payload.priority,
-          scheduled_for: payload.scheduled_for,
-          exclusive: payload.exclusive,
-          depends_on: payload.depends_on,
-          queued: payload.queued,
-          plan_md: payload.plan_md
-        })
+        body: serializeQueueBody(payload)
       });
       const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok) return { ok: false, error: body.error };
       createOpen = false;
+      await invalidateAll();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  // ── Edit task modal ───────────────────────────────────────────────────
+  let editEntry = $state<QueueEntryRow | null>(null);
+
+  function openEdit(e: QueueEntryRow): void {
+    editEntry = e;
+  }
+  function closeEdit(): void {
+    editEntry = null;
+  }
+
+  /** Inverse of SpawnAgentForm's `parseScheduledFor`: unix seconds → a
+   *  'YYYY-MM-DDTHH:mm' string in local time for <input type=datetime-local>. */
+  function toDatetimeLocal(ts: number | null): string {
+    if (!ts) return '';
+    const d = new Date(ts * 1000);
+    if (Number.isNaN(d.getTime())) return '';
+    const p = (n: number) => String(n).padStart(2, '0');
+    return (
+      `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+      `T${p(d.getHours())}:${p(d.getMinutes())}`
+    );
+  }
+
+  function parseJsonArray(s: string | null): string[] {
+    if (!s || s === '[]') return [];
+    try {
+      const v = JSON.parse(s);
+      return Array.isArray(v) ? (v as string[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  function parseOptionalArgs(s: string): Record<string, boolean> {
+    try {
+      const v = JSON.parse(s) as unknown;
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        const out: Record<string, boolean> = {};
+        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+          if (typeof val === 'boolean') out[k] = val;
+        }
+        return out;
+      }
+    } catch {
+      /* fall through */
+    }
+    return {};
+  }
+
+  function rowToInitialValues(e: QueueEntryRow): SpawnInitialValues {
+    return {
+      roleId: e.role_id,
+      repoId: e.repo_id,
+      taskTitle: e.title,
+      taskBody: e.body ?? '',
+      targetUrl: e.target_url ?? '',
+      branch: e.source_branch ?? '',
+      withWorktree: e.with_worktree === 1,
+      model: e.model,
+      permissionMode: e.permission_mode,
+      optionalArgs: parseOptionalArgs(e.optional_args_json),
+      priority: e.priority,
+      scheduledForLocal: toDatetimeLocal(e.scheduled_for),
+      exclusive: e.exclusive === 1,
+      dependsOn: parseJsonArray(e.depends_on_json),
+      planMd: e.plan_md ?? ''
+    };
+  }
+
+  /** Dependency picker options for the edit form: the standard non-terminal
+   *  set minus the entry itself (backend rejects self-dep), plus any ids
+   *  already saved on the entry even if now terminal — so saving doesn't
+   *  silently drop an existing dependency. */
+  function computeEditDepOptions(ee: QueueEntryRow): QueueDepOption[] {
+    const saved = new Set(parseJsonArray(ee.depends_on_json));
+    const opts = queueDepOptions.filter((o) => o.id !== ee.id);
+    const present = new Set(opts.map((o) => o.id));
+    for (const e of entries) {
+      if (e.id !== ee.id && saved.has(e.id) && !present.has(e.id)) {
+        opts.push({ id: e.id, title: e.title, status: e.status });
+      }
+    }
+    return opts;
+  }
+  const editDepOptions = $derived<QueueDepOption[]>(
+    editEntry ? computeEditDepOptions(editEntry) : []
+  );
+
+  async function onEditSubmit(
+    payload: QueuePayload
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!editEntry) return { ok: false, error: t('queue.error.notFound') };
+    try {
+      const res = await apiFetch(`/api/queue/${encodeURIComponent(editEntry.id)}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: serializeQueueBody(payload)
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) return { ok: false, error: body.error };
+      editEntry = null;
       await invalidateAll();
       return { ok: true };
     } catch (err) {
@@ -362,6 +476,9 @@
   {/snippet}
 
   {#snippet readyActions(e: QueueEntryRow)}
+    <button type="button" class="link" onclick={() => openEdit(e)}>
+      {t('queue.action.edit')}
+    </button>
     <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
       {t('queue.action.runNow')}
     </button>
@@ -374,6 +491,9 @@
   {/snippet}
 
   {#snippet blockedActions(e: QueueEntryRow)}
+    <button type="button" class="link" onclick={() => openEdit(e)}>
+      {t('queue.action.edit')}
+    </button>
     <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
       {t('queue.action.runNow')}
     </button>
@@ -386,6 +506,9 @@
   {/snippet}
 
   {#snippet backlogActions(e: QueueEntryRow)}
+    <button type="button" class="link" onclick={() => openEdit(e)}>
+      {t('queue.action.edit')}
+    </button>
     <button type="button" class="link" onclick={() => onQueueEntry(e.id)}>
       {t('queue.action.queue')}
     </button>
@@ -481,6 +604,22 @@
       {queueDepOptions}
       onQueue={onQueue}
       onCancel={() => { createOpen = false; }}
+    />
+  </Modal>
+{/if}
+
+{#if editEntry}
+  <Modal open={editEntry !== null} title={t('queue.action.editTask')} onClose={closeEdit}>
+    <SpawnAgentForm
+      mode="queue"
+      roles={data.roles}
+      repos={data.repos}
+      cliKinds={data.cliKinds}
+      spawnDefaults={data.spawnDefaults}
+      queueDepOptions={editDepOptions}
+      initialValues={rowToInitialValues(editEntry)}
+      onEdit={onEditSubmit}
+      onCancel={closeEdit}
     />
   </Modal>
 {/if}
