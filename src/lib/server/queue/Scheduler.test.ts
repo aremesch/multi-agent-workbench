@@ -45,6 +45,7 @@ const promoteCalls: Array<{
   title: string;
   body: string;
   agentId: string;
+  attachments: TaskAttachmentRecord[];
 }> = [];
 
 vi.mock('../agents/spawnFromInputs.js', async () => {
@@ -68,7 +69,8 @@ vi.mock('../agents/spawnFromInputs.js', async () => {
         repo_id: validated.repo.id,
         title: validated.title,
         body: validated.body,
-        agentId: outcomeAgentId
+        agentId: outcomeAgentId,
+        attachments: validated.attachments
       });
       if (nextPromoteOutcome.ok) {
         if (!db) throw new Error('test db not initialized');
@@ -104,6 +106,22 @@ vi.mock('../agents/spawnFromInputs.js', async () => {
   };
 });
 
+// Spy on the staging-cleanup helpers without touching the filesystem. The
+// real `parseAttachments` is kept (Scheduler.promoteOne parses the row's
+// `attachments_json` with it) so we exercise the genuine wiring; only the
+// side-effecting deletes/prune are stubbed so we can assert *sequencing*:
+// staging is cleared only after a confirmed hand-off, never on failure.
+vi.mock('../uploads/taskAttachmentUploads.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../uploads/taskAttachmentUploads.js')
+  >('../uploads/taskAttachmentUploads.js');
+  return {
+    ...actual,
+    deleteAllStaged: vi.fn(async () => {}),
+    pruneOrphanStagingDirs: vi.fn(async () => {})
+  };
+});
+
 import {
   getQueueEntry,
   insertQueueEntry,
@@ -114,6 +132,11 @@ import {
   listQueueEntriesForUser,
   setQueueConcurrency
 } from '../db/queries.js';
+import {
+  deleteAllStaged,
+  pruneOrphanStagingDirs,
+  type TaskAttachmentRecord
+} from '../uploads/taskAttachmentUploads.js';
 import { QueueScheduler } from './Scheduler.js';
 
 // ----- fake supervisor -------------------------------------------------------
@@ -198,6 +221,8 @@ beforeEach(() => {
   promoteCalls.length = 0;
   promoteCounter = 0;
   nextPromoteOutcome = { ok: true, agentId: 'agent-stub' };
+  vi.mocked(deleteAllStaged).mockClear();
+  vi.mocked(pruneOrphanStagingDirs).mockClear();
 });
 
 function seed(): {
@@ -251,6 +276,10 @@ interface EntryOpts {
    *  Set to false to put the entry in the Backlog (scheduler ignores it). */
   queued?: boolean;
   planMd?: string | null;
+  /** Raw `attachments_json` to stamp on the row after insert. `insertQueueEntry`
+   *  doesn't take this column (rows are born empty; the upload route fills it
+   *  via `setQueueEntryAttachments`), so the test writes it directly. */
+  attachmentsJson?: string;
 }
 
 function addEntry(
@@ -283,6 +312,11 @@ function addEntry(
     status: 'pending',
     external_source_json: null
   });
+  if (opts.attachmentsJson !== undefined) {
+    db!
+      .prepare('UPDATE queue_entries SET attachments_json = ? WHERE id = ?')
+      .run(opts.attachmentsJson, id);
+  }
   return id;
 }
 
@@ -612,4 +646,98 @@ describe('QueueScheduler', () => {
     scheduler.stop();
   });
 
+});
+
+/**
+ * Image-attachment hand-off (plan §6d). The materialisation + prompt-ref
+ * append live *inside* `performSpawn` (mocked here) and are unit-tested in
+ * taskAttachmentUploads.test.ts; what the Scheduler itself owns — and the
+ * plan's headline risk — is the *sequencing* of staging cleanup: drop the
+ * staged copies only once the hand-off is confirmed, and never when it
+ * failed (so the user can retry without losing their screenshots).
+ *
+ * Note: the plan also describes an "interactive adapter → post-spawn
+ * sendKeys" route. That path is moot in this codebase — `initialInputDelivery`
+ * is a binary `'none' | 'cli-arg'` union and `AgentSupervisor.spawn()` has no
+ * post-launch input channel — so there is no such code path to assert.
+ */
+describe('QueueScheduler — attachment hand-off', () => {
+  const RECORDS: TaskAttachmentRecord[] = [
+    { filename: 'a-aaaaaa.png', mime: 'image/png', size: 11, stagedPath: '/stage/att1/a-aaaaaa.png' },
+    { filename: 'b-bbbbbb.jpg', mime: 'image/jpeg', size: 22, stagedPath: '/stage/att1/b-bbbbbb.jpg' }
+  ];
+
+  it('hands the row\'s parsed attachments to performSpawn and clears staging on a confirmed spawn', async () => {
+    const { userId, roleId, repoId } = seed();
+    addEntry(userId, roleId, repoId, {
+      id: 'att1',
+      attachmentsJson: JSON.stringify(RECORDS)
+    });
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    await tickOnce(scheduler);
+
+    // parseAttachments (real, kept via importActual) round-trips the records
+    // through promoteOne into the validated spawn inputs.
+    expect(promoteCalls).toHaveLength(1);
+    expect(promoteCalls[0]!.attachments).toEqual(RECORDS);
+    expect(getQueueEntry('att1')?.status).toBe('running');
+    // Hand-off confirmed → staging is dropped, exactly once, for this task.
+    expect(vi.mocked(deleteAllStaged)).toHaveBeenCalledWith('att1');
+    scheduler.stop();
+  });
+
+  it('keeps staged attachments and never reports success when the spawn fails (retry-safe)', async () => {
+    nextPromoteOutcome = {
+      ok: false,
+      error: { code: 'spawnFailed', message: 'attachment copy failed: disk full' }
+    };
+    const { userId, roleId, repoId } = seed();
+    addEntry(userId, roleId, repoId, {
+      id: 'att-fail',
+      attachmentsJson: JSON.stringify(RECORDS)
+    });
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    await tickOnce(scheduler);
+
+    const entry = getQueueEntry('att-fail');
+    // The agent never came up: not running, not done — and the user is told why.
+    expect(entry?.status).not.toBe('running');
+    expect(entry?.status).not.toBe('done');
+    expect(entry?.last_error).toContain('attachment copy failed');
+    // The guarantee: staging is retained so a retry still has the images.
+    expect(vi.mocked(deleteAllStaged)).not.toHaveBeenCalled();
+    scheduler.stop();
+  });
+
+  it('drops the task\'s staged attachments when the entry is cancelled', async () => {
+    const { userId, roleId, repoId } = seed();
+    nextPromoteOutcome = { ok: true, agentId: 'agent-att-cancel' };
+    addEntry(userId, roleId, repoId, {
+      id: 'att-cancel',
+      attachmentsJson: JSON.stringify(RECORDS)
+    });
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    await tickOnce(scheduler);
+    vi.mocked(deleteAllStaged).mockClear(); // ignore the promote-success cleanup
+
+    expect(await scheduler.cancelEntry('att-cancel', userId)).toBe(true);
+    expect(getQueueEntry('att-cancel')?.status).toBe('cancelled');
+    expect(vi.mocked(deleteAllStaged)).toHaveBeenCalledWith('att-cancel');
+    scheduler.stop();
+  });
+
+  it('prunes orphan staging dirs once on start (startup GC backstop)', async () => {
+    seed();
+    const { supervisor } = makeFakeSupervisor();
+    const scheduler = new QueueScheduler();
+    await scheduler.start(supervisor);
+    expect(vi.mocked(pruneOrphanStagingDirs)).toHaveBeenCalledTimes(1);
+    scheduler.stop();
+  });
 });

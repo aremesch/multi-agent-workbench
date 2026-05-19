@@ -261,6 +261,9 @@ export interface QueueEntryRow {
   status: QueueEntryStatus;
   agent_id: string | null;
   external_source_json: string | null;
+  /** JSON array of staged image attachments — see migration 012 and
+   *  taskAttachmentUploads.ts. Defaults to '[]'. */
+  attachments_json: string;
   last_error: string | null;
   created_at: number;
   updated_at: number;

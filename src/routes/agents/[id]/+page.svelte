@@ -1,20 +1,18 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import type { PageData } from './$types';
-  import AgentTerminalPanel from '$lib/client/components/AgentTerminalPanel.svelte';
+  import AgentWindowModal from '$lib/client/components/AgentWindowModal.svelte';
 
   let { data }: { data: PageData } = $props();
 
-  // When the agent transitions to a terminal status (browser-agent stop,
-  // CLI-agent exit/crash mid-session), there's nothing useful left on this
-  // page — bounce the user back to the dashboard so the row appears in the
-  // archive. The dashboard modal has its own auto-close path; this is the
-  // standalone-route equivalent.
-  function onStatusChange(status: string): void {
-    if (status === 'exited' || status === 'crashed') {
-      void goto('/');
-    }
+  // This standalone route is a deep-link target (push notification, direct
+  // URL). It shows the same captioned window as the dashboard/repo pages.
+  // Closing it — or the agent reaching a terminal status (browser-agent
+  // stop, CLI exit/crash) — has nothing useful left here, so bounce back
+  // to the dashboard where the row reappears in the archive.
+  function leave(): void {
+    void goto('/');
   }
 </script>
 
-<AgentTerminalPanel agent={data.agent} {onStatusChange} />
+<AgentWindowModal agent={data.agent} open={true} onClose={leave} onArchived={leave} />

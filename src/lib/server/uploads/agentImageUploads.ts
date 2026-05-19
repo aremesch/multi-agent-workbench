@@ -23,67 +23,24 @@
  * thing that surprises the CLI later.
  */
 
-import { randomBytes } from 'node:crypto';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
+import { EXT_BY_MIME, generateFilename } from './imageUploadCore';
 
-export const ALLOWED_MIME = new Set<string>([
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp'
-]);
-
-const EXT_BY_MIME: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/gif': 'gif',
-  'image/webp': 'webp'
-};
-
-/**
- * Configurable cap, defaults to 5 MiB to match Claude Code's per-image
- * limit. Read at module load — not per call — because changing it at
- * runtime is not a real use case and we want the constant to show up in
- * client-side validation messages without a round trip.
- */
-export const MAX_BYTES: number = (() => {
-  const raw = process.env.MAW_IMAGE_MAX_BYTES;
-  const parsed = raw ? Number(raw) : NaN;
-  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
-  return 5 * 1024 * 1024;
-})();
+// Re-export the location-agnostic core so existing importers and the
+// agentImageUploads.test.ts suite keep working unchanged after the
+// extraction. New code may import these from either module.
+export {
+  ALLOWED_MIME,
+  MAX_BYTES,
+  validateUpload,
+  generateFilename,
+  type ValidationResult
+} from './imageUploadCore';
 
 export const UPLOADS_SUBDIR = '.maw/uploads';
 const GITIGNORE_REL = '.maw/.gitignore';
 const GITIGNORE_BODY = '*\n';
-
-export type ValidationResult =
-  | { ok: true; ext: string }
-  | { ok: false; code: 'mime' | 'size' };
-
-export function validateUpload(mime: string, size: number): ValidationResult {
-  const ext = EXT_BY_MIME[mime];
-  if (!ext || !ALLOWED_MIME.has(mime)) return { ok: false, code: 'mime' };
-  if (!Number.isFinite(size) || size <= 0 || size > MAX_BYTES) {
-    return { ok: false, code: 'size' };
-  }
-  return { ok: true, ext };
-}
-
-/**
- * `[base36-millis]-[6 hex].<ext>`. The hex segment guarantees uniqueness
- * even when two uploads land in the same millisecond; the timestamp
- * prefix keeps `ls .maw/uploads/` chronologically sorted for the user.
- *
- * The output is intentionally kept to `[a-z0-9-.]` — no slashes, no
- * traversal, no path-confusing characters.
- */
-export function generateFilename(ext: string): string {
-  const ts = Date.now().toString(36);
-  const rand = randomBytes(3).toString('hex');
-  return `${ts}-${rand}.${ext}`;
-}
 
 /**
  * Idempotently writes `<wt>/.maw/.gitignore` with a single `*` rule so

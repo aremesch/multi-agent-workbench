@@ -51,6 +51,7 @@ function makeRow(overrides: Partial<QueueEntryRow> = {}): QueueEntryRow {
     status: 'pending',
     agent_id: null,
     external_source_json: null,
+    attachments_json: '[]',
     last_error: null,
     created_at: 1,
     updated_at: 1,

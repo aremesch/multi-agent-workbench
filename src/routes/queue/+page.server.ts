@@ -1,8 +1,9 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+import type { AgentCardRow } from '$lib/server/db/queries';
 import {
-  getQueueConcurrency,
   getSpawnDefaultsAll,
+  listAgentCardsByIds,
   listQueueEntriesForUser,
   listReposWithProjectForUser,
   listRoles
@@ -13,7 +14,8 @@ import {
  *
  * Returns every entry the user has so the client can group + filter without
  * a second round-trip. Also ships the data the spawn form needs (roles,
- * repos, cliKinds, spawn defaults) plus the current concurrency settings.
+ * repos, cliKinds, spawn defaults) plus an `agentsById` lookup hydrating the
+ * in-place agent window for running/completed entries (no N+1).
  */
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) throw redirect(303, '/login');
@@ -35,9 +37,22 @@ export const load: PageServerLoad = async ({ locals }) => {
     agenticKinds.has(r.cli_kind)
   );
 
+  const entries = listQueueEntriesForUser(locals.user.id);
+  const agentIds = [
+    ...new Set(
+      entries
+        .map((e) => e.agent_id)
+        .filter((id): id is string => id !== null && id !== '')
+    )
+  ];
+  const agentsById: Record<string, AgentCardRow> = {};
+  for (const card of listAgentCardsByIds(locals.user.id, agentIds)) {
+    agentsById[card.id] = card;
+  }
+
   return {
-    entries: listQueueEntriesForUser(locals.user.id),
-    concurrency: getQueueConcurrency(locals.user.id),
+    entries,
+    agentsById,
     roles: queueRoles,
     repos,
     // cliKinds stays unfiltered: SpawnAgentForm joins role.cli_kind → cliKind

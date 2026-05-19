@@ -55,6 +55,7 @@ function makeEntry(overrides: Partial<QueueEntryRow> = {}): QueueEntryRow {
     status: 'ready',
     agent_id: null,
     external_source_json: null,
+    attachments_json: '[]',
     last_error: null,
     created_at: 1_700_000_000,
     updated_at: 1_700_000_100,
@@ -67,7 +68,7 @@ function makeEntry(overrides: Partial<QueueEntryRow> = {}): QueueEntryRow {
 function makeData(entries: QueueEntryRow[]) {
   return {
     entries,
-    concurrency: { maxConcurrentGlobal: 2, maxConcurrentPerRepo: 1 },
+    agentsById: {},
     roles: [{ id: 'role-1', name: 'Implementer' }],
     repos: [{ id: 'repo-1', path: '/srv/app', projectName: 'App' }],
     cliKinds: [],
@@ -136,41 +137,62 @@ describe('Tasks page — inline expand', () => {
 });
 
 describe('Tasks page — edit task', () => {
+  // Per-row actions now live in an M3 overflow (kebab) menu; the Edit
+  // action is a menuitem revealed after the kebab is opened.
   // status/queued combos → bucket. Editable: backlog, ready, blocked.
   const editable: Array<[string, Partial<QueueEntryRow>]> = [
     ['ready', { status: 'ready', queued: 1 }],
     ['blocked', { status: 'blocked', queued: 1 }],
     ['backlog (pending, not queued)', { status: 'pending', queued: 0 }]
   ];
-  it.each(editable)('shows an Edit button for %s tasks', (_label, overrides) => {
-    const { getByRole } = render(Page, {
+  it.each(editable)('exposes an Edit menuitem for %s tasks', async (_label, overrides) => {
+    const { getByRole, queryByRole } = render(Page, {
       props: { data: makeData([makeEntry(overrides)]) }
     });
+    // Closed menu → no Edit item yet.
+    expect(queryByRole('menuitem', { name: 'queue.action.edit' })).toBeNull();
+    await fireEvent.click(getByRole('button', { name: 'queue.action.rowMenu' }));
     expect(
-      getByRole('button', { name: 'queue.action.edit' })
+      getByRole('menuitem', { name: 'queue.action.edit' })
     ).toBeInTheDocument();
   });
 
-  const nonEditable: Array<[string, Partial<QueueEntryRow>]> = [
-    ['running', { status: 'running', queued: 1, agent_id: 'a1' }],
-    ['done', { status: 'done', queued: 1 }],
-    ['cancelled', { status: 'cancelled', queued: 0 }]
-  ];
-  it.each(nonEditable)('hides the Edit button for %s tasks', (_label, overrides) => {
-    const { queryByRole } = render(Page, {
-      props: { data: makeData([makeEntry(overrides)]) }
+  it('offers no Edit item for a running task (open agent + cancel only)', async () => {
+    const { getByRole, queryByRole } = render(Page, {
+      props: {
+        data: makeData([makeEntry({ status: 'running', queued: 1, agent_id: 'a1' })])
+      }
     });
-    expect(queryByRole('button', { name: 'queue.action.edit' })).toBeNull();
+    await fireEvent.click(getByRole('button', { name: 'queue.action.rowMenu' }));
+    expect(queryByRole('menuitem', { name: 'queue.action.edit' })).toBeNull();
+    expect(
+      getByRole('menuitem', { name: 'queue.action.cancel' })
+    ).toBeInTheDocument();
   });
+
+  const noMenu: Array<[string, Partial<QueueEntryRow>]> = [
+    ['done', { status: 'done', queued: 1, agent_id: null }],
+    ['cancelled', { status: 'cancelled', queued: 0, agent_id: null }]
+  ];
+  it.each(noMenu)(
+    'renders no row menu for %s tasks without an agent',
+    (_label, overrides) => {
+      const { queryByRole } = render(Page, {
+        props: { data: makeData([makeEntry(overrides)]) }
+      });
+      expect(queryByRole('button', { name: 'queue.action.rowMenu' })).toBeNull();
+    }
+  );
 
   it('opens the edit modal pre-filled with the task title', async () => {
     const { getByRole, getByText, queryByText, getByDisplayValue } = render(Page, {
       props: { data: makeData([makeEntry({ title: 'Fix login flake' })]) }
     });
 
-    // Modal absent until the Edit button is clicked.
+    // Modal absent until the Edit menuitem (inside the kebab) is clicked.
     expect(queryByText('queue.action.editTask')).toBeNull();
-    await fireEvent.click(getByRole('button', { name: 'queue.action.edit' }));
+    await fireEvent.click(getByRole('button', { name: 'queue.action.rowMenu' }));
+    await fireEvent.click(getByRole('menuitem', { name: 'queue.action.edit' }));
 
     // Modal title rendered + the form's task-title input seeded from the row.
     expect(getByText('queue.action.editTask')).toBeInTheDocument();

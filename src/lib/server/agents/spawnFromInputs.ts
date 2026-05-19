@@ -36,6 +36,10 @@ import { WorktreeManager } from '../git/WorktreeManager.js';
 import { parseBrowserTargetUrl } from '../../shared/browserTarget.js';
 import { slugifyTitle } from '../util/slug.js';
 import {
+  materializeIntoWorktree,
+  type TaskAttachmentRecord
+} from '../uploads/taskAttachmentUploads.js';
+import {
   AgentSupervisor,
   isBrowserKind,
   type SpawnAgentArgs
@@ -61,6 +65,10 @@ export interface RawSpawnInputs {
    *  initial prompt to the agent. Captured by the queue UI (`plan_md` column);
    *  the synchronous spawn endpoint passes `null` today. */
   planMd: string | null;
+  /** Staged image attachments to materialize into the worktree at spawn
+   *  time. Only the queue path supplies these; the synchronous spawn
+   *  endpoint omits the field (defaults to none). */
+  attachments?: TaskAttachmentRecord[];
 }
 
 /**
@@ -117,6 +125,9 @@ export interface ValidatedSpawnInputs {
   /** Filesystem-safe slug derived from the title; reused as the worktree dir
    *  name and as the seed for `nextFreeBranchName`. */
   slug: string;
+  /** Staged image attachments (passthrough from raw; already validated at
+   *  upload time). Materialized into the worktree by `performSpawn`. */
+  attachments: TaskAttachmentRecord[];
 }
 
 /** Discriminated error codes — callers map these to their own i18n. */
@@ -261,7 +272,8 @@ export async function validateSpawnInputs(
       shouldCreateWorktree,
       adapterSupportsWorktree,
       branchStartPoint,
-      slug
+      slug,
+      attachments: raw.attachments ?? []
     }
   };
 }
@@ -345,6 +357,37 @@ export async function performSpawn(
     baseSha = await resolveSha(v.repo.path, v.branchStartPoint);
   }
 
+  // ── Image attachments → hand them to the agent ────────────────────────
+  // Guarantee 1: bytes on disk in the agent's cwd. Copy staged files into
+  // the worktree whenever this adapter has one, regardless of how it
+  // receives its prompt — the agent can always open them on disk.
+  // Guarantee 2: a reference in the initial prompt for cli-arg adapters
+  // (the only kind the queue exposes, and the only kind this codebase
+  // delivers an initial prompt to — for non-prompt adapters `v.body` is
+  // '' too, so there is no channel to inject into; the files still land
+  // on disk). A copy failure fails the spawn so we never report success
+  // with the agent missing its screenshots; the scheduler keeps staging
+  // for retry on failure.
+  let finalBody = v.body;
+  if (v.adapterSupportsWorktree && v.attachments.length > 0) {
+    let refs: string[];
+    try {
+      refs = await materializeIntoWorktree(v.attachments, worktreePath);
+    } catch (err) {
+      return {
+        ok: false,
+        error: {
+          code: 'spawnFailed',
+          message: `attachment copy failed: ${(err as Error).message}`
+        }
+      };
+    }
+    if (refs.length > 0 && v.adapter.initialInputDelivery === 'cli-arg') {
+      const block = `Attached files:\n${refs.join(' ')}`;
+      finalBody = finalBody ? `${finalBody}\n\n${block}` : block;
+    }
+  }
+
   const worktreeId = ulid();
   insertWorktree({
     id: worktreeId,
@@ -364,7 +407,7 @@ export async function performSpawn(
     worktreeId,
     worktreePath,
     baseSha,
-    task: { title: v.title, body: v.body },
+    task: { title: v.title, body: finalBody },
     optionalArgs: v.optionalArgs,
     model: v.model,
     permissionMode: v.permissionMode,
@@ -390,7 +433,7 @@ export async function performSpawn(
     user_id: userId,
     agent_id: agentId,
     title: v.title,
-    body: v.body,
+    body: finalBody,
     status: 'active',
     assigned_by_agent_id: null
   });

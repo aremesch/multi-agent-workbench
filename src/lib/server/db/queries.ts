@@ -561,6 +561,55 @@ export function listAgentCardsForRepo(
   return prep<unknown[], AgentCardRow>(sql).all(userId, repoId, ...statuses);
 }
 
+/**
+ * Single agent card by id, with the same role/repo/project/task join as
+ * {@link listAgentCardsForUser} but WITHOUT a status filter so archived
+ * (exited/crashed) agents still resolve — deep links and the queue's
+ * completed section reference agents that are no longer live. Ownership is
+ * enforced by the caller (route does the 403, mirroring `getAgent`).
+ */
+export function getAgentCard(id: string): AgentCardRow | undefined {
+  return prep<[string], AgentCardRow>(
+    `SELECT a.*,
+            r.name AS role_name,
+            rp.path AS repo_path,
+            p.name AS project_name,
+            t.title AS task_title
+       FROM agents a
+       JOIN roles r ON r.id = a.role_id
+       JOIN repos rp ON rp.id = a.repo_id
+       LEFT JOIN projects p ON p.id = rp.project_id
+       LEFT JOIN tasks t ON t.id = a.current_task_id
+      WHERE a.id = ?`
+  ).get(id);
+}
+
+/**
+ * Agent cards for a set of ids, owner-scoped. No status filter (completed
+ * queue rows point at exited agents). Used by the queue page to hydrate the
+ * in-place agent window without an N+1. Returns only the caller's agents;
+ * unknown / foreign ids are silently dropped.
+ */
+export function listAgentCardsByIds(userId: string, ids: string[]): AgentCardRow[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  const sql = `
+    SELECT a.*,
+           r.name AS role_name,
+           rp.path AS repo_path,
+           p.name AS project_name,
+           t.title AS task_title
+    FROM agents a
+    JOIN roles r ON r.id = a.role_id
+    JOIN repos rp ON rp.id = a.repo_id
+    LEFT JOIN projects p ON p.id = rp.project_id
+    LEFT JOIN tasks t ON t.id = a.current_task_id
+    WHERE a.user_id = ? AND a.id IN (${placeholders})
+  `;
+  // Cache by placeholder arity — each distinct id-count gets its own stmt.
+  return prep<unknown[], AgentCardRow>(sql).all(userId, ...ids);
+}
+
 export function deleteAgent(id: string): void {
   prep<[string]>('DELETE FROM agents WHERE id = ?').run(id);
 }
@@ -1582,6 +1631,25 @@ export function updateQueueEntryFields(
   const res = prep<unknown[], unknown>(
     `UPDATE queue_entries SET ${sets.join(', ')} WHERE id = ?`
   ).run(...params) as { changes: number };
+  return res.changes > 0;
+}
+
+/**
+ * Replace a queue entry's attachments JSON. User-scoped (owner safety even
+ * though the attachment routes also check). Used by the upload / delete
+ * attachment routes; the PUT edit path never touches this column so it
+ * can't clobber attachments.
+ */
+export function setQueueEntryAttachments(
+  id: string,
+  userId: string,
+  attachmentsJson: string
+): boolean {
+  const res = prep<[string, number, string, string], unknown>(
+    `UPDATE queue_entries
+       SET attachments_json = ?, updated_at = ?
+     WHERE id = ? AND user_id = ?`
+  ).run(attachmentsJson, now(), id, userId) as { changes: number };
   return res.changes > 0;
 }
 

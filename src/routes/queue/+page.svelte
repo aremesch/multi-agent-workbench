@@ -6,10 +6,16 @@
   import { useT } from '$lib/client/i18n.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
   import PlanViewerModal from '$lib/client/components/PlanViewerModal.svelte';
+  import OverflowMenu, {
+    type OverflowMenuItem
+  } from '$lib/client/components/OverflowMenu.svelte';
+  import AgentWindowModal from '$lib/client/components/AgentWindowModal.svelte';
   import SpawnAgentForm, {
     type QueuePayload,
     type QueueDepOption,
-    type SpawnInitialValues
+    type SpawnInitialValues,
+    type PendingAttachments,
+    type ExistingAttachment
   } from '$lib/client/components/SpawnAgentForm.svelte';
   import type { PageData } from './$types';
   import type { QueueEntryRow, QueueEntryStatus } from '$lib/server/db/types';
@@ -19,11 +25,10 @@
   let { data }: { data: PageData } = $props();
 
   // `invalidateAll()` is the canonical refresh path; tracking `data.entries`
-  // / `data.concurrency` as derived state keeps the UI in lockstep without
-  // an explicit $effect. Local mutation would only matter for optimistic
-  // updates, which v0.3 doesn't do.
+  // as derived state keeps the UI in lockstep without an explicit $effect.
+  // Local mutation would only matter for optimistic updates, which v0.3
+  // doesn't do.
   const entries = $derived<QueueEntryRow[]>(data.entries);
-  const concurrency = $derived(data.concurrency);
 
   // Optional `?repo=<id>` filter, driven by the per-repo sub-entries under
   // the sidebar's "Tasks" headline. Grouping/empty-state run off the
@@ -165,7 +170,70 @@
     });
   }
 
-  async function onQueue(payload: QueuePayload): Promise<{ ok: boolean; error?: string }> {
+  /** Local (client-side) parse of `attachments_json` → metadata only.
+   *  Mirrors the server's parseAttachments shape; the server module is
+   *  server-only so it can't be imported here. */
+  function parseExistingAttachments(json: string | null): ExistingAttachment[] {
+    if (!json) return [];
+    try {
+      const v = JSON.parse(json);
+      if (!Array.isArray(v)) return [];
+      return v
+        .filter(
+          (r) =>
+            r &&
+            typeof r.filename === 'string' &&
+            typeof r.mime === 'string' &&
+            typeof r.size === 'number'
+        )
+        .map((r) => ({ filename: r.filename, mime: r.mime, size: r.size }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Reconcile out-of-band image attachments after the row write: upload
+   * new files, delete removed ones. Never throws — a screenshot failure
+   * must not lose the task's text; the user retries via the edit dialog.
+   * Returns the number of failed operations for a non-fatal notice.
+   */
+  async function commitAttachments(
+    taskId: string,
+    a: PendingAttachments
+  ): Promise<number> {
+    let failures = 0;
+    for (const file of a.pending) {
+      try {
+        const fd = new FormData();
+        fd.set('file', file);
+        const res = await apiFetch(
+          `/api/queue/${encodeURIComponent(taskId)}/attachments`,
+          { method: 'POST', body: fd }
+        );
+        if (!res.ok) failures++;
+      } catch {
+        failures++;
+      }
+    }
+    for (const name of a.removed) {
+      try {
+        const res = await apiFetch(
+          `/api/queue/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(name)}`,
+          { method: 'DELETE' }
+        );
+        if (!res.ok) failures++;
+      } catch {
+        failures++;
+      }
+    }
+    return failures;
+  }
+
+  async function onQueue(
+    payload: QueuePayload,
+    attachments?: PendingAttachments
+  ): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await apiFetch('/api/queue', {
         method: 'POST',
@@ -174,6 +242,12 @@
       });
       const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok) return { ok: false, error: body.error };
+      if (attachments && body.id) {
+        const failures = await commitAttachments(body.id, attachments);
+        if (failures > 0) {
+          alert(t('queueAttachments.partialFailure', { count: failures }));
+        }
+      }
       createOpen = false;
       await invalidateAll();
       return { ok: true };
@@ -270,17 +344,25 @@
   );
 
   async function onEditSubmit(
-    payload: QueuePayload
+    payload: QueuePayload,
+    attachments?: PendingAttachments
   ): Promise<{ ok: boolean; error?: string }> {
     if (!editEntry) return { ok: false, error: t('queue.error.notFound') };
+    const editId = editEntry.id;
     try {
-      const res = await apiFetch(`/api/queue/${encodeURIComponent(editEntry.id)}`, {
+      const res = await apiFetch(`/api/queue/${encodeURIComponent(editId)}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: serializeQueueBody(payload)
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) return { ok: false, error: body.error };
+      if (attachments) {
+        const failures = await commitAttachments(editId, attachments);
+        if (failures > 0) {
+          alert(t('queueAttachments.partialFailure', { count: failures }));
+        }
+      }
       editEntry = null;
       await invalidateAll();
       return { ok: true };
@@ -345,6 +427,80 @@
     planTaskId = null;
   }
 
+  // ── In-place agent window ────────────────────────────────────────────────
+  // "Open agent" on a running/completed row opens the shared captioned
+  // modal in place (was a broken link to the bare /agents/[id] page). The
+  // agent card is pre-loaded server-side into data.agentsById (no N+1).
+  let openAgentId = $state<string | null>(null);
+  const openAgent = $derived(
+    openAgentId ? (data.agentsById[openAgentId] ?? null) : null
+  );
+
+  /**
+   * Per-status row actions as a single M3 overflow (kebab) menu — replaces
+   * the inline link cluster so the list stays compact, especially on
+   * mobile. Cancel is destructive and divider-separated from the rest.
+   */
+  function actionItems(
+    e: QueueEntryRow,
+    kind: 'running' | 'ready' | 'blocked' | 'backlog' | 'completed'
+  ): OverflowMenuItem[] {
+    const items: OverflowMenuItem[] = [];
+    const openAgentItem: OverflowMenuItem = {
+      id: 'open',
+      label: t('queue.action.openAgent'),
+      onSelect: () => {
+        if (e.agent_id) openAgentId = e.agent_id;
+      }
+    };
+    if (kind === 'completed') {
+      return e.agent_id ? [openAgentItem] : [];
+    }
+    if (kind === 'running') {
+      if (e.agent_id) items.push(openAgentItem);
+      items.push({
+        id: 'cancel',
+        label: t('queue.action.cancel'),
+        destructive: true,
+        dividerBefore: items.length > 0,
+        onSelect: () => void onCancelEntry(e.id)
+      });
+      return items;
+    }
+    items.push({
+      id: 'edit',
+      label: t('queue.action.edit'),
+      onSelect: () => openEdit(e)
+    });
+    if (kind === 'backlog') {
+      items.push({
+        id: 'queue',
+        label: t('queue.action.queue'),
+        onSelect: () => void onQueueEntry(e.id)
+      });
+    }
+    items.push({
+      id: 'run',
+      label: t('queue.action.runNow'),
+      onSelect: () => void onPromoteEntry(e.id)
+    });
+    if (kind === 'ready' || kind === 'blocked') {
+      items.push({
+        id: 'backlog',
+        label: t('queue.action.sendToBacklog'),
+        onSelect: () => void onSendToBacklog(e.id)
+      });
+    }
+    items.push({
+      id: 'cancel',
+      label: t('queue.action.cancel'),
+      destructive: true,
+      dividerBefore: true,
+      onSelect: () => void onCancelEntry(e.id)
+    });
+    return items;
+  }
+
   void invalidate;
 </script>
 
@@ -353,24 +509,12 @@
 </svelte:head>
 
 <div class="page">
-  <header class="page-head">
-    <div>
-      <h1>{t('queue.title')}</h1>
-      {#if repoFilter}
-        <p class="subtitle">
-          {t('queue.filteredByRepo', { repo: repoLabel(repoFilter) })}
-          · <a class="link" href="/queue">{t('queue.showAll')}</a>
-        </p>
-      {:else}
-        <p class="subtitle">{t('queue.subtitle')}</p>
-      {/if}
-    </div>
-    <div class="head-actions">
-      <span class="muted concurrency-summary">
-        {concurrency.maxConcurrentGlobal} / {concurrency.maxConcurrentPerRepo}
-      </span>
-    </div>
-  </header>
+  {#if repoFilter}
+    <p class="filter-note">
+      {t('queue.filteredByRepo', { repo: repoLabel(repoFilter) })}
+      · <a class="link" href="/queue">{t('queue.showAll')}</a>
+    </p>
+  {/if}
 
   {#if visibleEntries.length === 0}
     <p class="empty">{t('queue.empty')}</p>
@@ -483,64 +627,31 @@
     </li>
   {/snippet}
 
-  {#snippet runningActions(e: QueueEntryRow)}
-    {#if e.agent_id}
-      <a href={`/agents/${e.agent_id}`} class="link">{t('queue.action.openAgent')}</a>
+  {#snippet rowMenu(e: QueueEntryRow, kind: 'running' | 'ready' | 'blocked' | 'backlog' | 'completed')}
+    {@const items = actionItems(e, kind)}
+    {#if items.length > 0}
+      <OverflowMenu {items} label={t('queue.action.rowMenu')} align="end" />
     {/if}
-    <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
-      {t('queue.action.cancel')}
-    </button>
+  {/snippet}
+
+  {#snippet runningActions(e: QueueEntryRow)}
+    {@render rowMenu(e, 'running')}
   {/snippet}
 
   {#snippet readyActions(e: QueueEntryRow)}
-    <button type="button" class="link" onclick={() => openEdit(e)}>
-      {t('queue.action.edit')}
-    </button>
-    <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
-      {t('queue.action.runNow')}
-    </button>
-    <button type="button" class="link" onclick={() => onSendToBacklog(e.id)}>
-      {t('queue.action.sendToBacklog')}
-    </button>
-    <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
-      {t('queue.action.cancel')}
-    </button>
+    {@render rowMenu(e, 'ready')}
   {/snippet}
 
   {#snippet blockedActions(e: QueueEntryRow)}
-    <button type="button" class="link" onclick={() => openEdit(e)}>
-      {t('queue.action.edit')}
-    </button>
-    <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
-      {t('queue.action.runNow')}
-    </button>
-    <button type="button" class="link" onclick={() => onSendToBacklog(e.id)}>
-      {t('queue.action.sendToBacklog')}
-    </button>
-    <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
-      {t('queue.action.cancel')}
-    </button>
+    {@render rowMenu(e, 'blocked')}
   {/snippet}
 
   {#snippet backlogActions(e: QueueEntryRow)}
-    <button type="button" class="link" onclick={() => openEdit(e)}>
-      {t('queue.action.edit')}
-    </button>
-    <button type="button" class="link" onclick={() => onQueueEntry(e.id)}>
-      {t('queue.action.queue')}
-    </button>
-    <button type="button" class="link" onclick={() => onPromoteEntry(e.id)}>
-      {t('queue.action.runNow')}
-    </button>
-    <button type="button" class="link danger" onclick={() => onCancelEntry(e.id)}>
-      {t('queue.action.cancel')}
-    </button>
+    {@render rowMenu(e, 'backlog')}
   {/snippet}
 
   {#snippet completedActions(e: QueueEntryRow)}
-    {#if e.agent_id}
-      <a href={`/agents/${e.agent_id}`} class="link">{t('queue.action.openAgent')}</a>
-    {/if}
+    {@render rowMenu(e, 'completed')}
   {/snippet}
 
   {#if grouped.running.length > 0}
@@ -635,6 +746,7 @@
       spawnDefaults={data.spawnDefaults}
       queueDepOptions={editDepOptions}
       initialValues={rowToInitialValues(editEntry)}
+      existingAttachments={parseExistingAttachments(editEntry.attachments_json)}
       onEdit={onEditSubmit}
       onCancel={closeEdit}
     />
@@ -645,6 +757,16 @@
   source={planTaskId ? { kind: 'task', taskId: planTaskId } : { kind: 'task', taskId: '' }}
   open={planTaskId !== null}
   onClose={closeTaskPlan}
+/>
+
+<AgentWindowModal
+  agent={openAgent}
+  open={openAgent !== null}
+  onClose={() => (openAgentId = null)}
+  onArchived={() => {
+    openAgentId = null;
+    void invalidateAll();
+  }}
 />
 
 <style>
@@ -661,30 +783,10 @@
     max-width: 60rem;
     margin: 0 auto;
   }
-  .page-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 1rem;
-  }
-  h1 {
+  .filter-note {
     margin: 0;
-    color: var(--md-sys-color-on-surface);
-    font-size: 1.3rem;
-  }
-  .subtitle {
-    margin: 0.2rem 0 0;
     color: var(--md-sys-color-on-surface-variant);
     font-size: 0.85rem;
-  }
-  .head-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-  .concurrency-summary {
-    font-family: ui-monospace, Menlo, monospace;
-    font-size: 0.8rem;
   }
   /* Floating action button — matches the repo dashboard's pattern. */
   .fab {
@@ -941,28 +1043,8 @@
       padding-bottom: calc(6rem + env(safe-area-inset-bottom));
       gap: 1rem;
     }
-    .page-head {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.4rem;
-    }
-    .entry-row {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0.55rem;
-    }
-    .entry-actions {
-      flex-wrap: wrap;
-      gap: 0.25rem;
-      border-top: 1px solid var(--md-sys-color-outline-variant);
-      padding-top: 0.45rem;
-    }
-    .link {
-      flex: 1 1 auto;
-      min-height: 48px;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.9rem;
-    }
+    /* The single kebab stays inline-right even on phones — the row no
+       longer needs to stack a multi-button action bar underneath. */
     .detail-meta {
       grid-template-columns: 1fr;
       gap: 0.55rem;

@@ -51,6 +51,11 @@ import {
   type RawSpawnInputs,
   type SpawnError
 } from '../agents/spawnFromInputs.js';
+import {
+  deleteAllStaged,
+  parseAttachments,
+  pruneOrphanStagingDirs
+} from '../uploads/taskAttachmentUploads.js';
 
 const DEBOUNCE_MS = 50;
 const now = (): number => Math.floor(Date.now() / 1000);
@@ -121,6 +126,11 @@ export class QueueScheduler {
     };
     this.supervisorListener = supervisor.onAgentTerminated(listener);
     await this.reconcileOrphanedRunning();
+    // Best-effort GC of staged attachments whose task is gone or terminal
+    // (e.g. process died between a successful spawn and deleteAllStaged).
+    void pruneOrphanStagingDirs().catch((err) => {
+      console.warn('[QueueScheduler] prune staged attachments failed:', err);
+    });
     this.scheduleTick();
   }
 
@@ -170,6 +180,8 @@ export class QueueScheduler {
       completed_at: ts,
       last_error: null
     });
+    // Cancelled tasks will never run → drop their staged attachments.
+    void deleteAllStaged(entryId).catch(() => {});
     if (wasRunning && entry.agent_id && this.supervisor) {
       try {
         await this.supervisor.kill(entry.agent_id);
@@ -489,7 +501,8 @@ export class QueueScheduler {
       model: entry.model,
       permissionMode: entry.permission_mode,
       optionalArgs: this.parseOptionalArgs(entry.optional_args_json),
-      planMd: entry.plan_md
+      planMd: entry.plan_md,
+      attachments: parseAttachments(entry.attachments_json)
     };
     const validation = await validateSpawnInputs(raw, entry.user_id, supervisor.registry, {
       verifyBranchExists: true
@@ -527,6 +540,11 @@ export class QueueScheduler {
       started_at: now(),
       last_error: null
     });
+    // Spawn (incl. attachment materialization into the worktree) succeeded
+    // → the staged copies are no longer needed. Fire-and-forget; the
+    // startup prune is the backstop. On spawn FAILURE we deliberately
+    // skip this so attachments survive a retry.
+    void deleteAllStaged(entry.id).catch(() => {});
     const refreshed = getQueueEntry(entry.id);
     if (refreshed) this.events.emit('change', { entry: refreshed, promoted: true });
     return { ok: true, agentId: spawn.agentId };

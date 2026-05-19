@@ -2,7 +2,7 @@
   import { apiFetch } from '$lib/client/api';
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { useT } from '$lib/client/i18n.svelte';
   import DirectoryPickerDialog from './DirectoryPickerDialog.svelte';
   import {
@@ -91,6 +91,25 @@
     queued: boolean;
     plan_md: string | null;
   }
+
+  /**
+   * Out-of-band image attachments passed alongside the JSON payload.
+   * `pending` are new File objects to upload after the row is written;
+   * `removed` are filenames of already-staged attachments to delete (edit
+   * mode). The parent reconciles these against /api/queue/:id/attachments
+   * after the POST/PUT so a screenshot upload failure never loses the
+   * task's text.
+   */
+  export interface PendingAttachments {
+    pending: File[];
+    removed: string[];
+  }
+
+  export interface ExistingAttachment {
+    filename: string;
+    mime: string;
+    size: number;
+  }
   /**
    * Pre-fill values for edit mode. When supplied the form seeds every field
    * from an existing queue entry and swaps the Save/Run pair for a single
@@ -125,6 +144,7 @@
     mode = 'spawn',
     queueDepOptions = [],
     initialValues = null,
+    existingAttachments = [],
     /**
      * Called with the new agent id after a successful spawn. The dashboard
      * uses this to close the modal + navigate to the agent detail page.
@@ -148,14 +168,24 @@
      *  (single "Save changes" button → `onEdit`). Only meaningful with
      *  mode='queue'. */
     initialValues?: SpawnInitialValues | null;
+    /** Already-staged attachments to show in edit mode (metadata only —
+     *  the server never exposes the bytes). */
+    existingAttachments?: ExistingAttachment[];
     onSuccess?: (agentId: string) => void;
-    /** Required when mode='queue'. Receives the assembled payload; the
-     *  parent owns the API call + error mapping. Resolves with true on
+    /** Required when mode='queue'. Receives the assembled payload + any
+     *  out-of-band image attachments; the parent owns the API call, the
+     *  attachment reconciliation and error mapping. Resolves with true on
      *  success so the form can clear its submitting state. */
-    onQueue?: (payload: QueuePayload) => Promise<{ ok: boolean; error?: string }>;
+    onQueue?: (
+      payload: QueuePayload,
+      attachments?: PendingAttachments
+    ) => Promise<{ ok: boolean; error?: string }>;
     /** Required when editing (initialValues set). Same contract as onQueue;
      *  the parent PUTs to /api/queue/:id. */
-    onEdit?: (payload: QueuePayload) => Promise<{ ok: boolean; error?: string }>;
+    onEdit?: (
+      payload: QueuePayload,
+      attachments?: PendingAttachments
+    ) => Promise<{ ok: boolean; error?: string }>;
     onCancel?: () => void;
   } = $props();
 
@@ -378,6 +408,89 @@
   let queueDeps = $state<string[]>(untrack(() => [...(initialValues?.dependsOn ?? [])]));
   let queuePlanMd = $state(untrack(() => initialValues?.planMd ?? ''));
   let queuePlanOpen = $state(untrack(() => Boolean(initialValues?.planMd)));
+
+  // ── Image attachments (queue mode, cli-arg adapters only) ───────────────
+  // Client-side mirror of the server limits (imageUploadCore.ts /
+  // taskAttachmentUploads.ts). Kept in sync by hand, like AgentTerminalPanel.
+  const ATTACH_MAX_BYTES = 5 * 1024 * 1024;
+  const ATTACH_MIMES = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp'
+  ]);
+  const ATTACH_MAX_COUNT = 10;
+  let pendingFiles = $state<File[]>([]);
+  let existingFiles = $state<ExistingAttachment[]>(
+    untrack(() => [...existingAttachments])
+  );
+  let removedFilenames = $state<string[]>([]);
+  let attachError = $state<string | null>(null);
+  let attachInput: HTMLInputElement | undefined = $state();
+  const objUrls = new Map<File, string>();
+
+  // Only adapters that take a cli-arg initial prompt can receive @<path>
+  // references (and only the queue path stages attachments at all).
+  const attachmentsEnabled = $derived(mode === 'queue' && showTaskBody);
+  const visibleExisting = $derived(
+    existingFiles.filter((f) => !removedFilenames.includes(f.filename))
+  );
+  const attachCount = $derived(visibleExisting.length + pendingFiles.length);
+
+  function objUrl(file: File): string {
+    let u = objUrls.get(file);
+    if (!u) {
+      u = URL.createObjectURL(file);
+      objUrls.set(file, u);
+    }
+    return u;
+  }
+
+  function addFiles(list: FileList | File[]): void {
+    attachError = null;
+    for (const f of Array.from(list)) {
+      if (!ATTACH_MIMES.has(f.type)) {
+        attachError = t('queueAttachments.error.mime');
+        continue;
+      }
+      if (f.size <= 0 || f.size > ATTACH_MAX_BYTES) {
+        attachError = t('queueAttachments.error.size');
+        continue;
+      }
+      if (attachCount + 1 > ATTACH_MAX_COUNT) {
+        attachError = t('queueAttachments.error.tooMany');
+        break;
+      }
+      pendingFiles = [...pendingFiles, f];
+    }
+  }
+
+  function onAttachInputChange(ev: Event): void {
+    const input = ev.currentTarget as HTMLInputElement;
+    if (input.files) addFiles(input.files);
+    // Reset so picking the same file again re-fires change.
+    input.value = '';
+  }
+
+  function removePending(file: File): void {
+    pendingFiles = pendingFiles.filter((f) => f !== file);
+    const u = objUrls.get(file);
+    if (u) {
+      URL.revokeObjectURL(u);
+      objUrls.delete(file);
+    }
+  }
+
+  function removeExisting(filename: string): void {
+    if (!removedFilenames.includes(filename)) {
+      removedFilenames = [...removedFilenames, filename];
+    }
+  }
+
+  onDestroy(() => {
+    for (const u of objUrls.values()) URL.revokeObjectURL(u);
+    objUrls.clear();
+  });
   // worktree=off implies exclusive — surface that in the UI when applicable.
   const exclusiveForced = $derived(mode === 'queue' && showGitFields && !withWorktree);
   const effectiveExclusive = $derived(exclusiveForced || queueExclusive);
@@ -420,6 +533,16 @@
     };
   }
 
+  /** Out-of-band attachments to hand the parent, or undefined when the
+   *  adapter can't take them / there's nothing to reconcile. */
+  function attachmentsArg(): PendingAttachments | undefined {
+    if (!attachmentsEnabled) return undefined;
+    if (pendingFiles.length === 0 && removedFilenames.length === 0) {
+      return undefined;
+    }
+    return { pending: pendingFiles, removed: removedFilenames };
+  }
+
   /** Queue-mode submit handler. The two submit buttons pass `queued=false`
    *  (Save → Backlog) or `queued=true` (Run → Queue). The surrounding
    *  <form> intercepts plain submit + Enter via `submitQueue(false)`. */
@@ -428,7 +551,7 @@
     error = null;
     submitting = true;
     try {
-      const result = await onQueue(gatherQueuePayload(queued));
+      const result = await onQueue(gatherQueuePayload(queued), attachmentsArg());
       if (!result.ok) error = result.error ?? t('queue.error.saveFailed');
     } catch (err) {
       error = (err as Error).message ?? t('queue.error.saveFailed');
@@ -445,7 +568,7 @@
     error = null;
     submitting = true;
     try {
-      const result = await onEdit(gatherQueuePayload(false));
+      const result = await onEdit(gatherQueuePayload(false), attachmentsArg());
       if (!result.ok) error = result.error ?? t('queue.error.saveFailed');
     } catch (err) {
       error = (err as Error).message ?? t('queue.error.saveFailed');
@@ -543,7 +666,7 @@
   }
 </script>
 
-<div class="wrap">
+<div class="wrap" class:wide={mode === 'queue'}>
   <!-- In queue mode the form never POSTs to /agents/new; the submit button is
        type=button and routes through `submitQueue()`. We still wrap fields in
        a <form> so native HTML field validation (required, type=url) fires. -->
@@ -585,8 +708,9 @@
       </div>
     </div>
 
-    <!-- Repo field -->
-    <div class="field">
+    <!-- Repo field — full width while the add-repo sub-form is expanded so
+         its path/origin inputs aren't cramped into a half column. -->
+    <div class="field" class:span-2={showNewRepo}>
       <div class="field-row">
         <label class="grow">
           <span>{t('spawn.repo')}</span>
@@ -697,7 +821,7 @@
       </label>
     {/if}
 
-    <label>
+    <label class="span-2">
       <span>{isBrowserSelected ? t('spawn.sessionLabel') : t('spawn.taskTitle')}</span>
       <input name="task_title" bind:value={taskTitle} required />
       {#if !isBrowserSelected && taskSlug && showGitFields}
@@ -705,7 +829,7 @@
       {/if}
     </label>
     {#if isBrowserSelected}
-      <label>
+      <label class="span-2">
         <span>{t('spawn.previewUrl')}</span>
         <input
           name="target_url"
@@ -722,13 +846,63 @@
         {/if}
       </label>
     {:else if showTaskBody}
-      <label>
+      <label class="span-2">
         <span>{t('spawn.taskBody')} <span class="muted">({t('spawn.sentAsInitialInput')})</span></span>
         <textarea name="task_body" rows="6" bind:value={taskBodyValue}></textarea>
       </label>
     {/if}
+    {#if attachmentsEnabled}
+      <div class="span-2 attach">
+        <span class="attach-label">{t('queueAttachments.label')}</span>
+        {#if attachCount === 0}
+          <p class="muted hint">{t('queueAttachments.empty')}</p>
+        {:else}
+          <ul class="attach-grid">
+            {#each visibleExisting as a (a.filename)}
+              <li class="attach-chip">
+                <span class="attach-name" title={a.filename}>{a.filename}</span>
+                <button
+                  type="button"
+                  class="attach-x"
+                  aria-label={t('queueAttachments.remove')}
+                  onclick={() => removeExisting(a.filename)}
+                >×</button>
+              </li>
+            {/each}
+            {#each pendingFiles as f (f)}
+              <li class="attach-chip">
+                <img class="attach-thumb" src={objUrl(f)} alt={f.name} />
+                <span class="attach-name" title={f.name}>{f.name}</span>
+                <button
+                  type="button"
+                  class="attach-x"
+                  aria-label={t('queueAttachments.remove')}
+                  onclick={() => removePending(f)}
+                >×</button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <button
+          type="button"
+          class="attach-add"
+          onclick={() => attachInput?.click()}
+        >
+          {t('queueAttachments.add')}
+        </button>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          hidden
+          bind:this={attachInput}
+          onchange={onAttachInputChange}
+        />
+        {#if attachError}<span class="err">{attachError}</span>{/if}
+      </div>
+    {/if}
     {#if selectedOptionalArgs.length > 0}
-      <div class="advanced-section">
+      <div class="advanced-section span-2">
         <button
           type="button"
           class="advanced-toggle"
@@ -764,7 +938,7 @@
       </div>
     {/if}
     {#if mode === 'queue'}
-      <fieldset class="queue-extras">
+      <fieldset class="queue-extras span-2">
         <legend>{t('queue.action.addToQueue')}</legend>
         <label class="queue-field">
           <span>{t('queue.field.priority')}</span>
@@ -840,12 +1014,12 @@
       </fieldset>
     {/if}
     {#if error}
-      <p class="err">{error}</p>
+      <p class="err span-2">{error}</p>
     {/if}
     {#if mode === 'queue' && !isEdit}
-      <p class="muted hint actions-hint">{t('queue.action.runHint')}</p>
+      <p class="muted hint actions-hint span-2">{t('queue.action.runHint')}</p>
     {/if}
-    <div class="actions">
+    <div class="actions span-2">
       {#if onCancel}
         <button type="button" class="cancel" onclick={onCancel} disabled={submitting}>
           {t('spawn.cancel')}
@@ -939,9 +1113,40 @@
     width: 28rem;
     max-width: 100%;
   }
+  /* Queue create/edit runs in a Modal with far more room than the spawn
+     dialog. Widen it and lay the short fields two-up so the tall form
+     stops forcing vertical scroll. Spawn mode never gets `.wide`, so its
+     28rem single column is untouched. */
+  .wrap.wide {
+    width: min(56rem, 92vw);
+  }
   form {
     display: grid;
     gap: 0.75rem;
+  }
+  @media (min-width: 640px) {
+    .wrap.wide form {
+      grid-template-columns: 1fr 1fr;
+      column-gap: 1rem;
+      align-items: start;
+    }
+    .wrap.wide form > .span-2 {
+      grid-column: 1 / -1;
+    }
+    /* Inside the queue-extras fieldset: priority + scheduled-for sit
+       side by side; everything verbose spans the full width. */
+    .wrap.wide .queue-extras {
+      grid-template-columns: 1fr 1fr;
+      column-gap: 1rem;
+      align-items: start;
+    }
+    .wrap.wide .queue-extras > legend,
+    .wrap.wide .queue-extras > .queue-toggle,
+    .wrap.wide .queue-extras > .muted.hint,
+    .wrap.wide .queue-extras > .queue-deps,
+    .wrap.wide .queue-extras > .queue-plan {
+      grid-column: 1 / -1;
+    }
   }
   .field {
     display: grid;
@@ -1030,8 +1235,7 @@
   .inline-form label {
     font-size: 0.85rem;
   }
-  .inline-form input,
-  .inline-form select {
+  .inline-form input {
     padding: 0.4rem 0.5rem;
     font-size: 0.85rem;
   }
@@ -1290,5 +1494,79 @@
   .hint {
     color: #6b7280;
     font-size: 0.75rem;
+  }
+  /* ── Image attachments ──────────────────────────────────────────── */
+  .attach {
+    display: grid;
+    gap: 0.45rem;
+  }
+  .attach-label {
+    color: #e5e7eb;
+    font-size: 0.9rem;
+  }
+  .attach-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .attach-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 14rem;
+    padding: 0.25rem 0.35rem 0.25rem 0.5rem;
+    border: 1px solid var(--md-sys-color-outline-variant, #374151);
+    border-radius: var(--md-sys-shape-corner-sm, 8px);
+    background: var(--md-sys-color-surface-container-high, #1f1f1f);
+    font-size: 0.8rem;
+  }
+  .attach-thumb {
+    width: 1.75rem;
+    height: 1.75rem;
+    object-fit: cover;
+    border-radius: 0.25rem;
+    flex-shrink: 0;
+  }
+  .attach-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #e5e7eb;
+  }
+  .attach-x {
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant, #9ca3af);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+  }
+  .attach-x:hover {
+    background: color-mix(in srgb, var(--md-sys-color-error, #ef4444) 16%, transparent);
+    color: var(--md-sys-color-error, #ef4444);
+  }
+  .attach-add {
+    justify-self: start;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--md-sys-color-outline-variant, #374151);
+    border-radius: var(--md-sys-shape-corner-sm, 8px);
+    background: transparent;
+    color: #93c5fd;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+  }
+  .attach-add:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface, #e5e7eb) 8%, transparent);
   }
 </style>

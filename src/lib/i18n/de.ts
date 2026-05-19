@@ -422,6 +422,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   'queue.action.edit': 'Bearbeiten',
   'queue.action.delete': 'Löschen',
   'queue.action.openAgent': 'Agent öffnen',
+  'queue.action.rowMenu': 'Aufgabenaktionen',
   'queue.action.viewSourceIssue': 'Quell-Issue anzeigen',
   'queue.action.reorderToggle': 'Sortieren',
   'queue.action.reorderDone': 'Fertig',
@@ -467,6 +468,15 @@ const de: Partial<Record<TranslationKey, string>> = {
   'queue.field.planPlaceholder': 'Plan-Markdown hier einfügen…',
   'queue.field.planHint':
     'Wird beim Start des Agenten an den Aufgaben-Text angehängt.',
+  'queueAttachments.label': 'Bildanhänge',
+  'queueAttachments.empty': 'Keine Anhänge. Screenshots für den Agenten hinzufügen.',
+  'queueAttachments.add': 'Bild hinzufügen…',
+  'queueAttachments.remove': 'Anhang entfernen',
+  'queueAttachments.error.mime': 'Nur PNG-, JPEG-, GIF- oder WebP-Bilder erlaubt.',
+  'queueAttachments.error.size': 'Bild ist zu groß (max. 5 MB).',
+  'queueAttachments.error.tooMany': 'Höchstens 10 Bilder pro Aufgabe.',
+  'queueAttachments.partialFailure':
+    'Aufgabe gespeichert, aber {count} Anhang/Anhänge konnten nicht hochgeladen werden — zum Wiederholen die Aufgabe bearbeiten.',
   'queue.badge.plan': 'Plan',
   'queue.badge.planHint': 'Den mit dieser Aufgabe gespeicherten Plan anzeigen',
   'queue.confirmCancel.title': 'Aufgabe abbrechen',
