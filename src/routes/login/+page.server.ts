@@ -8,8 +8,13 @@ import { getMustChangePasswordById } from '$lib/server/db/queries';
 import { getConfig } from '$lib/server/config';
 import { t } from '$lib/i18n';
 
-export const load: PageServerLoad = async ({ locals }) => {
-  if (locals.user) throw redirect(303, '/');
+export const load: PageServerLoad = async ({ locals, request }) => {
+  // Only auto-redirect already-signed-in visitors on GET. After a failed
+  // POST action SvelteKit re-runs this load before rendering the form, and
+  // an unconditional redirect here would mask the action's fail() — anyone
+  // with a still-valid session cookie would land on `/` regardless of what
+  // they typed into the form.
+  if (request.method === 'GET' && locals.user) throw redirect(303, '/');
   return {};
 };
 
@@ -21,6 +26,20 @@ export const actions: Actions = {
     const form = await request.formData();
     const email = String(form.get('email') ?? '').trim();
     const password = String(form.get('password') ?? '');
+
+    // Drop any inbound session before validating the form. Stops a stale
+    // cookie from making a failed signInEmail look like a success: without
+    // this, locals.user is still set when SvelteKit re-runs the load on
+    // fail(), and the load's GET-gated redirect was already there to send
+    // signed-in visitors to '/'. Belt-and-suspenders.
+    //
+    // Two names: better-auth's getCookies() prefixes the configured cookie
+    // name with `__Secure-` when useSecureCookies is on (prod). Dev keeps
+    // the bare name. Delete both so the same code works either way.
+    cookies.delete('maw_session', { path: '/' });
+    cookies.delete('__Secure-maw_session', { path: '/' });
+    locals.user = null;
+    locals.session = null;
 
     if (!email || !password) {
       return fail(400, { email, error: t(locals.locale, 'login.error.required') });
