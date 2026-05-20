@@ -81,6 +81,12 @@ const en = {
   'settings.agentDefaultsDesc':
     'Default spawn flags for each CLI kind. Override per-agent when spawning.',
   'settings.noOptionalFlags': 'No optional flags.',
+  'settings.defaultModel': 'Default model',
+  'settings.defaultModelDesc':
+    'Pre-selected in the spawn form when no role override is set.',
+  'settings.defaultPermissionModeDesc':
+    'Pre-selected in the spawn form when no role override is set.',
+  'settings.defaultUnset': '— Use adapter default —',
   'settings.notifications': 'Notifications',
   'settings.notificationsDesc':
     'Push notifications let your phone buzz when agents need attention.',

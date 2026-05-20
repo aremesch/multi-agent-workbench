@@ -78,32 +78,87 @@
     });
   }
 
-  // Agent defaults: per-cli-kind toggle state.
-  let agentDefaults = $state<Record<string, Record<string, boolean>>>({});
+  // Agent defaults: per-cli-kind toggle + capability default state.
+  //   `agentDefaults[kind]` mirrors the spawn.defaults.<kind> body the
+  //   server stores. Initialized from data.spawnDefaults; mutations
+  //   PUT the full body so the server stays the single source of truth.
+  let agentDefaults = $state<
+    Record<
+      string,
+      {
+        optionalArgs: Record<string, boolean>;
+        defaultModel: string | null;
+        defaultPermissionMode: string | null;
+      }
+    >
+  >({});
 
   // Initialize from server data.
   $effect(() => {
-    const init: Record<string, Record<string, boolean>> = {};
+    const init: typeof agentDefaults = {};
     for (const kind of data.cliKinds) {
-      const userDefs = data.spawnDefaults[kind.kind]?.optionalArgs ?? {};
+      const stored = data.spawnDefaults[kind.kind];
       const toggles: Record<string, boolean> = {};
       for (const opt of kind.optionalArgs) {
-        toggles[opt.id] = userDefs[opt.id] ?? opt.default;
+        toggles[opt.id] = stored?.optionalArgs?.[opt.id] ?? opt.default;
       }
-      init[kind.kind] = toggles;
+      init[kind.kind] = {
+        optionalArgs: toggles,
+        defaultModel: stored?.defaultModel ?? null,
+        defaultPermissionMode: stored?.defaultPermissionMode ?? null
+      };
     }
     agentDefaults = init;
   });
 
-  async function saveSpawnDefault(cliKind: string, optId: string, value: boolean): Promise<void> {
-    const current = agentDefaults[cliKind] ?? {};
-    current[optId] = value;
-    agentDefaults[cliKind] = { ...current };
+  /** PUT the full spawn.defaults.<cliKind> body. Used by every per-cli-kind
+   *  control (toggle, model picker, permission-mode picker) so the server
+   *  always sees a consistent snapshot — no partial-write races. */
+  async function persistSpawnDefaults(cliKind: string): Promise<void> {
+    const entry = agentDefaults[cliKind];
+    if (!entry) return;
     await apiFetch('/api/user/spawn-defaults', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cliKind, optionalArgs: agentDefaults[cliKind] })
+      body: JSON.stringify({
+        cliKind,
+        optionalArgs: entry.optionalArgs,
+        defaultModel: entry.defaultModel,
+        defaultPermissionMode: entry.defaultPermissionMode
+      })
     });
+  }
+
+  async function saveSpawnDefault(cliKind: string, optId: string, value: boolean): Promise<void> {
+    const current = agentDefaults[cliKind];
+    if (!current) return;
+    agentDefaults[cliKind] = {
+      ...current,
+      optionalArgs: { ...current.optionalArgs, [optId]: value }
+    };
+    await persistSpawnDefaults(cliKind);
+  }
+
+  /** `selectValue` is the empty string for the "(no preference)" option;
+   *  it maps to null on the wire so the user setting is cleared. */
+  async function saveDefaultModel(cliKind: string, selectValue: string): Promise<void> {
+    const current = agentDefaults[cliKind];
+    if (!current) return;
+    agentDefaults[cliKind] = {
+      ...current,
+      defaultModel: selectValue === '' ? null : selectValue
+    };
+    await persistSpawnDefaults(cliKind);
+  }
+
+  async function saveDefaultPermissionMode(cliKind: string, selectValue: string): Promise<void> {
+    const current = agentDefaults[cliKind];
+    if (!current) return;
+    agentDefaults[cliKind] = {
+      ...current,
+      defaultPermissionMode: selectValue === '' ? null : selectValue
+    };
+    await persistSpawnDefaults(cliKind);
   }
 
   let active = $state<ThemeId>($currentTheme);
@@ -278,14 +333,49 @@
     {#each data.cliKinds as kind (kind.kind)}
       <div class="cli-kind-block">
         <h3 class="cli-kind-name">{kind.displayName}</h3>
-        {#if kind.optionalArgs.length === 0}
+
+        {#if kind.capabilities.model}
+          <label class="cap-default-row">
+            <span class="cap-label">{t('settings.defaultModel')}</span>
+            <select
+              value={agentDefaults[kind.kind]?.defaultModel ?? ''}
+              onchange={(e) =>
+                saveDefaultModel(kind.kind, (e.target as HTMLSelectElement).value)}
+            >
+              <option value="">{t('settings.defaultUnset')}</option>
+              {#each kind.capabilities.model.values as v (v.id)}
+                <option value={v.id}>{v.label}</option>
+              {/each}
+            </select>
+            <span class="defaults-desc">{t('settings.defaultModelDesc')}</span>
+          </label>
+        {/if}
+
+        {#if kind.capabilities.permissionMode}
+          <label class="cap-default-row">
+            <span class="cap-label">{kind.capabilities.permissionMode.label}</span>
+            <select
+              value={agentDefaults[kind.kind]?.defaultPermissionMode ?? ''}
+              onchange={(e) =>
+                saveDefaultPermissionMode(kind.kind, (e.target as HTMLSelectElement).value)}
+            >
+              <option value="">{t('settings.defaultUnset')}</option>
+              {#each kind.capabilities.permissionMode.values as v (v.id)}
+                <option value={v.id}>{v.label}</option>
+              {/each}
+            </select>
+            <span class="defaults-desc">{t('settings.defaultPermissionModeDesc')}</span>
+          </label>
+        {/if}
+
+        {#if kind.optionalArgs.length === 0 && !kind.capabilities.model && !kind.capabilities.permissionMode}
           <p class="muted small">{t('settings.noOptionalFlags')}</p>
-        {:else}
+        {:else if kind.optionalArgs.length > 0}
           {#each kind.optionalArgs as opt (opt.id)}
             <label class="defaults-toggle">
               <input
                 type="checkbox"
-                checked={agentDefaults[kind.kind]?.[opt.id] ?? opt.default}
+                checked={agentDefaults[kind.kind]?.optionalArgs[opt.id] ?? opt.default}
                 onchange={(e) => saveSpawnDefault(kind.kind, opt.id, (e.target as HTMLInputElement).checked)}
               />
               <span class="defaults-label">
@@ -660,6 +750,26 @@
   .small {
     font-size: 0.85rem;
     margin: 0;
+  }
+  .cap-default-row {
+    display: grid;
+    gap: 0.2rem;
+    margin: 0 0 0.6rem;
+    max-width: 22rem;
+    font-size: 0.9rem;
+    color: var(--md-sys-color-on-surface);
+  }
+  .cap-default-row select {
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--md-sys-shape-corner-sm);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    font: inherit;
+    font-size: 0.9rem;
+  }
+  .cap-label {
+    font-weight: 500;
   }
   .defaults-toggle {
     display: flex;

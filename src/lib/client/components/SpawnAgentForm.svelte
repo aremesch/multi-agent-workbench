@@ -52,7 +52,16 @@
       permissionMode: CapabilityMeta | null;
     };
   }
-  export type SpawnDefaults = Record<string, { optionalArgs: Record<string, boolean> }>;
+  export type SpawnDefaults = Record<
+    string,
+    {
+      optionalArgs: Record<string, boolean>;
+      /** Capability-value id pre-selected when no role override is set. */
+      defaultModel?: string | null;
+      /** Capability-value id pre-selected when no role override is set. */
+      defaultPermissionMode?: string | null;
+    }
+  >;
   /**
    * Existing queue entry the user can pick as a dependency in queue mode.
    * Only entries that can still meaningfully gate another are passed in
@@ -353,8 +362,14 @@
     optArgToggles = toggles;
   });
 
-  // Pre-fill model / permission_mode from the role default, falling back to
-  // the adapter's own default.
+  // Pre-fill model / permission_mode following the precedence ladder:
+  //   1. role default (per-role explicit choice)
+  //   2. user spawn-default (Settings → Agent defaults — per cli-kind)
+  //   3. adapter's `capabilities.*.default`
+  //   4. first value in the adapter's `capabilities.*.values`
+  // Each layer is taken only when the next-higher layer is absent OR
+  // resolves to a value the adapter no longer advertises (handles JSONC
+  // edits / stale storage cleanly).
   $effect(() => {
     if (!selectedRole || !selectedAdapter) {
       selectedModel = null;
@@ -364,21 +379,32 @@
     }
     if (modelCapsRoleApplied === selectedRole.id) return;
     modelCapsRoleApplied = selectedRole.id;
+    const userDefs = spawnDefaults[selectedRole.cli_kind];
     const modelCap = selectedAdapter.capabilities.model;
     if (modelCap) {
+      const inValues = (id: string | null | undefined): id is string =>
+        !!id && modelCap.values.some((v) => v.id === id);
       const roleDefault = selectedRole.default_model;
-      const valid = roleDefault && modelCap.values.some((v) => v.id === roleDefault);
-      selectedModel = valid ? roleDefault : modelCap.default ?? modelCap.values[0]?.id ?? null;
+      const userDefault = userDefs?.defaultModel ?? null;
+      selectedModel = inValues(roleDefault)
+        ? roleDefault
+        : inValues(userDefault)
+          ? userDefault
+          : modelCap.default ?? modelCap.values[0]?.id ?? null;
     } else {
       selectedModel = null;
     }
     const modeCap = selectedAdapter.capabilities.permissionMode;
     if (modeCap) {
+      const inValues = (id: string | null | undefined): id is string =>
+        !!id && modeCap.values.some((v) => v.id === id);
       const roleDefault = selectedRole.default_permission_mode;
-      const valid = roleDefault && modeCap.values.some((v) => v.id === roleDefault);
-      selectedPermissionMode = valid
+      const userDefault = userDefs?.defaultPermissionMode ?? null;
+      selectedPermissionMode = inValues(roleDefault)
         ? roleDefault
-        : modeCap.default ?? modeCap.values[0]?.id ?? null;
+        : inValues(userDefault)
+          ? userDefault
+          : modeCap.default ?? modeCap.values[0]?.id ?? null;
     } else {
       selectedPermissionMode = null;
     }

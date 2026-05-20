@@ -42,12 +42,21 @@
   // `--approval-mode` accepts default | auto_edit | yolo | plan (from
   // `gemini --help`).
   "capabilities": {
+    // Gemini CLI's `-m/--model` accepts the public Gemini 2.5 family
+    // identifiers (gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
+    // — see https://ai.google.dev/gemini-api/docs/models). The `default`
+    // id is the no-flag "let gemini pick" path. Pro is the recommended
+    // pick for coding workloads; the user can override per role or via
+    // the per-user defaultModel in Settings.
     "model": {
       "label": "Model",
       "default": "default",
       "arg": "--model {{value}}",
       "values": [
-        { "id": "default", "label": "Default" }
+        { "id": "default",                "label": "Default" },
+        { "id": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro" },
+        { "id": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash" },
+        { "id": "gemini-2.5-flash-lite",  "label": "Gemini 2.5 Flash-Lite" }
       ]
     },
     "permissionMode": {

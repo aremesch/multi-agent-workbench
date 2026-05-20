@@ -1119,14 +1119,49 @@ export function setUserSetting(userId: string, key: string, valueJson: string): 
 
 const SPAWN_DEFAULTS_PREFIX = 'spawn.defaults.';
 
+/**
+ * Per-user, per-cli-kind spawn defaults persisted in `user_settings`.
+ *
+ * `optionalArgs` controls the per-flag toggle defaults shown in the
+ * spawn form's Advanced section.
+ *
+ * `defaultModel` / `defaultPermissionMode` are capability-value ids
+ * (e.g. `opus`, `plan`) that the spawn form pre-selects when no role
+ * default is set and no edit-mode `initialValues` are supplied. They
+ * slot below role defaults and above adapter-declared `default`s in
+ * the precedence ladder — see SpawnAgentForm.svelte. Both are validated
+ * against the adapter's capability `values` on write so a JSONC edit
+ * that drops a model id can't leave a stale value pointing at nothing.
+ */
+export interface SpawnDefaultsBody {
+  optionalArgs: Record<string, boolean>;
+  defaultModel: string | null;
+  defaultPermissionMode: string | null;
+}
+
 export function getSpawnDefaults(
   userId: string,
   cliKind: string
-): { optionalArgs: Record<string, boolean> } | null {
+): SpawnDefaultsBody | null {
   const raw = getUserSetting(userId, `${SPAWN_DEFAULTS_PREFIX}${cliKind}`);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as { optionalArgs: Record<string, boolean> };
+    const parsed = JSON.parse(raw) as Partial<SpawnDefaultsBody>;
+    return {
+      optionalArgs:
+        parsed.optionalArgs && typeof parsed.optionalArgs === 'object'
+          ? (parsed.optionalArgs as Record<string, boolean>)
+          : {},
+      defaultModel:
+        typeof parsed.defaultModel === 'string' && parsed.defaultModel !== ''
+          ? parsed.defaultModel
+          : null,
+      defaultPermissionMode:
+        typeof parsed.defaultPermissionMode === 'string' &&
+        parsed.defaultPermissionMode !== ''
+          ? parsed.defaultPermissionMode
+          : null
+    };
   } catch {
     return null;
   }
@@ -1219,8 +1254,8 @@ export function replaceAgentCommits(
 export function getSpawnDefaultsAll(
   userId: string,
   cliKinds: string[]
-): Record<string, { optionalArgs: Record<string, boolean> }> {
-  const result: Record<string, { optionalArgs: Record<string, boolean> }> = {};
+): Record<string, SpawnDefaultsBody> {
+  const result: Record<string, SpawnDefaultsBody> = {};
   for (const kind of cliKinds) {
     const defaults = getSpawnDefaults(userId, kind);
     if (defaults) result[kind] = defaults;

@@ -20,6 +20,38 @@ interface CallOpts {
   csrfThrows?: boolean;
 }
 
+/** Stub registry with one fully-featured adapter (claude-code) so the
+ *  handler can validate capability-value ids without hitting the real
+ *  AdapterRegistry singleton. */
+function makeRegistry() {
+  return {
+    list: () => [
+      {
+        kind: 'claude-code',
+        capabilities: {
+          model: {
+            label: 'Model',
+            default: 'default',
+            values: [
+              { id: 'default', label: 'Default' },
+              { id: 'opus', label: 'Opus' },
+              { id: 'sonnet', label: 'Sonnet' }
+            ]
+          },
+          permissionMode: {
+            label: 'Permission mode',
+            default: 'plan',
+            values: [
+              { id: 'plan', label: 'Plan' },
+              { id: 'default', label: 'Default (ask)' }
+            ]
+          }
+        }
+      }
+    ]
+  };
+}
+
 async function call(opts: CallOpts = {}): Promise<Response> {
   if (opts.csrfThrows) {
     verifyCsrfMock.mockImplementationOnce(() => {
@@ -34,7 +66,10 @@ async function call(opts: CallOpts = {}): Promise<Response> {
     body: bodyStr
   });
   const event = {
-    locals: { user: opts.user === undefined ? { id: 'user-1' } : opts.user },
+    locals: {
+      user: opts.user === undefined ? { id: 'user-1' } : opts.user,
+      supervisor: { registry: makeRegistry() }
+    },
     request,
     cookies: { get: () => undefined }
   };
@@ -108,7 +143,40 @@ describe('PUT /api/user/spawn-defaults', () => {
     );
   });
 
-  it('204 and persists under spawn.defaults.<cliKind>', async () => {
+  it('400 when cliKind is unknown', async () => {
+    await expectHttpError(
+      call({ body: { cliKind: 'unknown', optionalArgs: {} } }),
+      400
+    );
+  });
+
+  it('400 when defaultModel is not in the adapter values list', async () => {
+    await expectHttpError(
+      call({
+        body: {
+          cliKind: 'claude-code',
+          optionalArgs: {},
+          defaultModel: 'gpt-99'
+        }
+      }),
+      400
+    );
+  });
+
+  it('400 when defaultPermissionMode is not in the adapter values list', async () => {
+    await expectHttpError(
+      call({
+        body: {
+          cliKind: 'claude-code',
+          optionalArgs: {},
+          defaultPermissionMode: 'wild-west'
+        }
+      }),
+      400
+    );
+  });
+
+  it('204 and persists under spawn.defaults.<cliKind> with null defaults when unset', async () => {
     const res = await call({
       body: { cliKind: 'claude-code', optionalArgs: { skip: true, retry: false } }
     });
@@ -116,7 +184,53 @@ describe('PUT /api/user/spawn-defaults', () => {
     expect(setUserSettingMock).toHaveBeenCalledWith(
       'user-1',
       'spawn.defaults.claude-code',
-      JSON.stringify({ optionalArgs: { skip: true, retry: false } })
+      JSON.stringify({
+        optionalArgs: { skip: true, retry: false },
+        defaultModel: null,
+        defaultPermissionMode: null
+      })
+    );
+  });
+
+  it('204 and persists validated defaultModel + defaultPermissionMode', async () => {
+    const res = await call({
+      body: {
+        cliKind: 'claude-code',
+        optionalArgs: {},
+        defaultModel: 'opus',
+        defaultPermissionMode: 'plan'
+      }
+    });
+    expect(res.status).toBe(204);
+    expect(setUserSettingMock).toHaveBeenCalledWith(
+      'user-1',
+      'spawn.defaults.claude-code',
+      JSON.stringify({
+        optionalArgs: {},
+        defaultModel: 'opus',
+        defaultPermissionMode: 'plan'
+      })
+    );
+  });
+
+  it('204 and clears defaults when explicitly null', async () => {
+    const res = await call({
+      body: {
+        cliKind: 'claude-code',
+        optionalArgs: {},
+        defaultModel: null,
+        defaultPermissionMode: null
+      }
+    });
+    expect(res.status).toBe(204);
+    expect(setUserSettingMock).toHaveBeenCalledWith(
+      'user-1',
+      'spawn.defaults.claude-code',
+      JSON.stringify({
+        optionalArgs: {},
+        defaultModel: null,
+        defaultPermissionMode: null
+      })
     );
   });
 });

@@ -729,6 +729,7 @@
       repos={data.repos}
       cliKinds={data.cliKinds}
       spawnDefaults={data.spawnDefaults}
+      defaultRepoId={repoFilter}
       {queueDepOptions}
       onQueue={onQueue}
       onCancel={() => { createOpen = false; }}

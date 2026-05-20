@@ -128,3 +128,80 @@ describe('SpawnAgentForm — edit mode', () => {
     expect(payload.priority).toBe(9);
   });
 });
+
+describe('SpawnAgentForm — capability default precedence', () => {
+  // Same fixture as the edit-mode suite above, with the role's
+  // default_model cleared so we can isolate the new fallback layer
+  // (user spawn-default → adapter default).
+  const rolesNoDefault = [
+    { ...roles[0]!, default_model: null }
+  ];
+
+  it('falls back to spawnDefaults.defaultModel when no role default is set', () => {
+    const { getByRole } = render(SpawnAgentForm, {
+      props: {
+        mode: 'queue' as const,
+        roles: rolesNoDefault,
+        repos,
+        cliKinds,
+        spawnDefaults: {
+          'claude-code': {
+            optionalArgs: {},
+            defaultModel: 'opus',
+            defaultPermissionMode: null
+          }
+        },
+        onQueue: vi.fn().mockResolvedValue({ ok: true }),
+        onCancel: vi.fn()
+      } as unknown as Parameters<typeof render>[1]['props']
+    });
+    const modelSelect = getByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
+    expect(modelSelect.value).toBe('opus');
+  });
+
+  it('ignores spawnDefaults.defaultModel when role default is set', () => {
+    const { getByRole } = render(SpawnAgentForm, {
+      props: {
+        mode: 'queue' as const,
+        roles, // role's default_model is 'sonnet'
+        repos,
+        cliKinds,
+        spawnDefaults: {
+          'claude-code': {
+            optionalArgs: {},
+            defaultModel: 'opus',
+            defaultPermissionMode: null
+          }
+        },
+        onQueue: vi.fn().mockResolvedValue({ ok: true }),
+        onCancel: vi.fn()
+      } as unknown as Parameters<typeof render>[1]['props']
+    });
+    const modelSelect = getByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
+    expect(modelSelect.value).toBe('sonnet');
+  });
+
+  it('falls through to adapter default when spawnDefaults.defaultModel is unknown', () => {
+    const { getByRole } = render(SpawnAgentForm, {
+      props: {
+        mode: 'queue' as const,
+        roles: rolesNoDefault,
+        repos,
+        cliKinds,
+        spawnDefaults: {
+          'claude-code': {
+            optionalArgs: {},
+            defaultModel: 'gpt-100',
+            defaultPermissionMode: null
+          }
+        },
+        onQueue: vi.fn().mockResolvedValue({ ok: true }),
+        onCancel: vi.fn()
+      } as unknown as Parameters<typeof render>[1]['props']
+    });
+    const modelSelect = getByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
+    // cliKinds fixture declares default: 'sonnet' → the stale 'gpt-100'
+    // is dropped and we land on the adapter's own default.
+    expect(modelSelect.value).toBe('sonnet');
+  });
+});

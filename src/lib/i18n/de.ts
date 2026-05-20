@@ -68,6 +68,12 @@ const de: Partial<Record<TranslationKey, string>> = {
   'settings.agentDefaultsDesc':
     'Standard-Startoptionen f\u00fcr jeden CLI-Typ. Kann beim Starten pro Agent \u00fcberschrieben werden.',
   'settings.noOptionalFlags': 'Keine optionalen Flags.',
+  'settings.defaultModel': 'Standardmodell',
+  'settings.defaultModelDesc':
+    'Im Spawn-Formular vorausgewählt, wenn keine rollenspezifische Vorgabe gesetzt ist.',
+  'settings.defaultPermissionModeDesc':
+    'Im Spawn-Formular vorausgewählt, wenn keine rollenspezifische Vorgabe gesetzt ist.',
+  'settings.defaultUnset': '— Adapter-Standard verwenden —',
   'settings.notifications': 'Benachrichtigungen',
   'settings.notificationsDesc':
     'Push-Benachrichtigungen informieren Sie, wenn Agenten Aufmerksamkeit brauchen.',

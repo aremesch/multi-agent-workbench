@@ -67,6 +67,12 @@ const es: Partial<Record<TranslationKey, string>> = {
   'settings.agentDefaultsDesc':
     'Opciones de lanzamiento por defecto para cada tipo de CLI. Se pueden cambiar al lanzar cada agente.',
   'settings.noOptionalFlags': 'Sin flags opcionales.',
+  'settings.defaultModel': 'Modelo por defecto',
+  'settings.defaultModelDesc':
+    'Preseleccionado en el formulario de lanzamiento cuando no hay sobreescritura por rol.',
+  'settings.defaultPermissionModeDesc':
+    'Preseleccionado en el formulario de lanzamiento cuando no hay sobreescritura por rol.',
+  'settings.defaultUnset': '— Usar valor del adaptador —',
   'settings.notifications': 'Notificaciones',
   'settings.notificationsDesc':
     'Las notificaciones push te avisan cuando los agentes necesitan atenci\u00f3n.',

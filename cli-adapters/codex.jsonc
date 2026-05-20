@@ -36,6 +36,26 @@
     "initialInput": { "delivery": "none" }
   },
 
+  // Mirrors claude-code's capability shape. Codex CLI's `--model` flag
+  // selects the underlying OpenAI model. The `default` id is the no-flag
+  // "let codex pick" path. The non-default ids below are starter values
+  // — TODO(verify): confirm exact accepted ids against a real `codex
+  // --help` once available, then tune labels / drop unknown ones. The
+  // user can override per role or via the per-user defaultModel in
+  // Settings.
+  "capabilities": {
+    "model": {
+      "label": "Model",
+      "default": "default",
+      "arg": "--model {{value}}",
+      "values": [
+        { "id": "default",      "label": "Default" },
+        { "id": "gpt-5-codex",  "label": "GPT-5 Codex" },
+        { "id": "gpt-5",        "label": "GPT-5" }
+      ]
+    }
+  },
+
   "input": {
     "encoding": "literal",
     "submitKey": "Enter",
