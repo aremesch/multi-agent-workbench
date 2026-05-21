@@ -665,6 +665,15 @@ export class AgentSupervisor {
       env.MAW_AGENT_TOKEN = hookToken;
     }
 
+    // env intentionally omitted — it carries ANTHROPIC_API_KEY and the hook
+    // token. The argv alone is enough to verify capability flags landed
+    // (`--permission-mode`, `--model`, `--dangerously-skip-permissions`, …)
+    // when diagnosing a "claude isn't in the mode I picked" report.
+    console.log(
+      `[AgentSupervisor] spawn ${agentId} (${role.cli_kind}): ` +
+        `${spec.command} ${spec.args.map((a) => JSON.stringify(a)).join(' ')}`
+    );
+
     await Tmux.newSession({
       session: tmuxSession,
       command: spec.command,

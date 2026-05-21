@@ -1,5 +1,7 @@
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adapterConfigSchema, type AdapterConfig } from './adapter.config.schema.js';
+import { AdapterRegistry } from './AdapterRegistry.js';
 import { ConfigDrivenAdapter } from './ConfigDrivenAdapter.js';
 import type { BuildSpawnSpecOpts } from '$shared/adapterTypes';
 
@@ -613,6 +615,57 @@ describe('ConfigDrivenAdapter', () => {
       const a = new ConfigDrivenAdapter(cfg());
       expect(a.kind).toBe('shell');
       expect(a.displayName).toBe('Shell');
+    });
+  });
+
+  describe('claude-code permission-mode (uses real cli-adapters/claude-code.jsonc)', () => {
+    function loadClaudeAdapter(): ConfigDrivenAdapter {
+      const reg = new AdapterRegistry(join(process.cwd(), 'cli-adapters'));
+      const result = reg.loadAll();
+      expect(result.errors).toEqual([]);
+      expect(reg.has('claude-code')).toBe(true);
+      return reg.create('claude-code') as ConfigDrivenAdapter;
+    }
+
+    function spawnOpts(
+      permissionMode: string | null
+    ): BuildSpawnSpecOpts {
+      return {
+        role: { systemPrompt: '', toolConfig: {} },
+        worktreeCwd: '/tmp/wt',
+        task: { title: 't', body: 'do stuff' },
+        env: { ANTHROPIC_API_KEY: 'x' },
+        agent: { id: 'agent-x', cliSessionId: 'sess-1' },
+        optionalArgs: {},
+        capabilityValues: { model: null, permissionMode }
+      };
+    }
+
+    function findFlagPair(args: string[], flag: string): string | null {
+      const i = args.indexOf(flag);
+      if (i === -1 || i + 1 >= args.length) return null;
+      return args[i + 1] ?? null;
+    }
+
+    it.each(['plan', 'default', 'acceptEdits', 'bypassPermissions'])(
+      'passes --permission-mode %s when picked',
+      (picked) => {
+        const a = loadClaudeAdapter();
+        const spec = a.buildSpawnSpec(spawnOpts(picked));
+        expect(findFlagPair(spec.args, '--permission-mode')).toBe(picked);
+      }
+    );
+
+    it('falls back to adapter default (plan) when capability value is null', () => {
+      const a = loadClaudeAdapter();
+      const spec = a.buildSpawnSpec(spawnOpts(null));
+      expect(findFlagPair(spec.args, '--permission-mode')).toBe('plan');
+    });
+
+    it('does NOT include --dangerously-skip-permissions by default', () => {
+      const a = loadClaudeAdapter();
+      const spec = a.buildSpawnSpec(spawnOpts('plan'));
+      expect(spec.args).not.toContain('--dangerously-skip-permissions');
     });
   });
 });

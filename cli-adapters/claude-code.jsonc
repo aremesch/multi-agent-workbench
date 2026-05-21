@@ -33,15 +33,13 @@
     // tokens on the archive page. Presence of {{agent.cliSessionId}} is the
     // signal AgentSupervisor uses to mint and persist the UUID at spawn.
     "args": ["--session-id", "{{agent.cliSessionId}}"],
-    "optionalArgs": [
-      {
-        "id": "skip-permissions",
-        "flag": "--dangerously-skip-permissions",
-        "label": "Skip permission prompts",
-        "description": "Agent runs tools without asking. Disable to get push notifications for each tool use.",
-        "default": false
-      }
-    ],
+    // No `--dangerously-skip-permissions` optional arg: it is semantically
+    // identical to `--permission-mode bypassPermissions` (see the
+    // capabilities.permissionMode selector below), and shipping both creates
+    // a footgun where a saved spawn-default toggle silently overrides
+    // whatever mode the user picks in the dropdown. The dropdown is the
+    // single source of truth for permission posture.
+    "optionalArgs": [],
     "env": {
       "ANTHROPIC_API_KEY": "{{env.ANTHROPIC_API_KEY}}"
     },
