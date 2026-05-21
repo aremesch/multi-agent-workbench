@@ -85,7 +85,15 @@ export const auth = betterAuth({
       session_token: { name: 'maw_session' }
     },
     useSecureCookies: !cfg.isDev,
-    defaultCookieAttributes: { sameSite: 'strict' }
+    // SameSite=Lax (better-auth's own default) — NOT Strict. Strict cookies
+    // are dropped by Chrome on top-level navigations initiated from outside
+    // the site (push notifications, the Android PWA shortcut after the
+    // WebView is recycled, links from other origins). That left the user
+    // looking "logged out" after every redeploy even though the cookie was
+    // still in the jar. Lax keeps CSRF coverage for cross-origin POSTs,
+    // which is already reinforced by the per-request CSRF token cookie
+    // (src/lib/server/auth/csrf.ts) and the JSON-API CSRF check.
+    defaultCookieAttributes: { sameSite: 'lax' }
   }
 });
 
