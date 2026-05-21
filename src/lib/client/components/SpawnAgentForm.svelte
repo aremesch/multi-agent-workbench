@@ -513,6 +513,83 @@
     }
   }
 
+  // Paste / drag-and-drop — mirror AgentTerminalPanel's surfaces so the
+  // task dialog accepts screenshots the same way the running-agent modal
+  // does. Both paths funnel into addFiles() so validation, the chip list
+  // and removal are reused as-is.
+  let dragDepth = $state(0);
+  const dragActive = $derived(dragDepth > 0);
+
+  function renamePastedImage(file: File): File {
+    // Clipboard images usually arrive as a generic "image.png". Rewrap
+    // with a timestamped name so each chip is distinguishable and the
+    // server-side staging keeps its uniqueness guarantee for chips that
+    // would otherwise have collided client-side.
+    const extFromMime = file.type.split('/')[1] ?? 'png';
+    const renamed = `pasted-${Date.now()}.${extFromMime}`;
+    return new File([file], renamed, { type: file.type });
+  }
+
+  function onFormPasteCapture(ev: ClipboardEvent): void {
+    if (!attachmentsEnabled) return;
+    const items = ev.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]!;
+      if (it.kind === 'file' && it.type.startsWith('image/')) {
+        const f = it.getAsFile();
+        if (f) {
+          // Only consume the paste when we actually intercept an image —
+          // plain text pastes into title / body must still flow through.
+          ev.preventDefault();
+          ev.stopPropagation();
+          addFiles([renamePastedImage(f)]);
+          return;
+        }
+      }
+    }
+  }
+
+  function hasFilesInDrag(dt: DataTransfer | null): boolean {
+    if (!dt) return false;
+    return dt.types ? dt.types.includes('Files') : false;
+  }
+
+  function onFormDragEnter(ev: DragEvent): void {
+    if (!attachmentsEnabled) return;
+    if (!hasFilesInDrag(ev.dataTransfer)) return;
+    ev.preventDefault();
+    dragDepth++;
+  }
+
+  function onFormDragOver(ev: DragEvent): void {
+    if (!attachmentsEnabled) return;
+    if (!hasFilesInDrag(ev.dataTransfer)) return;
+    // Required for `drop` to fire — and stops the browser from
+    // navigating away if the user misses the form and drops elsewhere.
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+  }
+
+  function onFormDragLeave(ev: DragEvent): void {
+    if (!attachmentsEnabled) return;
+    if (!hasFilesInDrag(ev.dataTransfer)) return;
+    ev.preventDefault();
+    if (dragDepth > 0) dragDepth--;
+  }
+
+  function onFormDrop(ev: DragEvent): void {
+    if (!attachmentsEnabled) return;
+    if (!ev.dataTransfer) return;
+    const files = Array.from(ev.dataTransfer.files).filter((f) =>
+      f.type.startsWith('image/')
+    );
+    if (files.length === 0) return;
+    ev.preventDefault();
+    dragDepth = 0;
+    addFiles(files);
+  }
+
   onDestroy(() => {
     for (const u of objUrls.values()) URL.revokeObjectURL(u);
     objUrls.clear();
@@ -716,7 +793,17 @@
           else void submitQueue(false);
         }
       : undefined}
+    onpastecapture={onFormPasteCapture}
+    ondragenter={onFormDragEnter}
+    ondragover={onFormDragOver}
+    ondragleave={onFormDragLeave}
+    ondrop={onFormDrop}
   >
+    {#if attachmentsEnabled && dragActive}
+      <div class="drop-overlay" aria-hidden="true">
+        <span>{t('queueAttachments.dropOverlay')}</span>
+      </div>
+    {/if}
     <!-- Role field -->
     <div class="field">
       <div class="field-row">
@@ -1149,6 +1236,27 @@
   form {
     display: grid;
     gap: 0.75rem;
+    /* Anchor the drop overlay over the form during a drag. */
+    position: relative;
+  }
+  /* Translucent overlay while a file is dragged over the form. Pointer
+     events disabled so the underlying drop handler still fires. Mirrors
+     AgentTerminalPanel's .drop-overlay so paste / drop UX is consistent
+     between the two dialogs. */
+  .drop-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.72);
+    color: #e5e7eb;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border: 2px dashed #60a5fa;
+    border-radius: 0.375rem;
+    pointer-events: none;
+    z-index: 5;
   }
   @media (min-width: 640px) {
     .wrap.wide form {

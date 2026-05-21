@@ -477,6 +477,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   'queueAttachments.label': 'Bildanhänge',
   'queueAttachments.empty': 'Keine Anhänge. Screenshots für den Agenten hinzufügen.',
   'queueAttachments.add': 'Bild hinzufügen…',
+  'queueAttachments.dropOverlay': 'Bild ablegen, um es an die Aufgabe anzuhängen',
   'queueAttachments.remove': 'Anhang entfernen',
   'queueAttachments.error.mime': 'Nur PNG-, JPEG-, GIF- oder WebP-Bilder erlaubt.',
   'queueAttachments.error.size': 'Bild ist zu groß (max. 5 MB).',

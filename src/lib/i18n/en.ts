@@ -517,6 +517,7 @@ const en = {
   'queueAttachments.label': 'Image attachments',
   'queueAttachments.empty': 'No attachments. Add screenshots for the agent.',
   'queueAttachments.add': 'Add image…',
+  'queueAttachments.dropOverlay': 'Drop image to attach to task',
   'queueAttachments.remove': 'Remove attachment',
   'queueAttachments.error.mime': 'Only PNG, JPEG, GIF or WebP images are allowed.',
   'queueAttachments.error.size': 'Image is too large (max 5 MB).',
