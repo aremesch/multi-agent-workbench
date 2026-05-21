@@ -10,6 +10,8 @@ import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { agentClaudeConfigDir } from '../claudeConfigDir.js';
+
 export interface TokenUsageSummary {
   inputTokens: number;
   outputTokens: number;
@@ -31,14 +33,28 @@ interface JsonlUsageEntry {
 
 /**
  * Map an absolute filesystem path to the directory name Claude Code uses
- * under `~/.claude/projects/`. Empirically: every `/` and `.` becomes `-`.
+ * under its `projects/` dir. Empirically: every `/` and `.` becomes `-`.
  */
 function encodeCwdForClaude(cwd: string): string {
   return cwd.replace(/[/.]/g, '-');
 }
 
+/**
+ * Resolve a JSONL transcript path under an arbitrary claude config root.
+ * Claude Code writes transcripts to `<configRoot>/projects/<encoded-cwd>/<sessionId>.jsonl`
+ * — `configRoot` defaults to `~/.claude/` when `CLAUDE_CONFIG_DIR` is unset.
+ */
+export function jsonlPathInRoot(configRoot: string, cwd: string, sessionId: string): string {
+  return join(configRoot, 'projects', encodeCwdForClaude(cwd), `${sessionId}.jsonl`);
+}
+
+/**
+ * Back-compat: resolve under the user-global `~/.claude/`. Still used for
+ * agents that ran before per-agent `CLAUDE_CONFIG_DIR` isolation landed —
+ * their transcripts live in the shared tree.
+ */
 export function jsonlPathFor(cwd: string, sessionId: string): string {
-  return join(homedir(), '.claude', 'projects', encodeCwdForClaude(cwd), `${sessionId}.jsonl`);
+  return jsonlPathInRoot(join(homedir(), '.claude'), cwd, sessionId);
 }
 
 /**
@@ -79,4 +95,22 @@ export async function summarizeTokenUsage(filePath: string): Promise<TokenUsageS
   }
 
   return summary;
+}
+
+/**
+ * Resolve the right transcript path for `agentId` and summarize it. Prefers
+ * the per-agent isolated config dir (where claude-code writes for agents
+ * spawned under `CLAUDE_CONFIG_DIR`), and falls back to the user-global
+ * `~/.claude/projects/` so we keep reading transcripts for archived agents
+ * that ran before the isolation fix landed.
+ */
+export async function summarizeTokenUsageForAgent(
+  agentId: string,
+  cwd: string,
+  sessionId: string
+): Promise<TokenUsageSummary | null> {
+  const isolated = jsonlPathInRoot(agentClaudeConfigDir(agentId), cwd, sessionId);
+  const fromIsolated = await summarizeTokenUsage(isolated);
+  if (fromIsolated !== null) return fromIsolated;
+  return summarizeTokenUsage(jsonlPathFor(cwd, sessionId));
 }

@@ -1,8 +1,28 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { summarizeTokenUsage } from './ClaudeJsonlTokens.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Stub the config dir resolver so we can place per-agent transcripts under
+// a known tmp path. Hoisted-safe via a mutable holder.
+const cfgDirHolder = { dir: '' };
+vi.mock('../claudeConfigDir.js', () => ({
+  agentClaudeConfigDir: () => cfgDirHolder.dir
+}));
+
+// Stub `os.homedir` so the user-global fallback (jsonlPathFor) resolves to
+// a tmp path we control too — otherwise the test would touch a real
+// `~/.claude/projects/` on disk.
+const homeHolder = { home: '' };
+vi.mock('node:os', async () => {
+  const actual = await vi.importActual<typeof import('node:os')>('node:os');
+  return {
+    ...actual,
+    homedir: () => homeHolder.home || actual.homedir()
+  };
+});
+
+import { summarizeTokenUsage, summarizeTokenUsageForAgent } from './ClaudeJsonlTokens.js';
 
 let tempDir: string;
 
@@ -176,5 +196,53 @@ describe('summarizeTokenUsage — filtering', () => {
     writeFileSync(file, body, 'utf8');
     const out = await summarizeTokenUsage(file);
     expect(out?.inputTokens).toBe(10);
+  });
+});
+
+describe('summarizeTokenUsageForAgent — per-agent + fallback', () => {
+  const CWD = '/home/maw/.local/share/maw/worktrees/test-cwd';
+  // encodeCwdForClaude turns / and . into -:
+  const ENCODED_CWD = '-home-maw--local-share-maw-worktrees-test-cwd';
+  const SESSION = 'sess-xyz';
+
+  function writeUsageJsonl(dir: string, body: string) {
+    const subdir = join(dir, 'projects', ENCODED_CWD);
+    mkdirSync(subdir, { recursive: true });
+    writeFileSync(join(subdir, `${SESSION}.jsonl`), body, 'utf8');
+  }
+
+  const isolatedEntry =
+    JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 7 } } }) + '\n';
+  const globalEntry =
+    JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 99 } } }) + '\n';
+
+  beforeEach(() => {
+    cfgDirHolder.dir = join(tempDir, 'isolated-claude');
+    homeHolder.home = join(tempDir, 'fake-home');
+    mkdirSync(join(homeHolder.home, '.claude'), { recursive: true });
+  });
+
+  it('reads the per-agent isolated transcript when it exists', async () => {
+    writeUsageJsonl(cfgDirHolder.dir, isolatedEntry);
+    const out = await summarizeTokenUsageForAgent('agent-1', CWD, SESSION);
+    expect(out?.inputTokens).toBe(7);
+  });
+
+  it('falls back to ~/.claude/projects/ when no isolated transcript exists (legacy agents)', async () => {
+    writeUsageJsonl(join(homeHolder.home, '.claude'), globalEntry);
+    const out = await summarizeTokenUsageForAgent('legacy-agent', CWD, SESSION);
+    expect(out?.inputTokens).toBe(99);
+  });
+
+  it('prefers the per-agent transcript when both exist', async () => {
+    writeUsageJsonl(cfgDirHolder.dir, isolatedEntry);
+    writeUsageJsonl(join(homeHolder.home, '.claude'), globalEntry);
+    const out = await summarizeTokenUsageForAgent('agent-2', CWD, SESSION);
+    expect(out?.inputTokens).toBe(7);
+  });
+
+  it('returns null when neither transcript exists', async () => {
+    const out = await summarizeTokenUsageForAgent('agent-3', CWD, SESSION);
+    expect(out).toBeNull();
   });
 });

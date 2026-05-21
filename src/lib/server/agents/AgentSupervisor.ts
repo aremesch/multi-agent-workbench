@@ -32,6 +32,10 @@ import { getConfig } from '../config.js';
 import { resolveGitIdentityForUser } from '../user/gitIdentity.js';
 import { getPlaywrightSessions } from '../preview/PlaywrightSessionManager.js';
 import { generateHookToken, writeClaudeHookSettings } from './claudeHooks.js';
+import {
+  ensureAgentClaudeConfigDir,
+  removeAgentClaudeConfigDir
+} from './claudeConfigDir.js';
 import { getAlertBus } from './AlertBus.js';
 
 /** CLI kinds for which we register Claude Code hook settings at spawn /
@@ -439,6 +443,9 @@ export class AgentSupervisor {
     } catch (err) {
       console.error(`[AgentSupervisor] reap: stop failed for ${agentId}:`, err);
     }
+    if (agent.cli_kind === 'claude-code') {
+      removeAgentClaudeConfigDir(agentId);
+    }
     updateAgentStatus(agentId, 'exited');
     // Notify anyone still subscribed to this runtime (e.g. an open terminal
     // modal on the dashboard) so their UI can react immediately — without
@@ -665,6 +672,14 @@ export class AgentSupervisor {
       env.MAW_AGENT_TOKEN = hookToken;
     }
 
+    // For claude-code agents: pin CLAUDE_CONFIG_DIR to a per-agent path so
+    // each CLI reads/writes its own `.claude.json` and friends. Without
+    // this, every spawn atomically rewrites the user-global `~/.claude.json`
+    // and the rename takes down already-running CLIs.
+    if (role.cli_kind === 'claude-code') {
+      env.CLAUDE_CONFIG_DIR = ensureAgentClaudeConfigDir(agentId);
+    }
+
     // env intentionally omitted — it carries ANTHROPIC_API_KEY and the hook
     // token. The argv alone is enough to verify capability flags landed
     // (`--permission-mode`, `--model`, `--dangerously-skip-permissions`, …)
@@ -728,6 +743,9 @@ export class AgentSupervisor {
       return;
     }
     await Tmux.killSession(row.tmux_session);
+    if (row.cli_kind === 'claude-code') {
+      removeAgentClaudeConfigDir(agentId);
+    }
     updateAgentStatus(agentId, 'exited');
     runtime?.emit('state', 'exited');
     this.fireTerminated(agentId, 'exited');

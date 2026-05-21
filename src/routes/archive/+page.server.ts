@@ -8,10 +8,7 @@ import {
   type AgentCardRow
 } from '$lib/server/db/queries';
 import type { AgentStatus } from '$lib/server/db/types';
-import {
-  summarizeTokenUsage,
-  jsonlPathFor
-} from '$lib/server/agents/history/ClaudeJsonlTokens';
+import { summarizeTokenUsageForAgent } from '$lib/server/agents/history/ClaudeJsonlTokens';
 
 const ARCHIVED_STATUSES: AgentStatus[] = ['exited', 'crashed'];
 
@@ -76,8 +73,7 @@ export const load: PageServerLoad = async ({ locals }) => {
         if (a.cli_session_id) {
           const wt = getWorktree(a.worktree_id);
           if (wt) {
-            const path = jsonlPathFor(wt.path, a.cli_session_id);
-            const tokens = await summarizeTokenUsage(path);
+            const tokens = await summarizeTokenUsageForAgent(a.id, wt.path, a.cli_session_id);
             if (tokens) {
               totals.inputTokens += tokens.inputTokens ?? 0;
               totals.outputTokens += tokens.outputTokens ?? 0;
