@@ -193,7 +193,12 @@ export class ConfigDrivenAdapter implements CliAdapter {
 
     const resolvedEnv: Record<string, string> = {};
     for (const [k, v] of Object.entries(this.cfg.spawn.env)) {
-      resolvedEnv[k] = subst(v);
+      const resolved = subst(v);
+      // Skip vars that resolved to empty — typically a templated `{{env.X}}`
+      // where X is unset. Passing `KEY=""` would override fallback auth
+      // (e.g. claude-code's seeded OAuth in .credentials.json).
+      if (resolved === '') continue;
+      resolvedEnv[k] = resolved;
     }
 
     const args = this.cfg.spawn.args.map(subst);

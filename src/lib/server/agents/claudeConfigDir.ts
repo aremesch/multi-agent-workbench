@@ -16,13 +16,21 @@
  *
  * Seeding strategy:
  *  - COPY the small writable state files (`.claude.json`, `CLAUDE.md`,
- *    `settings.json`, `.credentials.json`) so each agent has its own
- *    independently-mutable copy. `.claude.json` in particular carries
- *    `hasCompletedOnboarding` and the OAuth account ref — without it the
- *    new CLI would launch the subscription/onboarding flow.
- *  - SYMLINK the read-mostly shared dirs (`plugins/`, `plans/`) back to
- *    `~/.claude/` so user-installed plugins and globally-saved plans are
- *    visible to the agent without duplication.
+ *    `settings.json`) so each agent has its own independently-mutable copy.
+ *    `.claude.json` in particular carries `hasCompletedOnboarding` and the
+ *    OAuth account ref — without it the new CLI would launch the
+ *    subscription/onboarding flow.
+ *  - SYMLINK shared state to `~/.claude/`:
+ *      - `.credentials.json` — OAuth tokens. Sharing keeps refresh-token
+ *        rotation observable to every agent; copying would strand later
+ *        spawns with an already-invalidated refresh token. The file is
+ *        small and rarely written, so the multi-writer race surface is
+ *        narrow (a single 401 in the losing agent on simultaneous
+ *        refresh) — bounded, recoverable, and far smaller than the
+ *        copy-per-spawn failure mode it replaces.
+ *      - `plugins/`, `plans/` — read-mostly shared dirs so user-installed
+ *        plugins and globally-saved plans are visible to the agent
+ *        without duplication.
  *
  * Cleanup (`removeAgentClaudeConfigDir`) uses `rm -rf`-style recursive
  * unlink, which removes symlinks WITHOUT following them — the user's
@@ -49,13 +57,17 @@ import { getConfig } from '../config.js';
 const SEED_FILES: Array<{ src: string; dest: string }> = [
   { src: '.claude.json', dest: '.claude.json' },
   { src: '.claude/CLAUDE.md', dest: 'CLAUDE.md' },
-  { src: '.claude/settings.json', dest: 'settings.json' },
-  { src: '.claude/.credentials.json', dest: '.credentials.json' }
+  { src: '.claude/settings.json', dest: 'settings.json' }
 ];
 
-/** Dirs symlinked to the user-global tree. Read-mostly, shared across
- *  agents by design. */
+/** Paths symlinked to the user-global tree — shared across agents by design.
+ *  `.credentials.json` is a file (OAuth tokens, rarely rewritten by claude-code
+ *  on refresh); `plugins/` and `plans/` are dirs. The symlink loop's
+ *  `symlinkSync(..., 'dir')` third arg is a Windows-only disambiguator and is
+ *  ignored on POSIX, so a single loop handles both safely on the platforms
+ *  MAW targets. */
 const SEED_SYMLINKS: Array<{ src: string; dest: string }> = [
+  { src: '.claude/.credentials.json', dest: '.credentials.json' },
   { src: '.claude/plugins', dest: 'plugins' },
   { src: '.claude/plans', dest: 'plans' }
 ];

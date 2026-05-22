@@ -667,5 +667,24 @@ describe('ConfigDrivenAdapter', () => {
       const spec = a.buildSpawnSpec(spawnOpts('plan'));
       expect(spec.args).not.toContain('--dangerously-skip-permissions');
     });
+
+    it('omits ANTHROPIC_API_KEY from spec.env when the templated value is empty', () => {
+      // A SET-BUT-EMPTY ANTHROPIC_API_KEY is treated by claude-code as an
+      // explicit (invalid) bearer key and never falls back to the OAuth
+      // creds in .credentials.json — the spawn-time 401 the v0.3 plan fixes.
+      const a = loadClaudeAdapter();
+      const opts = spawnOpts('plan');
+      opts.env = { ANTHROPIC_API_KEY: '' };
+      const spec = a.buildSpawnSpec(opts);
+      expect(spec.env).not.toHaveProperty('ANTHROPIC_API_KEY');
+    });
+
+    it('passes ANTHROPIC_API_KEY through when the templated value is non-empty', () => {
+      const a = loadClaudeAdapter();
+      const opts = spawnOpts('plan');
+      opts.env = { ANTHROPIC_API_KEY: 'sk-abc' };
+      const spec = a.buildSpawnSpec(opts);
+      expect(spec.env.ANTHROPIC_API_KEY).toBe('sk-abc');
+    });
   });
 });
