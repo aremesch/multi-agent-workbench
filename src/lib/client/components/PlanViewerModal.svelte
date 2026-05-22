@@ -365,6 +365,15 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    /* Let this slot — and the file-switcher inside it — shrink when the
+       modal header is narrower than the select's intrinsic content width
+       (phone portrait). Without `min-width: 0` on the flex chain, the
+       select stays at its content width and pushes the copy button and
+       the parent modal's close button off-screen. */
+    min-width: 0;
+  }
+  .switcher {
+    min-width: 0;
   }
   .switcher select {
     background: #0b0f17;
@@ -374,6 +383,13 @@
     padding: 0.25rem 0.4rem;
     font-size: 0.8rem;
     max-width: 22rem;
+    min-width: 0;
+    width: 100%;
+  }
+  @media (max-width: 600px) {
+    .switcher select {
+      max-width: 10rem;
+    }
   }
   .copy-btn {
     background: #111827;
