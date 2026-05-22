@@ -23,6 +23,10 @@ import type { SC_Alert } from '$lib/shared/protocol';
 export interface ToastEntry {
   id: string;
   agentId: string;
+  /** Agent identifier (task title or cli_kind) — rendered as the toast's
+   *  prominent first line. Falls back to `reason` when missing (older
+   *  servers mid-deploy). */
+  agentTitle: string;
   reason: string;
   body: string;
   url: string;
@@ -50,6 +54,7 @@ export function pushToast(alert: SC_Alert): void {
   const entry: ToastEntry = {
     id: alert.id,
     agentId: alert.agentId,
+    agentTitle: alert.agentTitle ?? alert.reason,
     reason: alert.reason,
     body: alert.body ?? '',
     url: alert.url ?? `/repos/${alert.agentId}`,

@@ -6,6 +6,7 @@ const sample = (id: string, agentId = 'a-1'): AlertPayload => ({
   id,
   agentId,
   severity: 'info',
+  agentTitle: 'Test agent',
   reason: 'something',
   body: 'something happened',
   url: `/repos/r-1?agent=${agentId}`,

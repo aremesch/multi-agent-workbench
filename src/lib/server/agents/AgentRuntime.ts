@@ -42,6 +42,18 @@ export interface AlertPayload {
   id: string;
   agentId: string;
   severity: 'info' | 'warning' | 'error' | 'critical';
+  /**
+   * Human-readable agent identifier — the spawn-form task title, or
+   * `cli_kind` if no task is linked. Used as the prominent first line on
+   * the OS push title and the in-app toast so the user can immediately
+   * tell *which* agent is asking.
+   */
+  agentTitle: string;
+  /**
+   * What the agent is asking — e.g. "Permission needed: Bash",
+   * "Task complete", "Agent exited". Rendered as the toast subtitle and
+   * folded into the push body.
+   */
   reason: string;
   body: string;
   /** Deep-link the toast's "Open agent" button navigates to. */
@@ -352,7 +364,8 @@ export class AgentRuntime extends EventEmitter {
     if (isDupe) return;
 
     const alertId = ulid();
-    const reason = alertReason(this.agent, ev);
+    const agentTitle = agentDisplayName(this.agent);
+    const reason = alertReason(ev);
     const body = alertBody(ev);
     const severity: AlertPayload['severity'] = ev.kind === 'error' ? 'error' : 'info';
     const url = `/repos/${this.agent.repo_id}?agent=${this.agent.id}`;
@@ -377,21 +390,26 @@ export class AgentRuntime extends EventEmitter {
       id: alertId,
       agentId: this.agent.id,
       severity,
+      agentTitle,
       reason,
       body,
       url,
       ts: evTs
     });
 
+    // Push title is the agent's name so the user can identify *which*
+    // agent is asking at a glance on the lock screen. The reason + detail
+    // fold into the body so they're still visible without competing for
+    // the title line.
     getPushService()
       .notifyUser(this.agent.user_id, {
-        title: reason,
-        body,
+        title: agentTitle,
+        body: body ? `${reason} — ${body}` : reason,
         data: {
           agentId: this.agent.id,
           alertId,
           url,
-          agentTitle: agentDisplayName(this.agent),
+          agentTitle,
           severity
         }
       })
@@ -420,28 +438,26 @@ export function agentDisplayName(agent: AgentRow): string {
 }
 
 /**
- * Notification title: "<agentTitle> · <reason>". Identifies *which* agent
- * is asking and *what* it's asking, in a single line short enough for
- * mobile lock screens.
+ * Semantic "what" string for an alert — the subtitle line on the in-app
+ * toast and the lead fragment of the OS push body. Does *not* include the
+ * agent name; that's the prominent title slot and travels separately as
+ * `agentTitle` on the alert payload.
  */
-export function alertReason(agent: AgentRow, ev: AdapterEvent): string {
-  const who = agentDisplayName(agent);
+export function alertReason(ev: AdapterEvent): string {
   switch (ev.kind) {
     case 'prompt_detected': {
       const what =
         (typeof ev.detail?.tool === 'string' && ev.detail.tool) ||
         (typeof ev.detail?.action === 'string' && ev.detail.action) ||
         '';
-      return what
-        ? `${who} · Permission needed: ${what}`
-        : `${who} · Permission needed`;
+      return what ? `Permission needed: ${what}` : 'Permission needed';
     }
     case 'task_done':
-      return `${who} · Task complete`;
+      return 'Task complete';
     case 'error':
-      return ev.patternId ? `${who} · ${ev.patternId}` : `${who} · Error`;
+      return ev.patternId ? `Error: ${ev.patternId}` : 'Error';
     default:
-      return `${who} · ${ev.kind}`;
+      return ev.kind;
   }
 }
 

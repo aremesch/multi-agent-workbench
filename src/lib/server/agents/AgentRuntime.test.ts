@@ -79,7 +79,22 @@ const { dbMocks, tmuxMocks, pushMocks, MockFifoStreamer } = vi.hoisted(() => {
       }
     },
     pushMocks: {
-      notifyUser: vi.fn(async () => undefined)
+      notifyUser: vi.fn<
+        (
+          userId: string,
+          payload: {
+            title: string;
+            body: string;
+            data: {
+              agentId: string;
+              alertId: string;
+              url: string;
+              agentTitle?: string;
+              severity?: 'info' | 'warning' | 'error' | 'critical';
+            };
+          }
+        ) => Promise<void>
+      >(async () => undefined)
     },
     MockFifoStreamer
   };
@@ -448,6 +463,77 @@ describe('AgentRuntime', () => {
       processEvent(rt, ev('prompt_detected', { patternId: 'codex_prompt' }), 'regex');
 
       expect(dbMocks.insertAlert).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('push payload structure', () => {
+    it('uses task title as push title and folds reason+detail into body', () => {
+      // current_task_id resolves through getTask; mock returns a titled task.
+      dbMocks.getTask.mockReturnValueOnce({
+        id: 'task-7',
+        title: 'Implement notifications',
+        body: '',
+        status: 'active'
+      });
+      const agent = makeAgent({ cli_kind: 'claude-code', current_task_id: 'task-7' });
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+
+      processEvent(
+        rt,
+        ev('prompt_detected', {
+          patternId: 'tool_permission_prompt',
+          detail: { tool: 'Bash', cmd: 'rm -rf /tmp/foo' }
+        }),
+        'regex'
+      );
+
+      expect(pushMocks.notifyUser).toHaveBeenCalledTimes(1);
+      const [userId, payload] = pushMocks.notifyUser.mock.calls[0]!;
+      expect(userId).toBe('user-1');
+      expect(payload.title).toBe('Implement notifications');
+      expect(payload.body).toBe('Permission needed: Bash — rm -rf /tmp/foo');
+      expect(payload.data.agentTitle).toBe('Implement notifications');
+      expect(payload.data.severity).toBe('info');
+    });
+
+    it('falls back to cli_kind as push title when no task is linked', () => {
+      const agent = makeAgent({ cli_kind: 'claude-code', current_task_id: null });
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+
+      processEvent(rt, ev('task_done'), 'regex');
+
+      expect(pushMocks.notifyUser).toHaveBeenCalledTimes(1);
+      const [, payload] = pushMocks.notifyUser.mock.calls[0]!;
+      expect(payload.title).toBe('claude-code');
+      // task_done has a fixed body ("Agent has finished its task.")
+      expect(payload.body).toBe('Task complete — Agent has finished its task.');
+    });
+
+    it("emits the 'alert' event with agentTitle alongside reason and body", () => {
+      dbMocks.getTask.mockReturnValueOnce({
+        id: 'task-8',
+        title: 'Refactor auth',
+        body: '',
+        status: 'active'
+      });
+      const agent = makeAgent({ cli_kind: 'claude-code', current_task_id: 'task-8' });
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+
+      const alerts: Array<{ agentTitle: string; reason: string; body: string }> = [];
+      rt.on('alert', (a) => alerts.push({ agentTitle: a.agentTitle, reason: a.reason, body: a.body }));
+
+      processEvent(
+        rt,
+        ev('prompt_detected', { detail: { tool: 'Bash', cmd: 'ls' } }),
+        'regex'
+      );
+
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toEqual({
+        agentTitle: 'Refactor auth',
+        reason: 'Permission needed: Bash',
+        body: 'ls'
+      });
     });
   });
 

@@ -40,7 +40,10 @@
 
 <div class="toast" data-severity={entry.severity} role="status" aria-live="polite">
   <div class="text">
-    <div class="title">{entry.reason}</div>
+    <div class="title">{entry.agentTitle}</div>
+    {#if entry.reason && entry.reason !== entry.agentTitle}
+      <div class="reason">{entry.reason}</div>
+    {/if}
     {#if entry.body}
       <div class="body">{entry.body}</div>
     {/if}
@@ -99,6 +102,14 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     -webkit-box-orient: vertical;
+  }
+  .reason {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant, #9ca3af);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .body {
     font-size: 0.8rem;
