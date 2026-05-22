@@ -165,47 +165,34 @@ describe('agentDisplayName', () => {
 });
 
 describe('alertReason', () => {
-  it('uses cli_kind when no task is set', () => {
-    expect(alertReason(baseAgent(), ev({ kind: 'prompt_detected' }))).toBe(
-      'claude-code · Permission needed'
-    );
+  it('returns "Permission needed" when no tool/action is present', () => {
+    expect(alertReason(ev({ kind: 'prompt_detected' }))).toBe('Permission needed');
   });
 
   it('appends detail.tool to permission prompts', () => {
-    const out = alertReason(
-      baseAgent(),
-      ev({ kind: 'prompt_detected', detail: { tool: 'Bash' } })
-    );
-    expect(out).toBe('claude-code · Permission needed: Bash');
+    const out = alertReason(ev({ kind: 'prompt_detected', detail: { tool: 'Bash' } }));
+    expect(out).toBe('Permission needed: Bash');
   });
 
   it('appends detail.action when no tool is present', () => {
     const out = alertReason(
-      baseAgent({ cli_kind: 'codex' }),
       ev({ kind: 'prompt_detected', detail: { action: 'apply diff' } })
     );
-    expect(out).toBe('codex · Permission needed: apply diff');
+    expect(out).toBe('Permission needed: apply diff');
   });
 
   it('formats task_done', () => {
-    const out = alertReason(baseAgent(), ev({ kind: 'task_done' }));
-    expect(out).toBe('claude-code · Task complete');
+    expect(alertReason(ev({ kind: 'task_done' }))).toBe('Task complete');
   });
 
   it('formats error with patternId', () => {
-    const out = alertReason(
-      baseAgent(),
-      ev({ kind: 'error', patternId: 'rate_limit' })
+    expect(alertReason(ev({ kind: 'error', patternId: 'rate_limit' }))).toBe(
+      'Error: rate_limit'
     );
-    expect(out).toBe('claude-code · rate_limit');
   });
 
   it('formats error without patternId', () => {
-    const out = alertReason(
-      baseAgent(),
-      ev({ kind: 'error', patternId: undefined })
-    );
-    expect(out).toBe('claude-code · Error');
+    expect(alertReason(ev({ kind: 'error', patternId: undefined }))).toBe('Error');
   });
 });
 

@@ -246,7 +246,16 @@ export interface SC_Alert {
   id: string;
   agentId: string;
   severity: 'info' | 'warning' | 'error' | 'critical';
-  /** Notification title — same string the OS push receives. */
+  /**
+   * Human-readable agent identifier — task title or `cli_kind` fallback.
+   * Rendered as the prominent first line on the in-app toast (and the OS
+   * push title). Optional for backwards-compat with older servers.
+   */
+  agentTitle?: string;
+  /**
+   * Semantic "what" of the alert — e.g. "Permission needed: Bash",
+   * "Task complete", "Agent exited". Rendered as the toast subtitle.
+   */
   reason: string;
   /**
    * Notification body — short summary of *what* the agent is asking

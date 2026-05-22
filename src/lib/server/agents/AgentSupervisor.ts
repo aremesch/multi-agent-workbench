@@ -8,7 +8,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { ulid } from 'ulid';
-import { AgentRuntime } from './AgentRuntime.js';
+import { AgentRuntime, agentDisplayName } from './AgentRuntime.js';
 import { AdapterRegistry } from './adapters/AdapterRegistry.js';
 import type { AgentRow } from '../db/types.js';
 import {
@@ -472,20 +472,33 @@ export class AgentSupervisor {
       const nowTs = Math.floor(Date.now() / 1000);
       const repo = getRepo(agent.repo_id);
       const repoName = repo?.path.split('/').pop() ?? 'repo';
+      const agentTitle = agentDisplayName(agent);
+      const reason = 'Agent exited';
+      const body = `Agent in ${repoName} has stopped.`;
+      const url = `/repos/${agent.repo_id}?agent=${agentId}`;
       insertAlert({
         id: alertId,
         user_id: agent.user_id,
         agent_id: agentId,
         severity: 'warning',
-        reason: 'Agent exited',
-        payload_json: '{}',
+        reason,
+        payload_json: JSON.stringify({ body }),
         ts: nowTs
       });
-      runtime.emit('alert', { id: alertId, agentId, severity: 'warning', reason: 'Agent exited' });
+      runtime.emit('alert', {
+        id: alertId,
+        agentId,
+        severity: 'warning',
+        agentTitle,
+        reason,
+        body,
+        url,
+        ts: nowTs
+      });
       getPushService().notifyUser(agent.user_id, {
-        title: `${agent.cli_kind}: Agent exited`,
-        body: `Agent in ${repoName} has stopped.`,
-        data: { agentId, alertId, url: `/repos/${agent.repo_id}?agent=${agentId}` }
+        title: agentTitle,
+        body: `${reason} — ${body}`,
+        data: { agentId, alertId, url, agentTitle, severity: 'warning' }
       }).catch(() => {});
     }
   }

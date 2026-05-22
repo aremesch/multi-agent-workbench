@@ -86,6 +86,16 @@ describe('pushToast', () => {
     expect(get(alertToasts)[0]?.url).toBe('/repos/agent-1');
   });
 
+  it('propagates agentTitle into the toast entry', () => {
+    pushToast(alert({ id: 'a1', agentTitle: 'Implement notifications' }));
+    expect(get(alertToasts)[0]?.agentTitle).toBe('Implement notifications');
+  });
+
+  it('falls back to reason for agentTitle when missing (older server)', () => {
+    pushToast(alert({ id: 'a1', agentTitle: undefined, reason: 'fallback' }));
+    expect(get(alertToasts)[0]?.agentTitle).toBe('fallback');
+  });
+
   it('ignores malformed alerts with no id', () => {
     pushToast({ ...alert(), id: '' });
     expect(get(alertToasts)).toHaveLength(0);
