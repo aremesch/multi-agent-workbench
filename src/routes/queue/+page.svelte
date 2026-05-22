@@ -85,6 +85,11 @@
           break;
       }
     }
+    // Most-recently finished first. Fall back to `updated_at` when
+    // `completed_at` is null (column is nullable on QueueEntryRow).
+    completed.sort(
+      (a, b) => (b.completed_at ?? b.updated_at) - (a.completed_at ?? a.updated_at)
+    );
     return { running, ready, blocked, backlog, completed };
   }
 
@@ -136,6 +141,22 @@
       toggleExpand(id);
     }
   }
+
+  // ── Completed section collapse ───────────────────────────────────────────
+  // Persisted to localStorage so a reload keeps the user's choice. Hydrating
+  // at script-eval time (rather than from a $effect) avoids a race where the
+  // write effect could clobber the stored value before the read effect runs.
+  // SSR safe: localStorage is undefined on the server, so it falls back to
+  // collapsed; the client re-evals on hydration and gets the real value.
+  const COMPLETED_OPEN_KEY = 'queue.completed.open';
+  let completedOpen = $state(
+    typeof localStorage !== 'undefined' &&
+      localStorage.getItem(COMPLETED_OPEN_KEY) === '1'
+  );
+  $effect(() => {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(COMPLETED_OPEN_KEY, completedOpen ? '1' : '0');
+  });
 
   // ── Add-to-queue modal ────────────────────────────────────────────────
   let createOpen = $state(false);
@@ -700,12 +721,38 @@
 
   {#if grouped.completed.length > 0}
     <section>
-      <h2>{t('queue.section.completed')} ({grouped.completed.length})</h2>
-      <ul class="entries entries-dim">
-        {#each grouped.completed as e (e.id)}
-          {@render taskRow(e, e.status, completedActions)}
-        {/each}
-      </ul>
+      <button
+        type="button"
+        class="section-toggle"
+        aria-expanded={completedOpen ? 'true' : 'false'}
+        aria-controls="completed-list"
+        onclick={() => {
+          completedOpen = !completedOpen;
+        }}
+      >
+        <svg
+          class="chevron"
+          class:open={completedOpen}
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path fill="currentColor" d="M7 10l5 5 5-5H7Z" />
+        </svg>
+        <h2>{t('queue.section.completed')} ({grouped.completed.length})</h2>
+      </button>
+      {#if completedOpen}
+        <ul
+          id="completed-list"
+          class="entries entries-dim"
+          transition:slide={{ duration: 150 }}
+        >
+          {#each grouped.completed as e (e.id)}
+            {@render taskRow(e, e.status, completedActions)}
+          {/each}
+        </ul>
+      {/if}
     </section>
   {/if}
 </div>
@@ -817,6 +864,24 @@
     color: var(--md-sys-color-on-surface);
     font-size: 0.95rem;
     font-weight: 500;
+  }
+  .section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: transparent;
+    border: 0;
+    padding: 0.15rem 0.25rem;
+    margin: 0 -0.25rem;
+    border-radius: var(--md-sys-shape-corner-sm);
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+    font: inherit;
+  }
+  .section-toggle:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
   }
   .entries {
     list-style: none;
