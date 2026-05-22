@@ -128,3 +128,49 @@ describe('AgentMenu — Exit gating by status', () => {
     expect(props.onShowPlan).toHaveBeenCalledOnce();
   });
 });
+
+describe('AgentMenu — showExit prop', () => {
+  it('omits the Exit Agent row when showExit is false', async () => {
+    const { getByLabelText, getAllByRole, queryByText } = render(AgentMenu, {
+      props: makeProps({ showExit: false })
+    });
+    await fireEvent.click(getByLabelText('agentMenu.button'));
+    expect(getAllByRole('menuitem')).toHaveLength(2);
+    expect(queryByText('agentMenu.exitAgent')).toBeNull();
+  });
+
+  it('renders Plan + Log only and they remain clickable when showExit is false', async () => {
+    const props = makeProps({ showExit: false });
+    const { getByLabelText, getByText } = render(AgentMenu, { props });
+    await fireEvent.click(getByLabelText('agentMenu.button'));
+    await fireEvent.click(getByText('agentMenu.showLog'));
+    expect(props.onShowLog).toHaveBeenCalledOnce();
+  });
+});
+
+describe('AgentMenu — Plan gating by cli_kind', () => {
+  it('disables Show Plan for non-coding CLI kinds', async () => {
+    const props = makeProps({
+      agent: { id: 'a', cli_kind: 'browser', status: 'exited' },
+      showExit: false
+    });
+    const { getByLabelText, getByText } = render(AgentMenu, { props });
+    await fireEvent.click(getByLabelText('agentMenu.button'));
+    const btn = getByText('agentMenu.showPlan') as HTMLButtonElement;
+    expect(btn.hasAttribute('disabled')).toBe(true);
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(btn);
+    expect(props.onShowPlan).not.toHaveBeenCalled();
+  });
+
+  it('keeps Show Log enabled for non-coding CLI kinds', async () => {
+    const props = makeProps({
+      agent: { id: 'a', cli_kind: 'shell', status: 'exited' },
+      showExit: false
+    });
+    const { getByLabelText, getByText } = render(AgentMenu, { props });
+    await fireEvent.click(getByLabelText('agentMenu.button'));
+    await fireEvent.click(getByText('agentMenu.showLog'));
+    expect(props.onShowLog).toHaveBeenCalledOnce();
+  });
+});

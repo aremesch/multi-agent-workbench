@@ -14,6 +14,7 @@
    */
 
   import { useT } from '$lib/client/i18n.svelte';
+  import { isCodingCliKind } from '$lib/shared/browserTarget';
   import type { AgentStatus } from '$lib/shared/types';
   import OverflowMenu, { type OverflowMenuItem } from './OverflowMenu.svelte';
 
@@ -23,22 +24,31 @@
     agent,
     onShowPlan,
     onShowLog,
-    onExit
+    onExit,
+    showExit = true
   }: {
     agent: { id: string; cli_kind: string; status: AgentStatus };
     onShowPlan: () => void;
     onShowLog: () => void;
-    onExit: () => void;
+    /** Required only when `showExit` is true; ignored otherwise. */
+    onExit?: () => void;
+    /** Set to `false` in surfaces where the agent is always already exited
+        (e.g. archive view) so the perma-disabled Exit row is hidden. */
+    showExit?: boolean;
   } = $props();
 
   const isArchived = $derived(agent.status === 'exited' || agent.status === 'crashed');
+  // Plans are a coding-agent concept; for browser/shell kinds disable the
+  // row so the kebab can still surface Show Log uniformly.
+  const planDisabled = $derived(!isCodingCliKind(agent.cli_kind));
 
   const items: OverflowMenuItem[] = $derived([
     {
       id: 'plan',
       label: t('agentMenu.showPlan'),
       icon: planIcon,
-      onSelect: onShowPlan
+      onSelect: onShowPlan,
+      disabled: planDisabled
     },
     {
       id: 'log',
@@ -46,15 +56,19 @@
       icon: logIcon,
       onSelect: onShowLog
     },
-    {
-      id: 'exit',
-      label: t('agentMenu.exitAgent'),
-      icon: exitIcon,
-      onSelect: onExit,
-      dividerBefore: true,
-      destructive: true,
-      disabled: isArchived
-    }
+    ...(showExit
+      ? [
+          {
+            id: 'exit',
+            label: t('agentMenu.exitAgent'),
+            icon: exitIcon,
+            onSelect: onExit,
+            dividerBefore: true,
+            destructive: true,
+            disabled: isArchived
+          } satisfies OverflowMenuItem
+        ]
+      : [])
   ]);
 </script>
 

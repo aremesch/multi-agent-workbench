@@ -1,8 +1,10 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
   import type { PageData } from './$types';
+  import AgentMenu from '$lib/client/components/AgentMenu.svelte';
   import ArchivedAgentLogModal from '$lib/client/components/ArchivedAgentLogModal.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
+  import PlanViewerModal from '$lib/client/components/PlanViewerModal.svelte';
   import { apiFetch } from '$lib/client/api';
   import { formatDurationHMS, formatTimestamp, formatTokens } from '$lib/shared/format';
   import { useT } from '$lib/client/i18n.svelte';
@@ -13,6 +15,7 @@
 
   let openAgentId = $state<string | null>(null);
   let openAgentTitle = $state<string>('');
+  let planAgentId = $state<string | null>(null);
   let expanded = $state<Record<string, boolean>>({});
 
   /** Delete-confirm state machine. `stage` drives which body the modal renders. */
@@ -32,6 +35,12 @@
   }
   function closeLog(): void {
     openAgentId = null;
+  }
+  function viewPlan(entry: PageData['archivedAgents'][number]): void {
+    planAgentId = entry.agent.id;
+  }
+  function closePlan(): void {
+    planAgentId = null;
   }
   function toggle(agentId: string): void {
     expanded[agentId] = !expanded[agentId];
@@ -192,9 +201,16 @@
               <td class="num">{formatTokens(entry.tokens?.cacheCreationTokens)}</td>
               <td class="num">{formatTokens(entry.tokens?.cacheReadTokens)}</td>
               <td class="actions-cell">
-                <button type="button" class="view-btn" onclick={() => viewLog(entry)}
-                  >{t('archive.viewLogs')}</button
-                >
+                <AgentMenu
+                  agent={{
+                    id: entry.agent.id,
+                    cli_kind: entry.agent.cli_kind,
+                    status: entry.agent.status
+                  }}
+                  showExit={false}
+                  onShowPlan={() => viewPlan(entry)}
+                  onShowLog={() => viewLog(entry)}
+                />
                 <button
                   type="button"
                   class="refresh-btn"
@@ -337,6 +353,14 @@
   onClose={closeLog}
 />
 
+{#if planAgentId !== null}
+  <PlanViewerModal
+    open={true}
+    source={{ kind: 'agent', agentId: planAgentId }}
+    onClose={closePlan}
+  />
+{/if}
+
 <Modal
   open={deleteStage !== 'closed'}
   onClose={closeDelete}
@@ -475,18 +499,6 @@
   .status-crashed {
     background: #7f1d1d;
     color: #fecaca;
-  }
-  .view-btn {
-    font-size: 0.8rem;
-    padding: 0.3rem 0.7rem;
-    border-radius: 0.25rem;
-    background: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
-    border: none;
-    cursor: pointer;
-  }
-  .view-btn:hover {
-    filter: brightness(1.1);
   }
   .actions-cell {
     display: flex;
