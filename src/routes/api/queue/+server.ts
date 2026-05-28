@@ -3,8 +3,10 @@ import { ulid } from 'ulid';
 import type { RequestHandler } from './$types';
 import { verifyCsrf } from '$lib/server/auth/csrf';
 import { t } from '$lib/i18n';
+import { getConfig } from '$lib/server/config';
 import {
   insertQueueEntry,
+  isSlugInUse,
   listQueueEntriesForUser,
   type ListQueueEntriesFilter,
   type QueueConcurrencySettings,
@@ -84,6 +86,10 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
     return json({ error: t(locals.locale, validation.errorKey) }, { status: 400 });
   }
   const v = validation.value;
+
+  if (isSlugInUse(locals.user.id, v.slug, getConfig().worktreeRoot)) {
+    return json({ error: t(locals.locale, 'spawn.error.titleTaken') }, { status: 409 });
+  }
 
   const id = ulid();
   insertQueueEntry({

@@ -1,8 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { t, type TranslationKey } from '$lib/i18n';
+import { getConfig } from '$lib/server/config';
 import {
   getSpawnDefaultsAll,
+  isSlugInUse,
   listReposWithProjectForUser,
   listRoles
 } from '$lib/server/db/queries';
@@ -143,6 +145,13 @@ export const actions: Actions = {
       const params = validation.error.message ? { message: validation.error.message } : undefined;
       const status = validation.error.code === 'titleTaken' ? 409 : 400;
       return fail(status, { ...fields, error: t(locals.locale, key, params) });
+    }
+
+    if (isSlugInUse(locals.user.id, validation.value.slug, getConfig().worktreeRoot)) {
+      return fail(409, {
+        ...fields,
+        error: t(locals.locale, 'spawn.error.titleTaken')
+      });
     }
 
     const result = await performSpawn(validation.value, locals.user.id, locals.supervisor);

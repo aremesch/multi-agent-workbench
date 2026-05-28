@@ -5,6 +5,7 @@ const verifyCsrfMock = vi.fn();
 const getQueueEntryForUserMock = vi.fn();
 const listQueueEntriesByIdsMock = vi.fn();
 const updateQueueEntryFieldsMock = vi.fn();
+const isSlugInUseMock = vi.fn();
 const scheduleTickMock = vi.fn();
 const coerceQueueInputMock = vi.fn();
 const validateQueueInputMock = vi.fn();
@@ -12,8 +13,12 @@ const validateQueueInputMock = vi.fn();
 vi.mock('$lib/server/auth/csrf', () => ({
   verifyCsrf: (event: unknown) => verifyCsrfMock(event)
 }));
+vi.mock('$lib/server/config', () => ({
+  getConfig: () => ({ worktreeRoot: '/tmp/wtroot' })
+}));
 vi.mock('$lib/server/db/queries', () => ({
   getQueueEntryForUser: (...a: unknown[]) => getQueueEntryForUserMock(...a),
+  isSlugInUse: (...a: unknown[]) => isSlugInUseMock(...a),
   listQueueEntriesByIds: (...a: unknown[]) => listQueueEntriesByIdsMock(...a),
   updateQueueEntryFields: (...a: unknown[]) => updateQueueEntryFieldsMock(...a)
 }));
@@ -95,6 +100,7 @@ function validated(overrides: Record<string, unknown> = {}) {
     value: {
       role: { id: 'role-1' },
       title: 'New title',
+      slug: 'new-title',
       adapter: { initialInputDelivery: 'cli-arg' },
       browser: null,
       model: null,
@@ -146,6 +152,7 @@ beforeEach(() => {
   getQueueEntryForUserMock.mockReset().mockReturnValue(makeRow());
   listQueueEntriesByIdsMock.mockReset().mockReturnValue([]);
   updateQueueEntryFieldsMock.mockReset().mockReturnValue(true);
+  isSlugInUseMock.mockReset().mockReturnValue(false);
   scheduleTickMock.mockReset();
   coerceQueueInputMock.mockReset().mockReturnValue(coerced());
   validateQueueInputMock.mockReset().mockResolvedValue(validated());
@@ -266,6 +273,25 @@ describe('PUT /api/queue/:id', () => {
     // queued bit is intentionally NOT part of the edit patch.
     expect(patch).not.toHaveProperty('queued');
     expect(scheduleTickMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('409 when the new title collides with another active entry’s slug', async () => {
+    isSlugInUseMock.mockReturnValue(true);
+    const res = await call();
+    expect(res.status).toBe(409);
+    expect(updateQueueEntryFieldsMock).not.toHaveBeenCalled();
+  });
+
+  it('passes the row id to isSlugInUse so an unchanged self-edit is allowed', async () => {
+    isSlugInUseMock.mockReturnValue(false);
+    const res = await call({ id: 'q1' });
+    expect(res.status).toBe(200);
+    expect(isSlugInUseMock).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(String),
+      '/tmp/wtroot',
+      'q1'
+    );
   });
 
   it('nulls the body for adapters without cli-arg input delivery', async () => {

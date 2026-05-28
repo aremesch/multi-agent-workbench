@@ -28,7 +28,9 @@ import {
   deleteAgent,
   updateRepo,
   deletePushSubByEndpoint,
+  findActiveWorktreeByPath,
   findWorktreeByPath,
+  isSlugInUse,
   getAgent,
   getLatestRunForAgent,
   getLatestTerminalSeq,
@@ -395,6 +397,23 @@ describe('worktrees', () => {
     expect(getWorktree('wt-1')?.branch).toBe('maw/agent-1');
     expect(findWorktreeByPath('/tmp/wt-1')?.id).toBe('wt-1');
     expect(findWorktreeByPath('/no/such')).toBeUndefined();
+  });
+
+  it("findActiveWorktreeByPath excludes status='removed' rows", () => {
+    seedWorktree('wt-1', 'user-1', 'repo-1', '/tmp/wt-active');
+    seedWorktree('wt-2', 'user-1', 'repo-1', '/tmp/wt-gone');
+    updateWorktreeStatus('wt-2', 'removed');
+    expect(findActiveWorktreeByPath('/tmp/wt-active')?.id).toBe('wt-1');
+    // findWorktreeByPath still sees the tombstone — only the active variant
+    // ignores it, which is what the spawn collision check relies on.
+    expect(findWorktreeByPath('/tmp/wt-gone')?.id).toBe('wt-2');
+    expect(findActiveWorktreeByPath('/tmp/wt-gone')).toBeUndefined();
+  });
+
+  it('findActiveWorktreeByPath still returns orphaned rows', () => {
+    seedWorktree('wt-1', 'user-1', 'repo-1', '/tmp/wt-1');
+    updateWorktreeStatus('wt-1', 'orphaned');
+    expect(findActiveWorktreeByPath('/tmp/wt-1')?.id).toBe('wt-1');
   });
 
   it('listWorktreesForRepo is scoped to repo_id', () => {
@@ -1189,5 +1208,60 @@ describe('queue entries — backlog/queue admission and plan storage', () => {
     row = getQueueEntry('q1');
     expect(row?.plan_md).toBeNull();
     expect(row?.plan_source_path).toBeNull();
+  });
+
+  describe('isSlugInUse', () => {
+    const root = '/tmp/wtroot';
+
+    it('returns false when nothing claims the slug', () => {
+      expect(isSlugInUse('user-1', 'fresh-slug', root)).toBe(false);
+    });
+
+    it('returns true for a non-terminal queue entry with a matching slug', () => {
+      seedQueueEntry('q1', { title: 'Polyrepo Support', status: 'pending' });
+      expect(isSlugInUse('user-1', 'polyrepo-support', root)).toBe(true);
+    });
+
+    it('matches across title variants that slugify the same', () => {
+      seedQueueEntry('q1', { title: 'Polyrepo  Support!', status: 'blocked' });
+      // "polyrepo-support" should equal slugifyTitle('Polyrepo  Support!').
+      expect(isSlugInUse('user-1', 'polyrepo-support', root)).toBe(true);
+    });
+
+    it('ignores terminal queue entries (done/failed/cancelled)', () => {
+      seedQueueEntry('q1', { title: 'foo', status: 'done' });
+      seedQueueEntry('q2', { title: 'foo', status: 'cancelled' });
+      seedQueueEntry('q3', { title: 'foo', status: 'failed' });
+      expect(isSlugInUse('user-1', 'foo', root)).toBe(false);
+    });
+
+    it('is scoped to the user — other users’ entries do not block', () => {
+      insertUser({ id: 'user-2', username: 'bob', password_hash: 'x', must_change_password: false });
+      // user-2 owns a "foo" entry; user-1's slug check must not see it.
+      seedQueueEntry('q1', { user_id: 'user-2', title: 'foo', status: 'pending' });
+      expect(isSlugInUse('user-1', 'foo', root)).toBe(false);
+    });
+
+    it('returns true when an active worktree row sits at the slug path', () => {
+      seedWorktree('wt-1', 'user-1', 'repo-1', `${root}/taken-slug`);
+      expect(isSlugInUse('user-1', 'taken-slug', root)).toBe(true);
+    });
+
+    it("does not count status='removed' worktrees", () => {
+      seedWorktree('wt-1', 'user-1', 'repo-1', `${root}/gone-slug`);
+      updateWorktreeStatus('wt-1', 'removed');
+      expect(isSlugInUse('user-1', 'gone-slug', root)).toBe(false);
+    });
+
+    it('excludeQueueEntryId lets a row edit itself without self-conflict', () => {
+      seedQueueEntry('q1', { title: 'foo', status: 'pending' });
+      expect(isSlugInUse('user-1', 'foo', root)).toBe(true);
+      expect(isSlugInUse('user-1', 'foo', root, 'q1')).toBe(false);
+    });
+
+    it('empty slug short-circuits to false', () => {
+      seedQueueEntry('q1', { title: 'foo', status: 'pending' });
+      expect(isSlugInUse('user-1', '', root)).toBe(false);
+    });
   });
 });

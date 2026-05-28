@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { ulid } from 'ulid';
 import { getConfig } from '../config.js';
 import {
-  findWorktreeByPath,
+  findActiveWorktreeByPath,
   getProject,
   getRepo,
   getRole,
@@ -306,7 +306,7 @@ export async function performSpawn(
 
   if (v.shouldCreateWorktree) {
     const targetPath = join(cfg.worktreeRoot, v.slug);
-    if (findWorktreeByPath(targetPath) || existsSync(targetPath)) {
+    if (findActiveWorktreeByPath(targetPath) || existsSync(targetPath)) {
       return { ok: false, error: { code: 'titleTaken' } };
     }
     let resolvedBranch: string;

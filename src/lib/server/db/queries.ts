@@ -11,8 +11,10 @@
  * after config loads — we can't prepare at module load.
  */
 
+import { join } from 'node:path';
 import type { Statement } from 'better-sqlite3';
 import { getDb } from './index.js';
+import { slugifyTitle } from '../util/slug.js';
 import type {
   AgentCommitRow,
   AgentCommitSource,
@@ -284,6 +286,18 @@ export function getWorktree(id: string): WorktreeRow | undefined {
 
 export function findWorktreeByPath(path: string): WorktreeRow | undefined {
   return prep<[string], WorktreeRow>('SELECT * FROM worktrees WHERE path = ?').get(path);
+}
+
+/**
+ * Like {@link findWorktreeByPath} but excludes `status='removed'` tombstones.
+ * Use for "is this path currently claimed?" checks (spawn-time slug
+ * collision, slug-uniqueness probe). Removed worktrees released their
+ * directory on disk, so a tombstone row must not block a new spawn.
+ */
+export function findActiveWorktreeByPath(path: string): WorktreeRow | undefined {
+  return prep<[string], WorktreeRow>(
+    "SELECT * FROM worktrees WHERE path = ? AND status != 'removed'"
+  ).get(path);
 }
 
 export function listWorktreesForRepo(repoId: string): WorktreeRow[] {
@@ -1320,6 +1334,45 @@ export function setQueueConcurrency(
   settings: QueueConcurrencySettings
 ): void {
   setUserSetting(userId, QUEUE_CONCURRENCY_KEY, JSON.stringify(settings));
+}
+
+/**
+ * True if `slug` is currently claimed by something the spawn pipeline
+ * cannot share with: a live queue entry owned by `userId`, or an active
+ * worktree row at `<worktreeRoot>/<slug>`.
+ *
+ * Used at the queue / spawn-form boundary so users see the conflict
+ * before saving, rather than discovering it when the scheduler tries to
+ * promote and the worktree dir collides. The slug — not the raw title —
+ * is what must be unique: "Polyrepo Support", "polyrepo-support", and
+ * "polyrepo  support" all slugify to the same value and would clobber
+ * each other's worktree dir.
+ *
+ * Terminal queue entries (done/failed/cancelled) and `removed`
+ * worktrees do not count — their dirs are gone, the slug is free to
+ * reuse. Running agents are covered transitively via their `worktrees`
+ * row (status active/orphaned).
+ */
+export function isSlugInUse(
+  userId: string,
+  slug: string,
+  worktreeRoot: string,
+  excludeQueueEntryId?: string
+): boolean {
+  if (!slug) return false;
+  const activeQueueEntries = prep<[string], { id: string; title: string }>(
+    `SELECT id, title FROM queue_entries
+      WHERE user_id = ? AND status IN ('pending','blocked','ready','running')`
+  ).all(userId) as { id: string; title: string }[];
+  const conflict = activeQueueEntries.some(
+    (row) => row.id !== excludeQueueEntryId && slugifyTitle(row.title) === slug
+  );
+  if (conflict) return true;
+  const targetPath = join(worktreeRoot, slug);
+  const wt = prep<[string, string], WorktreeRow>(
+    "SELECT * FROM worktrees WHERE user_id = ? AND path = ? AND status != 'removed'"
+  ).get(userId, targetPath);
+  return wt !== undefined;
 }
 
 export interface InsertQueueEntryInput {

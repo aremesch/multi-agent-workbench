@@ -2,8 +2,10 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { verifyCsrf } from '$lib/server/auth/csrf';
 import { t } from '$lib/i18n';
+import { getConfig } from '$lib/server/config';
 import {
   getQueueEntryForUser,
+  isSlugInUse,
   listQueueEntriesByIds,
   updateQueueEntryFields
 } from '$lib/server/db/queries';
@@ -74,6 +76,10 @@ export const PUT: RequestHandler = async ({ locals, params, request, cookies }) 
     return json({ error: t(locals.locale, validation.errorKey) }, { status: 400 });
   }
   const v = validation.value;
+
+  if (isSlugInUse(locals.user.id, v.slug, getConfig().worktreeRoot, params.id)) {
+    return json({ error: t(locals.locale, 'spawn.error.titleTaken') }, { status: 409 });
+  }
 
   // Re-evaluation: status flips back to 'pending' so the scheduler can
   // re-classify deps / scheduled_for next tick. last_error cleared because
