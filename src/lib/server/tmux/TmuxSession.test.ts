@@ -325,6 +325,84 @@ describe('Tmux — session lifecycle', () => {
   });
 });
 
+describe('Tmux.ensureSpawnDiagnosticsHooks', () => {
+  it('installs `remain-on-exit failed` as a window default (so successful exits still close)', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    await Tmux.ensureSpawnDiagnosticsHooks();
+    const [, args] = execaMock.mock.calls[0]!;
+    expect(args.slice(0, 6)).toEqual(['-L', 'maw', 'set-option', '-w', '-g', 'remain-on-exit']);
+    // `failed`, not `on`: rc=0 (user `/exit`'d) must still tear the
+    // session down so the existing session-closed exit watcher fires.
+    expect(args.at(-1)).toBe('failed');
+  });
+
+  it('installs a global pane-died hook on the same channel as session-closed', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    await Tmux.ensureSpawnDiagnosticsHooks();
+    const [, args] = execaMock.mock.calls[1]!;
+    expect(args.slice(0, 5)).toEqual(['-L', 'maw', 'set-hook', '-g', 'pane-died']);
+    expect(args).not.toContain('-t'); // server-wide, never per-session
+    const hookCmd = args.at(-1)!;
+    expect(hookCmd).toMatch(/^run-shell\b/);
+    expect(hookCmd).toContain('-b');
+    // Must signal the SAME channel session-closed uses — the exit waiter
+    // doesn't care which hook fired, only that the wait-for resolves.
+    expect(hookCmd).toContain('wait-for -S maw-exit-#{hook_session_name}');
+  });
+});
+
+describe('Tmux.isPaneDead', () => {
+  it('returns true when display-message prints "1"', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '1' });
+    expect(await Tmux.isPaneDead('sid')).toBe(true);
+    const args = execaMock.mock.calls[0]![1] as string[];
+    expect(args).toContain('display-message');
+    expect(args).toContain('#{pane_dead}');
+  });
+
+  it('returns false when display-message prints "0"', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '0\n' });
+    expect(await Tmux.isPaneDead('sid')).toBe(false);
+  });
+
+  it('treats "can\'t find session" as dead (gone is dead)', async () => {
+    execaMock.mockRejectedValueOnce(execaError("can't find session: sid"));
+    expect(await Tmux.isPaneDead('sid')).toBe(true);
+  });
+
+  it('returns false on unrelated tmux errors — never spuriously abort a spawn', async () => {
+    execaMock.mockRejectedValueOnce(execaError('permission denied'));
+    expect(await Tmux.isPaneDead('sid')).toBe(false);
+  });
+});
+
+describe('Tmux.captureDeadPaneTail', () => {
+  it('captures the last N lines from the dead pane', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: 'sh: claude: command not found\n\n\n' });
+    const tail = await Tmux.captureDeadPaneTail('sid', 100);
+    expect(tail).toBe('sh: claude: command not found');
+    const args = execaMock.mock.calls[0]![1] as string[];
+    expect(args).toContain('capture-pane');
+    expect(args[args.indexOf('-S') + 1]).toBe('-100');
+    // No `-e`: we want plain text for an error message, not ANSI.
+    expect(args).not.toContain('-e');
+  });
+
+  it('normalizes positive line counts to negative (always look backwards)', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    await Tmux.captureDeadPaneTail('sid', 50);
+    const args = execaMock.mock.calls[0]![1] as string[];
+    expect(args[args.indexOf('-S') + 1]).toBe('-50');
+  });
+
+  it('returns "" on capture failure — diagnostic is best-effort', async () => {
+    execaMock.mockRejectedValueOnce(execaError('dead'));
+    expect(await Tmux.captureDeadPaneTail('sid')).toBe('');
+  });
+});
+
 describe('Tmux.listMawSessions', () => {
   it('filters list-sessions output to `maw-agent-*` session names', async () => {
     execaMock.mockResolvedValueOnce({

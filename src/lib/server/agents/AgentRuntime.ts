@@ -120,7 +120,41 @@ export class AgentRuntime extends EventEmitter {
   async start(): Promise<void> {
     await this.fifo.create();
     this.fifo.start((chunk) => this.onChunk(chunk));
+    await this.verifyPaneAlive();
     await Tmux.pipePane(this.agent.tmux_session, this.fifo.path);
+  }
+
+  /**
+   * Catch the "CLI exited within microseconds of being exec'd" case. Without
+   * this, `pipe-pane` later fails with the opaque tmux error
+   * `can't find pane: <session>` and no record of what the dying CLI
+   * printed — the user is left guessing whether the binary was missing,
+   * an API key was wrong, a flag was unsupported, etc.
+   *
+   * Relies on `Tmux.ensureSpawnDiagnosticsHooks` (installed once at
+   * supervisor init): `remain-on-exit failed` keeps the pane alive in a
+   * dead state on a non-zero exit, so we can poll `#{pane_dead}` and
+   * capture the tail before tearing the session down.
+   *
+   * The polling schedule (0/25/75/150 ms) is biased toward fast paths —
+   * by the time `runtime.start` is reached the CLI has typically already
+   * either survived or died. ~250 ms is plenty for the kernel's exec
+   * notification + tmux's main-loop tick.
+   */
+  private async verifyPaneAlive(): Promise<void> {
+    const session = this.agent.tmux_session;
+    const delays = [0, 25, 75, 150];
+    for (const delay of delays) {
+      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+      if (await Tmux.isPaneDead(session)) {
+        const tail = await Tmux.captureDeadPaneTail(session);
+        await Tmux.killSession(session).catch(() => {});
+        const detail = tail.length > 0 ? `\n${tail}` : ' no output captured';
+        throw new Error(
+          `agent process exited immediately on launch — captured output:${detail}`
+        );
+      }
+    }
   }
 
   async stop(): Promise<void> {

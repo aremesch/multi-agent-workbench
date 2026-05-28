@@ -75,7 +75,11 @@ const { dbMocks, tmuxMocks, pushMocks, MockFifoStreamer } = vi.hoisted(() => {
         resizeWindow: vi.fn<(session: string, cols: number, rows: number) => Promise<void>>(
           async () => undefined
         ),
-        killSession: vi.fn<(session: string) => Promise<void>>(async () => undefined)
+        killSession: vi.fn<(session: string) => Promise<void>>(async () => undefined),
+        isPaneDead: vi.fn<(session: string) => Promise<boolean>>(async () => false),
+        captureDeadPaneTail: vi.fn<(session: string, lines?: number) => Promise<string>>(
+          async () => ''
+        )
       }
     },
     pushMocks: {
@@ -534,6 +538,69 @@ describe('AgentRuntime', () => {
         reason: 'Permission needed: Bash',
         body: 'ls'
       });
+    });
+  });
+
+  describe('start() pane-alive verification', () => {
+    it('passes through to pipePane when the pane is alive', async () => {
+      tmuxMocks.Tmux.isPaneDead.mockResolvedValue(false);
+      const agent = makeAgent();
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+
+      await rt.start();
+
+      expect(tmuxMocks.Tmux.isPaneDead).toHaveBeenCalled();
+      expect(tmuxMocks.Tmux.pipePane).toHaveBeenCalledWith(
+        'maw-agent-test-1',
+        '/tmp/fifos/fifo-agent-test-1'
+      );
+      // Happy path must NOT capture or kill — those are diagnostic only.
+      expect(tmuxMocks.Tmux.captureDeadPaneTail).not.toHaveBeenCalled();
+      expect(tmuxMocks.Tmux.killSession).not.toHaveBeenCalled();
+    });
+
+    it('throws with captured tail when pane is dead — never reaches pipePane', async () => {
+      tmuxMocks.Tmux.isPaneDead.mockResolvedValue(true);
+      tmuxMocks.Tmux.captureDeadPaneTail.mockResolvedValue(
+        'sh: claude: command not found'
+      );
+      const agent = makeAgent();
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+
+      await expect(rt.start()).rejects.toThrow(
+        /exited immediately on launch.*sh: claude: command not found/s
+      );
+      // Crucially: pipe-pane was never invoked — that opaque "can't find
+      // pane" error stays out of the user-facing message.
+      expect(tmuxMocks.Tmux.pipePane).not.toHaveBeenCalled();
+      // And we kill the (dead-paned) session so it doesn't linger as
+      // garbage on the tmux server.
+      expect(tmuxMocks.Tmux.killSession).toHaveBeenCalledWith('maw-agent-test-1');
+    });
+
+    it('falls back to "no output captured" when the tail is empty', async () => {
+      tmuxMocks.Tmux.isPaneDead.mockResolvedValue(true);
+      tmuxMocks.Tmux.captureDeadPaneTail.mockResolvedValue('');
+      const agent = makeAgent();
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+
+      await expect(rt.start()).rejects.toThrow(/no output captured/);
+    });
+
+    it('catches a late death — pane alive at first probe, dead by the next', async () => {
+      // Reproduces the case where exec lands microseconds AFTER tmux's
+      // new-session returns: first isPaneDead poll sees pane_dead=0, a
+      // few ms later the CLI exits and the next poll sees =1.
+      tmuxMocks.Tmux.isPaneDead
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
+      tmuxMocks.Tmux.captureDeadPaneTail.mockResolvedValue('exit 1: oom');
+      const agent = makeAgent();
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+
+      await expect(rt.start()).rejects.toThrow(/oom/);
+      expect(tmuxMocks.Tmux.pipePane).not.toHaveBeenCalled();
     });
   });
 

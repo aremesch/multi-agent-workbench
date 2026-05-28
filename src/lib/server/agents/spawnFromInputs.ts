@@ -28,7 +28,8 @@ import {
   getRole,
   insertTask,
   insertWorktree,
-  updateAgentCurrentTask
+  updateAgentCurrentTask,
+  updateWorktreeStatus
 } from '../db/queries.js';
 import type { RepoRow, RoleRow } from '../db/types.js';
 import { resolveSha } from '../git/agentCommits.js';
@@ -418,6 +419,33 @@ export async function performSpawn(
   try {
     await supervisor.spawn(spawnArgs);
   } catch (err) {
+    // The supervisor already deleted the agent row and killed the tmux
+    // session before rethrowing. We still own the worktree (created
+    // above) — roll it back so a retry with the same title doesn't trip
+    // the `titleTaken` guard on the now-vacant slug. Best-effort: a
+    // failure here mustn't mask the original spawn error.
+    if (v.shouldCreateWorktree) {
+      try {
+        await wtm.remove({
+          repoPath: v.repo.path,
+          wtPath: worktreePath,
+          force: true
+        });
+      } catch (rmErr) {
+        console.warn(
+          `[spawnFromInputs] worktree cleanup failed for ${worktreePath} after spawn failure:`,
+          rmErr
+        );
+      }
+    }
+    try {
+      updateWorktreeStatus(worktreeId, 'removed');
+    } catch (dbErr) {
+      console.warn(
+        `[spawnFromInputs] worktree row status update failed for ${worktreeId}:`,
+        dbErr
+      );
+    }
     return {
       ok: false,
       error: { code: 'spawnFailed', message: (err as Error).message }

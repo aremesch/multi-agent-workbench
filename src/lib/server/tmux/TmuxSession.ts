@@ -306,6 +306,97 @@ export class Tmux {
   }
 
   /**
+   * Install the diagnostics knobs that turn a failed spawn from "session
+   * gone, mystery error" into "dead pane we can inspect":
+   *
+   *   1. `set-window-option -g remain-on-exit failed` — when a window's
+   *      command exits with non-zero, the pane stays alive in a "dead"
+   *      state instead of taking the session down with it. The supervisor
+   *      polls `#{pane_dead}` right after `new-session` so it can capture
+   *      the dying CLI's output (e.g. "command not found",
+   *      "ANTHROPIC_API_KEY not set") and surface it in the
+   *      `spawnFailed` error message. Successful (`rc=0`) exits still
+   *      close the pane → session → existing `session-closed` hook fires
+   *      as before, so happy-path exit detection is unchanged.
+   *
+   *   2. Global `pane-died` hook — signals the same
+   *      `maw-exit-<session>` wait-for channel as the `session-closed`
+   *      hook. Needed because with `remain-on-exit failed` an abnormal
+   *      exit no longer fires `session-closed` (the session stays
+   *      alive). The existing exit-watcher (one `wait-for` client per
+   *      live agent) resolves uniformly whether the pane closed
+   *      normally or stayed as a dead pane.
+   *
+   * Idempotent — both calls overwrite without `-a`. Same global-scope
+   * reasoning as `ensureGlobalSessionClosedHook` (the dying session's
+   * own scope is gone by the time hooks fire).
+   */
+  static async ensureSpawnDiagnosticsHooks(): Promise<void> {
+    await execa('tmux', t([
+      'set-option',
+      '-w',
+      '-g',
+      'remain-on-exit',
+      'failed'
+    ]));
+    await execa('tmux', t([
+      'set-hook',
+      '-g',
+      'pane-died',
+      `run-shell -b "tmux -L ${SOCKET} wait-for -S maw-exit-#{hook_session_name}"`
+    ]));
+  }
+
+  /**
+   * True when the pane's command has exited but the pane is still alive
+   * thanks to `remain-on-exit failed`. Also returns true when the session
+   * is gone entirely — gone is dead from the caller's perspective.
+   *
+   * Returns false on any unexpected tmux error so a transient probe
+   * failure doesn't spuriously abort an otherwise-healthy spawn.
+   */
+  static async isPaneDead(session: string): Promise<boolean> {
+    try {
+      const { stdout } = await execa('tmux', t([
+        'display-message',
+        '-t',
+        session,
+        '-p',
+        '#{pane_dead}'
+      ]));
+      return stdout.trim() === '1';
+    } catch (err) {
+      const e = err as ExecaError;
+      const stderr = typeof e.stderr === 'string' ? e.stderr : '';
+      if (/can't find|session not found|no server running/i.test(stderr)) return true;
+      return false;
+    }
+  }
+
+  /**
+   * Captured tail of the (dead) pane's last `lines` rows, trimmed of ANSI
+   * escapes and trailing blanks. Used to surface the agent CLI's last
+   * output in a spawn-failed error message. Best-effort — returns `""` on
+   * any failure rather than throwing.
+   */
+  static async captureDeadPaneTail(session: string, lines = 200): Promise<string> {
+    try {
+      const { stdout } = await execa('tmux', t([
+        'capture-pane',
+        '-t',
+        session,
+        '-p',
+        '-S',
+        String(-Math.abs(lines))
+      ]));
+      // No -e here: we want plain text for an error message, not ANSI.
+      return stdout.replace(/\s+$/g, '');
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * The wait-for channel name the global session-closed hook signals for a
    * given tmux session. Callers block on this via `spawnWaitForChannel` to
    * get event-driven exit detection. Keep in sync with the hook command in

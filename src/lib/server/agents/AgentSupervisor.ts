@@ -12,6 +12,7 @@ import { AgentRuntime, agentDisplayName } from './AgentRuntime.js';
 import { AdapterRegistry } from './adapters/AdapterRegistry.js';
 import type { AgentRow } from '../db/types.js';
 import {
+  deleteAgent,
   getAgent,
   getRepo,
   getRole,
@@ -199,6 +200,9 @@ export class AgentSupervisor {
     Tmux.ensureGlobalSessionClosedHook().catch((err) => {
       console.warn(`[AgentSupervisor] set-hook failed (hook is on -g, one attempt per agent start — reap is fallback):`, err);
     });
+    Tmux.ensureSpawnDiagnosticsHooks().catch((err) => {
+      console.warn(`[AgentSupervisor] spawn-diagnostics hook re-assert failed:`, err);
+    });
     const channel = Tmux.exitChannel(session);
     const proc = Tmux.spawnWaitForChannel(channel);
     this.exitWaiters.set(agentId, proc);
@@ -263,6 +267,19 @@ export class AgentSupervisor {
           : '';
       if (/no server running/i.test(stderr) || /no such file or directory/i.test(stderr)) return;
       console.warn('[AgentSupervisor] ensure global session-closed hook failed:', err);
+    });
+
+    // Install the spawn-diagnostics knobs (remain-on-exit failed +
+    // pane-died hook) so a CLI that dies on launch leaves a dead pane
+    // we can capture from. Same no-server-yet tolerance as the
+    // session-closed hook install above.
+    await Tmux.ensureSpawnDiagnosticsHooks().catch((err) => {
+      const stderr =
+        typeof (err as { stderr?: unknown })?.stderr === 'string'
+          ? ((err as { stderr: string }).stderr)
+          : '';
+      if (/no server running/i.test(stderr) || /no such file or directory/i.test(stderr)) return;
+      console.warn('[AgentSupervisor] ensure spawn-diagnostics hooks failed:', err);
     });
 
     const liveSessions = new Set(await Tmux.listMawSessions());
@@ -713,7 +730,24 @@ export class AgentSupervisor {
     const row = getAgent(agentId)!;
     const runtime = new AgentRuntime(row, adapter, cfg.fifoDir);
     this.wireAlertBus(runtime);
-    await runtime.start();
+    try {
+      await runtime.start();
+    } catch (err) {
+      // The pane-alive check inside runtime.start threw — the agent CLI
+      // exited before pipe-pane could attach. Roll the agent row back so
+      // it doesn't sit at status='spawning' forever (no exit watcher
+      // would ever fire for it), tear down the (possibly-still-alive
+      // dead) session, and rethrow so spawnFromInputs sees the error and
+      // can roll back the worktree too. The captured CLI tail rides on
+      // err.message.
+      await Tmux.killSession(tmuxSession).catch(() => {});
+      try {
+        deleteAgent(agentId);
+      } catch (dbErr) {
+        console.error(`[AgentSupervisor] failed to delete agent row ${agentId} after spawn failure:`, dbErr);
+      }
+      throw err;
+    }
     this.runtimes.set(agentId, runtime);
     this.startExitWatcher(agentId, tmuxSession);
 
