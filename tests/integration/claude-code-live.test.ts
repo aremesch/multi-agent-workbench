@@ -21,8 +21,14 @@
  * Run with: `pnpm test:integration` (or `pnpm test --project=integration`).
  */
 
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync
+} from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ulid } from 'ulid';
@@ -43,6 +49,22 @@ import {
   clearAllTables,
   openMemoryDb
 } from '../unit/helpers/db.js';
+
+// Per-pid tmux socket name — Tmux module reads MAW_TMUX_SOCKET at
+// module-load time. `vi.hoisted` is the vitest-supported escape hatch
+// that runs BEFORE the static `import` of TmuxSession below, so the
+// `SOCKET = process.env.MAW_TMUX_SOCKET ?? 'maw'` line in
+// src/lib/server/tmux/TmuxSession.ts picks this value up instead of
+// landing on the production `-L maw` socket. Without this isolation
+// the test (a) spawns claude into the production tmux server and
+// (b) `afterEach` mass-kills every `maw-agent-*` session on it,
+// including live production agents. See
+// docs/plans/v0.3-mass-agent-death-3-pnpm-test-integration-kills-production-ag.md.
+const { TEST_TMUX_SOCKET } = vi.hoisted(() => {
+  const sock = `maw-test-${process.pid}`;
+  process.env.MAW_TMUX_SOCKET = sock;
+  return { TEST_TMUX_SOCKET: sock };
+});
 
 let db: Database.Database | null = null;
 
@@ -99,8 +121,51 @@ const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 
 let scratchDir = '';
 let fifoDir = '';
+let claudeConfigDir = '';
+
+/**
+ * Sessions THIS test spawned, tracked so `afterEach` only kills what it
+ * owns (Layer D in the plan). The wide-net "list every `maw-agent-*` on
+ * the socket and kill it" pattern was the second kill mechanism behind
+ * mass-death incident #3 — we now never list, only iterate this set.
+ */
+const sessionsCreated = new Set<string>();
 
 beforeAll(() => {
+  // Layer C — refuse to run on a host that's actively running maw.
+  // Closing layers A + B should be sufficient, but a third backstop
+  // makes a regression instantly visible (loud throw) instead of
+  // silently doing harm.
+  const svc = execaSync('systemctl', ['--user', 'is-active', 'maw.service'], {
+    reject: false
+  });
+  if (svc.stdout?.trim() === 'active') {
+    throw new Error(
+      'Refusing to run claude-code-live integration test on a host with ' +
+        'maw.service active. The test spawns a real `claude` and would race ' +
+        'against the production server. See ' +
+        'docs/plans/v0.3-mass-agent-death-3-pnpm-test-integration-kills-production-ag.md.'
+    );
+  }
+  // Belt-and-suspenders: even without systemd (dev macOS), refuse if any
+  // `maw-agent-*` tmux session is alive on the production socket. Catches
+  // a manually-started maw or a stale agent left running.
+  const list = execaSync(
+    'tmux',
+    ['-L', 'maw', 'list-sessions', '-F', '#{session_name}'],
+    { reject: false }
+  );
+  const live = (list.stdout ?? '')
+    .split('\n')
+    .filter((s) => s.startsWith('maw-agent-'));
+  if (live.length > 0) {
+    throw new Error(
+      `Refusing to run claude-code-live integration test: ${live.length} ` +
+        `production maw-agent-* tmux session(s) detected on -L maw. See ` +
+        `docs/plans/v0.3-mass-agent-death-3-pnpm-test-integration-kills-production-ag.md.`
+    );
+  }
+
   db = openMemoryDb();
 });
 
@@ -113,22 +178,23 @@ beforeEach(() => {
   if (db) clearAllTables(db);
   scratchDir = mkdtempSync(join(tmpdir(), 'maw-claude-live-'));
   fifoDir = mkdtempSync(join(tmpdir(), 'maw-claude-fifos-'));
+  // Layer A — per-test CLAUDE_CONFIG_DIR. The spawned `claude` reads and
+  // rewrites `<claudeConfigDir>/.claude.json` instead of the host's
+  // `~/.claude.json`; the user-global file is untouched and any
+  // co-running claude-code agent on the host stays alive across the
+  // atomic rename.
+  claudeConfigDir = mkdtempSync(join(tmpdir(), 'maw-claude-cfg-'));
+  seedClaudeConfigDir(claudeConfigDir);
 });
 
 afterEach(async () => {
-  // Defensive: kill any stray maw-agent-* tmux sessions and clean up
-  // the scratch + fifo dirs even if the test itself errored.
-  try {
-    const list = await execa('tmux', ['-L', 'maw', 'list-sessions', '-F', '#{session_name}'], {
-      reject: false
-    });
-    const sessions = (list.stdout ?? '').split('\n').filter((s) => s.startsWith('maw-agent-'));
-    for (const s of sessions) {
-      await Tmux.killSession(s).catch(() => {});
-    }
-  } catch {
-    /* ignore */
+  // Layer D — track-and-kill: only sessions THIS test spawned. Never
+  // call `tmux list-sessions` and prefix-filter (the wide-net pattern
+  // that killed production agents in incident #3).
+  for (const session of sessionsCreated) {
+    await Tmux.killSession(session).catch(() => {});
   }
+  sessionsCreated.clear();
   try {
     rmSync(scratchDir, { recursive: true, force: true });
   } catch {
@@ -139,7 +205,65 @@ afterEach(async () => {
   } catch {
     /* ignore */
   }
+  try {
+    // `rmSync` with `force: true` removes symlinks without following them,
+    // so the user-global `~/.claude/plugins`, `~/.claude/plans`, and
+    // `~/.claude/.credentials.json` we symlinked into the temp dir are
+    // safe — only the link itself is unlinked.
+    rmSync(claudeConfigDir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 });
+
+/**
+ * Inline-seed the per-test `CLAUDE_CONFIG_DIR` so the spawned `claude`
+ * inherits the dev's onboarding + auth state (and skips the subscription
+ * prompt) without ever writing back to the user-global `~/.claude*`.
+ *
+ * Mirrors the COPY-vs-SYMLINK split in
+ * [src/lib/server/agents/claudeConfigDir.ts](../../src/lib/server/agents/claudeConfigDir.ts):
+ *  - COPY the small writable state files (`.claude.json`, `CLAUDE.md`,
+ *    `settings.json`) so the test claude has its own mutable copy.
+ *  - SYMLINK `.credentials.json` (OAuth tokens; coherent refresh across
+ *    spawns) plus `plugins/` and `plans/` (read-mostly shared).
+ *
+ * Errors are non-fatal: missing source means the test claude falls back
+ * to whatever its own bootstrap finds. The dev whose `claude` has never
+ * been logged in won't hit this code path anyway (the
+ * `claudeAvailable()` gate has already skipped the test).
+ */
+function seedClaudeConfigDir(dir: string): void {
+  const home = homedir();
+  const copies: Array<[string, string]> = [
+    ['.claude.json', '.claude.json'],
+    ['.claude/CLAUDE.md', 'CLAUDE.md'],
+    ['.claude/settings.json', 'settings.json']
+  ];
+  for (const [src, dest] of copies) {
+    const srcAbs = join(home, src);
+    if (!existsSync(srcAbs)) continue;
+    try {
+      copyFileSync(srcAbs, join(dir, dest));
+    } catch {
+      /* best-effort */
+    }
+  }
+  const symlinks: Array<[string, string]> = [
+    ['.claude/.credentials.json', '.credentials.json'],
+    ['.claude/plugins', 'plugins'],
+    ['.claude/plans', 'plans']
+  ];
+  for (const [src, dest] of symlinks) {
+    const srcAbs = join(home, src);
+    if (!existsSync(srcAbs)) continue;
+    try {
+      symlinkSync(srcAbs, join(dir, dest));
+    } catch {
+      /* best-effort */
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers — `loadClaudeCodeAdapter` is shared with the synthetic suite
@@ -297,9 +421,17 @@ async function startRuntime(
 
   // Drop empty env values so we don't shadow `claude`'s own
   // auth lookup with `ANTHROPIC_API_KEY=""`.
-  const cleanEnv = Object.fromEntries(
+  const cleanEnv: Record<string, string> = Object.fromEntries(
     Object.entries(spec.env).filter(([, v]) => v.length > 0)
   );
+
+  // Layer A — point this spawn's `claude` at the per-test config dir.
+  // The adapter JSONC only carries `ANTHROPIC_API_KEY` in `spawn.env`,
+  // so production `AgentSupervisor.spawn` adds `CLAUDE_CONFIG_DIR` on
+  // top of the spec; mirror that here. Without this, the spawned
+  // claude rewrites the host's `~/.claude.json` and kills every
+  // co-running claude-code agent (mass-death incident #3).
+  cleanEnv.CLAUDE_CONFIG_DIR = claudeConfigDir;
 
   // Tmux session MUST exist before runtime.start(): start() pipes the
   // pane into the FIFO, which fails if the session isn't there yet.
@@ -312,6 +444,10 @@ async function startRuntime(
     cols: 120,
     rows: 32
   });
+  // Track for `afterEach` track-and-kill (Layer D). Recorded immediately
+  // after a successful `newSession` so a throw before this point doesn't
+  // leave us trying to kill a session that never started.
+  sessionsCreated.add(agentRow.tmux_session);
 
   await runtime.start();
 
@@ -364,7 +500,7 @@ async function waitFor(
 async function dismissWorkspaceTrustIfShown(session: string): Promise<void> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    const pane = await execa('tmux', ['-L', 'maw', 'capture-pane', '-t', session, '-p'], {
+    const pane = await execa('tmux', ['-L', TEST_TMUX_SOCKET, 'capture-pane', '-t', session, '-p'], {
       reject: false
     });
     const text = pane.stdout ?? '';
@@ -474,7 +610,7 @@ describe('claude-code live lifecycle (real subprocess + Haiku)', () => {
           async () => {
             const pane = await execa(
               'tmux',
-              ['-L', 'maw', 'capture-pane', '-t', seed.agentRow.tmux_session, '-p'],
+              ['-L', TEST_TMUX_SOCKET, 'capture-pane', '-t', seed.agentRow.tmux_session, '-p'],
               { reject: false }
             );
             return /[>❯]/.test(pane.stdout ?? '');
@@ -485,7 +621,7 @@ describe('claude-code live lifecycle (real subprocess + Haiku)', () => {
       } catch (err) {
         const pane = await execa(
           'tmux',
-          ['-L', 'maw', 'capture-pane', '-t', seed.agentRow.tmux_session, '-p', '-S', '-200'],
+          ['-L', TEST_TMUX_SOCKET, 'capture-pane', '-t', seed.agentRow.tmux_session, '-p', '-S', '-200'],
           { reject: false }
         );
         // eslint-disable-next-line no-console
@@ -504,7 +640,7 @@ describe('claude-code live lifecycle (real subprocess + Haiku)', () => {
       //    cleanly + the pane is still alive afterwards.
       const before = await execa(
         'tmux',
-        ['-L', 'maw', 'capture-pane', '-t', seed.agentRow.tmux_session, '-p'],
+        ['-L', TEST_TMUX_SOCKET, 'capture-pane', '-t', seed.agentRow.tmux_session, '-p'],
         { reject: false }
       );
       // ESC[A ESC[A ESC[B = up, up, down — exact bytes the production
@@ -513,7 +649,7 @@ describe('claude-code live lifecycle (real subprocess + Haiku)', () => {
       await new Promise((r) => setTimeout(r, 400));
       const after = await execa(
         'tmux',
-        ['-L', 'maw', 'capture-pane', '-t', seed.agentRow.tmux_session, '-p'],
+        ['-L', TEST_TMUX_SOCKET, 'capture-pane', '-t', seed.agentRow.tmux_session, '-p'],
         { reject: false }
       );
       expect(before.exitCode).toBe(0);
