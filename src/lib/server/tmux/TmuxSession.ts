@@ -16,8 +16,16 @@ export const SESSION_PREFIX = 'maw-agent-';
  * — critically — lives in its own user systemd unit (`maw-tmux.service`,
  * shipped under `deploy/systemd/`) outside maw.service's cgroup, so
  * `systemctl --user restart maw` does not take the server down with it.
+ *
+ * `MAW_TMUX_SOCKET` overrides the default ONLY for tests that need
+ * isolation from a co-running production server (the live integration
+ * test runs claude in tmux + writes shared state). Production MUST NOT
+ * set this env var: maw-tmux.service serves `-L maw`, and changing the
+ * socket name in maw.service's env would orphan every live agent on
+ * the next reattach. See
+ * `docs/plans/v0.3-mass-agent-death-3-pnpm-test-integration-kills-production-ag.md`.
  */
-const SOCKET = 'maw';
+const SOCKET = process.env.MAW_TMUX_SOCKET ?? 'maw';
 
 function t(args: string[]): string[] {
   return ['-L', SOCKET, ...args];
