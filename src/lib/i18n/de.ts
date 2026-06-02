@@ -272,6 +272,9 @@ const de: Partial<Record<TranslationKey, string>> = {
   'projects.newRepo': 'Neues Repo',
   'projects.noRepos': 'Noch keine Repos angeh\u00e4ngt.',
   'projects.backToDashboard': '\u2190 Zur\u00fcck zum Dashboard',
+  'projects.workspaceRoot': 'Workspace:',
+  'projects.addFromWorkspace': 'Repos aus Workspace-Ordner hinzuf\u00fcgen',
+  'projects.addMoreFromWorkspace': 'Weitere Repos aus Workspace-Ordner hinzuf\u00fcgen',
 
   'newProject.title': 'Neues Projekt',
 
@@ -280,6 +283,20 @@ const de: Partial<Record<TranslationKey, string>> = {
   'newRepo.attachDesc': 'Existierendes Git-Arbeitsverzeichnis an {projectName} anh\u00e4ngen.',
   'newRepo.absolutePath': 'Absoluter Pfad',
   'newRepo.attachRepo': 'Repo anh\u00e4ngen',
+
+  // \u2500\u2500 Repos / Stapelimport aus einem Workspace-Ordner \u2500\u2500
+  'import.title': 'Repos aus Workspace-Ordner hinzuf\u00fcgen',
+  'import.desc': 'W\u00e4hle einen \u00fcbergeordneten Ordner und h\u00e4nge dessen Geschwister-Git-Repos in einem Schritt an {projectName} an.',
+  'import.chooseFolder': 'Workspace-Ordner w\u00e4hlen\u2026',
+  'import.changeFolder': 'Ordner \u00e4ndern\u2026',
+  'import.discovered': '{count} Git-Repos gefunden',
+  'import.alreadyAdded': 'bereits hinzugef\u00fcgt',
+  'import.selectAll': 'Alle ausw\u00e4hlen',
+  'import.attachSelected': 'Auswahl anh\u00e4ngen ({count})',
+  'import.importedCount': '{count} Repos importiert.',
+  'import.someFailed': 'Einige Repos konnten nicht importiert werden:',
+  'import.noGitChildren': 'Direkt unter diesem Ordner wurden keine Git-Repos gefunden.',
+  'import.error.noneSelected': 'W\u00e4hle mindestens ein Repo zum Importieren aus.',
 
   // ── Archive ──────────────────────────────────────────────────────
   'archive.title': 'Archiv',

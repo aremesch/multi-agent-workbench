@@ -132,6 +132,34 @@ export function listDirectory(
   };
 }
 
+export interface GitRepoChild {
+  /** Directory name of the child repo. */
+  name: string;
+  /** Absolute path of the child repo. */
+  path: string;
+}
+
+/**
+ * List the immediate child directories of `requested` that are git repos
+ * (contain a `.git` entry), with their absolute paths. Backs the polyrepo
+ * "batch import from a workspace folder" flow.
+ *
+ * Built on {@link listDirectory}, so it inherits the same sandbox clamping and
+ * symlink-escape protection — `requested` must resolve inside `root`. Returns
+ * the resolved parent path plus only the git-repo children, sorted (the sort
+ * comes from listDirectory).
+ */
+export function listGitRepoChildren(
+  requested: string,
+  root: string
+): { path: string; children: GitRepoChild[] } {
+  const result = listDirectory(requested, root);
+  const children: GitRepoChild[] = result.entries
+    .filter((e) => e.isGitRepo)
+    .map((e) => ({ name: e.name, path: join(result.path, e.name) }));
+  return { path: result.path, children };
+}
+
 /**
  * Name of a directory-to-be-created. Must match the allowlist —
  * no path separators, no `.`/`..`, no NUL, no leading/trailing

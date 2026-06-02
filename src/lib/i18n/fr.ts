@@ -253,6 +253,9 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'projects.newRepo': 'Nouveau d\u00e9p\u00f4t',
   'projects.noRepos': 'Aucun d\u00e9p\u00f4t rattach\u00e9 pour le moment.',
   'projects.backToDashboard': '\u2190 Retour au tableau de bord',
+  'projects.workspaceRoot': 'Espace de travail :',
+  'projects.addFromWorkspace': 'Ajouter des d\u00e9p\u00f4ts depuis le dossier de l\u2019espace de travail',
+  'projects.addMoreFromWorkspace': 'Ajouter d\u2019autres d\u00e9p\u00f4ts depuis le dossier de l\u2019espace de travail',
 
   'newProject.title': 'Nouveau projet',
 
@@ -261,6 +264,20 @@ const fr: Partial<Record<TranslationKey, string>> = {
   'newRepo.attachDesc': 'Rattacher un r\u00e9pertoire de travail Git existant \u00e0 {projectName}.',
   'newRepo.absolutePath': 'Chemin absolu',
   'newRepo.attachRepo': 'Rattacher le d\u00e9p\u00f4t',
+
+  // \u2500\u2500 D\u00e9p\u00f4ts / import par lot depuis un dossier d\u2019espace de travail \u2500\u2500
+  'import.title': 'Ajouter des d\u00e9p\u00f4ts depuis le dossier de l\u2019espace de travail',
+  'import.desc': 'Choisissez un dossier parent et rattachez ses d\u00e9p\u00f4ts Git fr\u00e8res \u00e0 {projectName} en une seule fois.',
+  'import.chooseFolder': 'Choisir le dossier de l\u2019espace de travail\u2026',
+  'import.changeFolder': 'Changer de dossier\u2026',
+  'import.discovered': '{count} d\u00e9p\u00f4ts Git trouv\u00e9s',
+  'import.alreadyAdded': 'd\u00e9j\u00e0 ajout\u00e9',
+  'import.selectAll': 'Tout s\u00e9lectionner',
+  'import.attachSelected': 'Rattacher la s\u00e9lection ({count})',
+  'import.importedCount': '{count} d\u00e9p\u00f4ts import\u00e9s.',
+  'import.someFailed': 'Certains d\u00e9p\u00f4ts n\u2019ont pas pu \u00eatre import\u00e9s :',
+  'import.noGitChildren': 'Aucun d\u00e9p\u00f4t Git trouv\u00e9 directement sous ce dossier.',
+  'import.error.noneSelected': 'S\u00e9lectionnez au moins un d\u00e9p\u00f4t \u00e0 importer.',
 
   // ── Archive ──────────────────────────────────────────────────────
   'archive.title': 'Archives',

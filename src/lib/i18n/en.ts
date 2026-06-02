@@ -293,6 +293,9 @@ const en = {
   'projects.newRepo': 'New repo',
   'projects.noRepos': 'No repos attached yet.',
   'projects.backToDashboard': '\u2190 Back to dashboard',
+  'projects.workspaceRoot': 'Workspace:',
+  'projects.addFromWorkspace': 'Add repos from workspace folder',
+  'projects.addMoreFromWorkspace': 'Add more repos from workspace folder',
 
   // ── New project ──────────────────────────────────────────────────
   'newProject.title': 'New project',
@@ -302,6 +305,20 @@ const en = {
   'newRepo.attachDesc': 'Attach an existing git working tree to {projectName}.',
   'newRepo.absolutePath': 'Absolute path',
   'newRepo.attachRepo': 'Attach repo',
+
+  // ── Repos / batch import from a workspace folder ──
+  'import.title': 'Add repos from workspace folder',
+  'import.desc': 'Pick a parent folder and attach its sibling git repos to {projectName} in one go.',
+  'import.chooseFolder': 'Choose workspace folder…',
+  'import.changeFolder': 'Change folder…',
+  'import.discovered': '{count} git repos found',
+  'import.alreadyAdded': 'already added',
+  'import.selectAll': 'Select all',
+  'import.attachSelected': 'Attach selected ({count})',
+  'import.importedCount': 'Imported {count} repos.',
+  'import.someFailed': 'Some repos could not be imported:',
+  'import.noGitChildren': 'No git repos found directly under this folder.',
+  'import.error.noneSelected': 'Select at least one repo to import.',
 
   // ── Archive ──────────────────────────────────────────────────────
   'archive.title': 'Archive',

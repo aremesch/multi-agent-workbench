@@ -17,6 +17,19 @@ Two driving goals:
 2. **Daily browser workbench** — log in once, resume seamlessly, see every
    agent's live terminal side by side.
 
+### Projects, repos & polyrepo workspaces
+
+A **Project** groups one or more **Repos** (each an absolute path to a git
+working tree). A project may optionally record a **workspace root**
+(`projects.workspace_root`): the shared parent directory of a *polyrepo*
+layout — several independent git repos living as siblings under one folder
+(NOT a monorepo). Repos are batch-imported from a workspace folder via
+`projects/[id]/repos/import` (pick the parent, multi-select the discovered
+git children); the first successful import sets `workspace_root`. The
+single add-repo flow (`repos/new`) still works unchanged. Cross-repo agent
+visibility / shared worktrees are intentionally out of scope — agents still
+spawn per-repo.
+
 ## Guidelines
 
 - **🚨 NEVER modify or "fix" shadcn-svelte components.** Files under

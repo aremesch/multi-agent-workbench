@@ -63,6 +63,9 @@ export interface ProjectRow {
   user_id: string;
   name: string;
   default_branch: string;
+  /** Absolute path of the shared parent dir for a polyrepo workspace, or null.
+   *  Set lazily on the first batch import from a workspace folder. */
+  workspace_root: string | null;
   created_at: number;
   updated_at: number;
 }

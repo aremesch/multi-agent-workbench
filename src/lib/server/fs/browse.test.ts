@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { BrowseError, createDirectory, listDirectory } from './browse.js';
+import {
+  BrowseError,
+  createDirectory,
+  listDirectory,
+  listGitRepoChildren
+} from './browse.js';
 
 let root: string;
 let outside: string;
@@ -191,6 +196,43 @@ describe('createDirectory', () => {
       throw new Error('should have thrown');
     } catch (err) {
       expect((err as BrowseError).code).toBe('not_found');
+    }
+  });
+});
+
+describe('listGitRepoChildren', () => {
+  it('returns only git-repo children with absolute paths', () => {
+    const a = join(root, 'alpha');
+    const b = join(root, 'bravo');
+    mkdirSync(a);
+    mkdirSync(join(a, '.git'));
+    mkdirSync(b);
+    mkdirSync(join(b, '.git'));
+    mkdirSync(join(root, 'plain')); // dir, no .git
+    writeFileSync(join(root, 'note.txt'), 'x'); // file
+
+    const res = listGitRepoChildren(root, root);
+    expect(res.path).toBe(root);
+    expect(res.children).toEqual([
+      { name: 'alpha', path: a },
+      { name: 'bravo', path: b }
+    ]);
+  });
+
+  it('returns an empty list when no child is a git repo', () => {
+    mkdirSync(join(root, 'one'));
+    mkdirSync(join(root, 'two'));
+
+    const res = listGitRepoChildren(root, root);
+    expect(res.children).toEqual([]);
+  });
+
+  it('enforces the sandbox root (rejects paths outside)', () => {
+    try {
+      listGitRepoChildren(outside, root);
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as BrowseError).code).toBe('outside_root');
     }
   });
 });

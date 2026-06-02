@@ -210,6 +210,22 @@ export function insertProject(row: {
   ).run(row.id, row.user_id, row.name, row.default_branch, ts, ts);
 }
 
+/**
+ * Set a project's polyrepo workspace root (the shared parent dir whose sibling
+ * repos were batch-imported). Owner-scoped. Returns true when a row matched —
+ * false means the project doesn't exist or isn't owned by the caller.
+ */
+export function setProjectWorkspaceRoot(
+  id: string,
+  userId: string,
+  workspace_root: string
+): boolean {
+  const res = prep<[string, number, string, string]>(
+    'UPDATE projects SET workspace_root = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+  ).run(workspace_root, now(), id, userId);
+  return res.changes > 0;
+}
+
 // --------------- repos ---------------
 
 export function listReposForProject(projectId: string): RepoRow[] {

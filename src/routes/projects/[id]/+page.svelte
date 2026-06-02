@@ -10,10 +10,23 @@
   <span class="muted">{t('projects.defaultBranch', { branch: data.project.default_branch })}</span>
 </header>
 
+{#if data.project.workspace_root}
+  <p class="workspace muted">
+    {t('projects.workspaceRoot')} <code>{data.project.workspace_root}</code>
+  </p>
+{/if}
+
 <section>
   <div class="section-head">
     <h2>{t('projects.repositories', { count: String(data.repos.length) })}</h2>
-    <a href={`/projects/${data.project.id}/repos/new`} class="btn">{t('projects.newRepo')}</a>
+    <div class="cta">
+      <a href={`/projects/${data.project.id}/repos/import`} class="btn">
+        {data.project.workspace_root
+          ? t('projects.addMoreFromWorkspace')
+          : t('projects.addFromWorkspace')}
+      </a>
+      <a href={`/projects/${data.project.id}/repos/new`} class="btn secondary">{t('projects.newRepo')}</a>
+    </div>
   </div>
   {#if data.repos.length === 0}
     <p class="muted">{t('projects.noRepos')}</p>
@@ -64,6 +77,14 @@
   ul {
     padding-left: 1.25rem;
   }
+  .workspace {
+    margin: 0.5rem 0 0;
+  }
+  .cta {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
   .btn {
     padding: 0.4rem 0.75rem;
     border-radius: 0.375rem;
@@ -71,6 +92,10 @@
     color: #fff;
     text-decoration: none;
     font-size: 0.85rem;
+  }
+  .btn.secondary {
+    background: #1f2937;
+    color: #e5e7eb;
   }
   a {
     color: #93c5fd;

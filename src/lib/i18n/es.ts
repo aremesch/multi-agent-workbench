@@ -253,6 +253,9 @@ const es: Partial<Record<TranslationKey, string>> = {
   'projects.newRepo': 'Nuevo repositorio',
   'projects.noRepos': 'A\u00fan no hay repositorios adjuntos.',
   'projects.backToDashboard': '\u2190 Volver al panel',
+  'projects.workspaceRoot': 'Espacio de trabajo:',
+  'projects.addFromWorkspace': 'A\u00f1adir repos desde la carpeta del espacio de trabajo',
+  'projects.addMoreFromWorkspace': 'A\u00f1adir m\u00e1s repos desde la carpeta del espacio de trabajo',
 
   'newProject.title': 'Nuevo proyecto',
 
@@ -261,6 +264,20 @@ const es: Partial<Record<TranslationKey, string>> = {
   'newRepo.attachDesc': 'Adjuntar un directorio de trabajo Git existente a {projectName}.',
   'newRepo.absolutePath': 'Ruta absoluta',
   'newRepo.attachRepo': 'Adjuntar repositorio',
+
+  // ── Repos / importación por lotes desde una carpeta de espacio de trabajo ──
+  'import.title': 'Añadir repos desde la carpeta del espacio de trabajo',
+  'import.desc': 'Elige una carpeta principal y adjunta sus repos Git hermanos a {projectName} de una sola vez.',
+  'import.chooseFolder': 'Elegir carpeta del espacio de trabajo…',
+  'import.changeFolder': 'Cambiar carpeta…',
+  'import.discovered': '{count} repos Git encontrados',
+  'import.alreadyAdded': 'ya añadido',
+  'import.selectAll': 'Seleccionar todo',
+  'import.attachSelected': 'Adjuntar seleccionados ({count})',
+  'import.importedCount': '{count} repos importados.',
+  'import.someFailed': 'Algunos repos no se pudieron importar:',
+  'import.noGitChildren': 'No se encontraron repos Git directamente bajo esta carpeta.',
+  'import.error.noneSelected': 'Selecciona al menos un repo para importar.',
 
   // ── Archive ──────────────────────────────────────────────────────
   'archive.title': 'Archivo',
