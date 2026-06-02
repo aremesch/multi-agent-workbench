@@ -686,5 +686,23 @@ describe('ConfigDrivenAdapter', () => {
       const spec = a.buildSpawnSpec(opts);
       expect(spec.env.ANTHROPIC_API_KEY).toBe('sk-abc');
     });
+
+    it('omits CLAUDE_CODE_OAUTH_TOKEN from spec.env when the templated value is empty', () => {
+      // An unset token must not be passed as KEY="" — same set-but-empty
+      // footgun as ANTHROPIC_API_KEY; the empty-skip filter drops it.
+      const a = loadClaudeAdapter();
+      const opts = spawnOpts('plan');
+      opts.env = { CLAUDE_CODE_OAUTH_TOKEN: '' };
+      const spec = a.buildSpawnSpec(opts);
+      expect(spec.env).not.toHaveProperty('CLAUDE_CODE_OAUTH_TOKEN');
+    });
+
+    it('passes CLAUDE_CODE_OAUTH_TOKEN through when the templated value is non-empty', () => {
+      const a = loadClaudeAdapter();
+      const opts = spawnOpts('plan');
+      opts.env = { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-xyz' };
+      const spec = a.buildSpawnSpec(opts);
+      expect(spec.env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-xyz');
+    });
   });
 });

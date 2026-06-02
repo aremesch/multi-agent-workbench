@@ -14,23 +14,24 @@
  * whole tree (`.claude.json`, `projects/`, `sessions/`, `backups/`, …), so
  * the inter-agent race goes away.
  *
+ * Auth note: credentials are NOT seeded here. Spawned agents authenticate
+ * from the `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) env var injected
+ * at spawn time — see docs/plans/fix-login.md. An earlier design symlinked
+ * `.credentials.json` to `~/.claude/`, but claude-code rewrites that file via
+ * `tmp → rename(2)` on every login/refresh, which REPLACES the symlink with a
+ * private regular file: the fresh token gets trapped in one agent's dir, the
+ * shared file goes stale, and later spawns 401 on the rotated refresh token.
+ * A static env token sidesteps the whole file-write/rotation hazard.
+ *
  * Seeding strategy:
  *  - COPY the small writable state files (`.claude.json`, `CLAUDE.md`,
  *    `settings.json`) so each agent has its own independently-mutable copy.
  *    `.claude.json` in particular carries `hasCompletedOnboarding` and the
  *    OAuth account ref — without it the new CLI would launch the
  *    subscription/onboarding flow.
- *  - SYMLINK shared state to `~/.claude/`:
- *      - `.credentials.json` — OAuth tokens. Sharing keeps refresh-token
- *        rotation observable to every agent; copying would strand later
- *        spawns with an already-invalidated refresh token. The file is
- *        small and rarely written, so the multi-writer race surface is
- *        narrow (a single 401 in the losing agent on simultaneous
- *        refresh) — bounded, recoverable, and far smaller than the
- *        copy-per-spawn failure mode it replaces.
- *      - `plugins/`, `plans/` — read-mostly shared dirs so user-installed
- *        plugins and globally-saved plans are visible to the agent
- *        without duplication.
+ *  - SYMLINK shared read-mostly dirs to `~/.claude/`:
+ *      - `plugins/`, `plans/` — so user-installed plugins and globally-saved
+ *        plans are visible to the agent without duplication.
  *
  * Cleanup (`removeAgentClaudeConfigDir`) uses `rm -rf`-style recursive
  * unlink, which removes symlinks WITHOUT following them — the user's
@@ -60,14 +61,13 @@ const SEED_FILES: Array<{ src: string; dest: string }> = [
   { src: '.claude/settings.json', dest: 'settings.json' }
 ];
 
-/** Paths symlinked to the user-global tree — shared across agents by design.
- *  `.credentials.json` is a file (OAuth tokens, rarely rewritten by claude-code
- *  on refresh); `plugins/` and `plans/` are dirs. The symlink loop's
- *  `symlinkSync(..., 'dir')` third arg is a Windows-only disambiguator and is
- *  ignored on POSIX, so a single loop handles both safely on the platforms
- *  MAW targets. */
+/** Dirs symlinked to the user-global tree — shared across agents by design.
+ *  Both are read-mostly. `.credentials.json` is deliberately NOT here: it is
+ *  rewritten via atomic rename on login/refresh, which clobbers the symlink
+ *  and strands later spawns (see header doc); auth comes from the spawn-env
+ *  token instead. The symlink loop's `symlinkSync(..., 'dir')` third arg is a
+ *  Windows-only disambiguator, ignored on the POSIX platforms MAW targets. */
 const SEED_SYMLINKS: Array<{ src: string; dest: string }> = [
-  { src: '.claude/.credentials.json', dest: '.credentials.json' },
   { src: '.claude/plugins', dest: 'plugins' },
   { src: '.claude/plans', dest: 'plans' }
 ];

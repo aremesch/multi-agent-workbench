@@ -40,8 +40,17 @@
     // whatever mode the user picks in the dropdown. The dropdown is the
     // single source of truth for permission posture.
     "optionalArgs": [],
+    // CLAUDE_CODE_OAUTH_TOKEN is the primary auth path: a long-lived
+    // (~1-year) subscription token from `claude setup-token`, read by the
+    // CLI directly as a bearer token. Unlike `.credentials.json` it is never
+    // rewritten on refresh, so it survives the per-agent CLAUDE_CONFIG_DIR
+    // isolation cleanly (see docs/plans/fix-login.md). ANTHROPIC_API_KEY,
+    // when set, takes precedence and switches to Console key-based billing.
+    // The adapter's empty-skip filter drops whichever resolves to "" so an
+    // unset var is never passed as KEY="" (which would 401).
     "env": {
-      "ANTHROPIC_API_KEY": "{{env.ANTHROPIC_API_KEY}}"
+      "ANTHROPIC_API_KEY": "{{env.ANTHROPIC_API_KEY}}",
+      "CLAUDE_CODE_OAUTH_TOKEN": "{{env.CLAUDE_CODE_OAUTH_TOKEN}}"
     },
     // Claude Code v2.x accepts a positional `[prompt]` arg in interactive
     // mode (see `claude --help`: "Usage: claude [options] [command] [prompt]").

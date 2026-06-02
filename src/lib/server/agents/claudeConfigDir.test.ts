@@ -76,12 +76,10 @@ describe('ensureAgentClaudeConfigDir', () => {
     expect(readFileSync(join(dir, '.claude.json'), 'utf8')).toBe('{"onboarded":true}');
     expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8')).toBe('user prefs');
     expect(readFileSync(join(dir, 'settings.json'), 'utf8')).toBe('{"x":1}');
-    // .credentials.json is symlinked, not copied — asserted separately below.
     expect(lstatSync(join(dir, '.claude.json')).isSymbolicLink()).toBe(false);
   });
 
-  it('symlinks .credentials.json, plugins/, and plans/ to the user-global ~/.claude/ versions', () => {
-    writeFileSync(join(homeHolder.home, '.claude', '.credentials.json'), 'auth');
+  it('symlinks plugins/ and plans/ to the user-global ~/.claude/ versions', () => {
     mkdirSync(join(homeHolder.home, '.claude', 'plugins'), { recursive: true });
     mkdirSync(join(homeHolder.home, '.claude', 'plans'), { recursive: true });
     writeFileSync(join(homeHolder.home, '.claude', 'plugins', 'plug.json'), 'plug');
@@ -89,38 +87,27 @@ describe('ensureAgentClaudeConfigDir', () => {
 
     const dir = ensureAgentClaudeConfigDir('01SYM');
 
-    expect(lstatSync(join(dir, '.credentials.json')).isSymbolicLink()).toBe(true);
     expect(lstatSync(join(dir, 'plugins')).isSymbolicLink()).toBe(true);
     expect(lstatSync(join(dir, 'plans')).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(join(dir, '.credentials.json'))).toBe(
-      join(homeHolder.home, '.claude', '.credentials.json')
-    );
     expect(readlinkSync(join(dir, 'plugins'))).toBe(join(homeHolder.home, '.claude', 'plugins'));
     expect(readlinkSync(join(dir, 'plans'))).toBe(join(homeHolder.home, '.claude', 'plans'));
     // Resolving through the symlinks reaches the user-global files.
-    expect(readFileSync(join(dir, '.credentials.json'), 'utf8')).toBe('auth');
     expect(readFileSync(join(dir, 'plugins', 'plug.json'), 'utf8')).toBe('plug');
     expect(readFileSync(join(dir, 'plans', 'plan.md'), 'utf8')).toBe('plan');
   });
 
-  it('shares .credentials.json across agents: a write through one agent\'s link is visible to another', () => {
-    writeFileSync(join(homeHolder.home, '.claude', '.credentials.json'), 'orig');
-    const a = ensureAgentClaudeConfigDir('agent-cred-A');
-    const b = ensureAgentClaudeConfigDir('agent-cred-B');
-
-    // Simulate claude-code refreshing tokens inside agent A's config dir.
-    writeFileSync(join(a, '.credentials.json'), 'refreshed');
-
-    // The single-source-of-truth property: both the user-global file and
-    // agent B's link must observe the refresh.
-    expect(readFileSync(join(homeHolder.home, '.claude', '.credentials.json'), 'utf8')).toBe('refreshed');
-    expect(readFileSync(join(b, '.credentials.json'), 'utf8')).toBe('refreshed');
+  it('never seeds .credentials.json — auth comes from the spawn-env token, not a file', () => {
+    // Even with a user-global credentials file present, the per-agent dir must
+    // get neither a copy nor a symlink: claude-code's atomic-rename writes
+    // clobber any link and strand later spawns (see docs/plans/fix-login.md).
+    writeFileSync(join(homeHolder.home, '.claude', '.credentials.json'), 'auth');
+    const dir = ensureAgentClaudeConfigDir('01NOCRED');
+    expect(existsSync(join(dir, '.credentials.json'))).toBe(false);
   });
 
   it('does not create symlinks when their source paths do not exist in ~/.claude', () => {
-    // Only the fake .claude dir exists — no .credentials.json, no plugins, no plans.
+    // Only the fake .claude dir exists — no plugins, no plans.
     const dir = ensureAgentClaudeConfigDir('01NOPLG');
-    expect(existsSync(join(dir, '.credentials.json'))).toBe(false);
     expect(existsSync(join(dir, 'plugins'))).toBe(false);
     expect(existsSync(join(dir, 'plans'))).toBe(false);
   });
@@ -192,8 +179,7 @@ describe('removeAgentClaudeConfigDir', () => {
     expect(() => removeAgentClaudeConfigDir('does-not-exist')).not.toThrow();
   });
 
-  it('unlinks .credentials.json, plugins/, and plans/ symlinks without deleting the user-global targets', () => {
-    writeFileSync(join(homeHolder.home, '.claude', '.credentials.json'), 'auth-sentinel');
+  it('unlinks plugins/ and plans/ symlinks without deleting the user-global targets', () => {
     mkdirSync(join(homeHolder.home, '.claude', 'plugins'), { recursive: true });
     mkdirSync(join(homeHolder.home, '.claude', 'plans'), { recursive: true });
     writeFileSync(join(homeHolder.home, '.claude', 'plugins', 'keep-me'), 'sentinel');
@@ -204,7 +190,6 @@ describe('removeAgentClaudeConfigDir', () => {
 
     // The user-global tree must be untouched — recursive rm on the per-agent
     // dir would be catastrophic if it followed the symlinks.
-    expect(readFileSync(join(homeHolder.home, '.claude', '.credentials.json'), 'utf8')).toBe('auth-sentinel');
     expect(readFileSync(join(homeHolder.home, '.claude', 'plugins', 'keep-me'), 'utf8')).toBe('sentinel');
     expect(readFileSync(join(homeHolder.home, '.claude', 'plans', 'keep-me'), 'utf8')).toBe('sentinel');
   });

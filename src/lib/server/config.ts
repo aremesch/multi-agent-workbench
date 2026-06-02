@@ -54,6 +54,7 @@ export interface MawConfig {
   vapidPrivateKey: string;
   vapidSubject: string;
   anthropicApiKey: string;
+  claudeCodeOauthToken: string;
   terminalLogBudgetBytes: number;
   trustProxy: boolean;
   authLogPath: string;
@@ -100,6 +101,7 @@ export function getConfig(): MawConfig {
     vapidPrivateKey: env.MAW_VAPID_PRIVATE_KEY ?? '',
     vapidSubject: env.MAW_VAPID_SUBJECT ?? 'mailto:dev@example.com',
     anthropicApiKey: env.ANTHROPIC_API_KEY ?? '',
+    claudeCodeOauthToken: env.CLAUDE_CODE_OAUTH_TOKEN ?? '',
     terminalLogBudgetBytes: Number(env.MAW_TERMINAL_LOG_BYTES ?? 4 * 1024 * 1024),
     trustProxy: env.MAW_TRUST_PROXY === '1',
     authLogPath:
