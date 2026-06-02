@@ -24,6 +24,18 @@ import {
 } from './src/lib/server/preview/proxy.ts';
 
 async function main() {
+  // Process-wide crash backstop. MAW is a long-running supervisor babysitting
+  // many agents; one stray unhandled error (e.g. an EventEmitter 'error' with
+  // no listener) must never take down every agent's live stream. Log loudly —
+  // never swallow silently — and keep running. Registered before bootstrap so
+  // it also covers startup.
+  process.on('uncaughtException', (err) => {
+    console.error('[maw] uncaughtException (process kept alive):', err);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[maw] unhandledRejection (process kept alive):', reason);
+  });
+
   await bootstrap();
 
   const port = Number(process.env.PORT ?? 3000);

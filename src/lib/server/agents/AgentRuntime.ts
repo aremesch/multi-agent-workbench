@@ -80,6 +80,18 @@ export interface AgentRuntimeEvents {
  */
 const HOOK_PRIORITY_WINDOW_MS = 30_000;
 
+/**
+ * Minimum gap between automatic FIFO re-streams. The FIFO reader can error
+ * spontaneously when the fd goes bad under it (most often the dedicated
+ * `maw-tmux` server restarting). We recover by recreating the FIFO +
+ * pipe-pane, but if the freshly-rebuilt stream errors again instantly we must
+ * NOT spin a tight loop — so a second auto re-stream within this window is
+ * suppressed and the agent is left with a stopped stream (it recovers on the
+ * next user reattach). Genuinely separate incidents minutes apart still
+ * recover, since each is well outside the window.
+ */
+const RESTREAM_COOLDOWN_MS = 10_000;
+
 export class AgentRuntime extends EventEmitter {
   private seq: number;
   private inputQueue: Promise<void> = Promise.resolve();
@@ -102,6 +114,10 @@ export class AgentRuntime extends EventEmitter {
    * untouched.
    */
   private lastHookAt = 0;
+  /** Re-entrancy guard so concurrent FIFO errors don't stack re-streams. */
+  private restreamInFlight = false;
+  /** Epoch ms of the last auto re-stream attempt; gates `RESTREAM_COOLDOWN_MS`. */
+  private lastRestreamAt = 0;
 
   constructor(
     public readonly agent: AgentRow,
@@ -111,6 +127,13 @@ export class AgentRuntime extends EventEmitter {
     super();
     this.seq = getLatestTerminalSeq(agent.id);
     this.fifo = new FifoStreamer({ fifoDir, agentId: agent.id });
+    // The FIFO reader re-emits underlying ReadStream errors as its own
+    // 'error' event. Without a listener here, Node treats the emit as fatal
+    // and crashes the whole process — taking down every agent's live stream.
+    // Handle it gracefully and try to recover this one agent's stream.
+    this.fifo.on('error', (err) => {
+      void this.handleFifoError(err);
+    });
   }
 
   get tmuxSession(): string {
@@ -161,6 +184,72 @@ export class AgentRuntime extends EventEmitter {
     this.stopped = true;
     await Tmux.stopPipePane(this.agent.tmux_session).catch(() => {});
     await this.fifo.stop();
+  }
+
+  /**
+   * Recover from a FIFO read error (most often the underlying fd going bad
+   * when the dedicated `maw-tmux` server restarts under us). Tears down the
+   * broken reader and attempts ONE re-stream — recreating the FIFO and
+   * re-attaching `pipe-pane` — so live output resumes if the tmux session is
+   * still alive. Never rethrows: a stream error must affect only this agent,
+   * never the process.
+   *
+   * Loop-safe: a re-entrancy guard plus `RESTREAM_COOLDOWN_MS` ensure a
+   * stream that errors again immediately after recovery is left stopped
+   * rather than retried in a tight loop (it recovers on the next reattach).
+   */
+  private async handleFifoError(err: unknown): Promise<void> {
+    // stop() sets `stopped` before tearing down the fifo, so teardown-time
+    // errors are expected and ignored.
+    if (this.stopped) return;
+    if (this.restreamInFlight) return;
+
+    const session = this.agent.tmux_session;
+    const now = Date.now();
+    if (now - this.lastRestreamAt < RESTREAM_COOLDOWN_MS) {
+      console.error(
+        `[AgentRuntime] fifo stream error for ${this.agent.id} within re-stream cooldown; leaving stream stopped:`,
+        err
+      );
+      await Tmux.stopPipePane(session).catch(() => {});
+      await this.fifo.stop().catch(() => {});
+      return;
+    }
+
+    this.restreamInFlight = true;
+    this.lastRestreamAt = now;
+    console.error(
+      `[AgentRuntime] fifo stream error for ${this.agent.id}; attempting re-stream:`,
+      err
+    );
+    try {
+      // Tear down the broken reader + stale pipe-pane before rebuilding.
+      await Tmux.stopPipePane(session).catch(() => {});
+      await this.fifo.stop().catch(() => {});
+
+      // If the session is gone the reaper/exit-watcher will finalize the
+      // agent; a re-stream would only attach to a dead pane.
+      if (!(await Tmux.hasSession(session))) {
+        console.warn(
+          `[AgentRuntime] ${this.agent.id} session gone after fifo error; not re-streaming`
+        );
+        return;
+      }
+
+      // Mirror start()'s stream-bring-up (the error listener is attached once
+      // in the constructor and survives stop()/start()).
+      await this.fifo.create();
+      this.fifo.start((chunk) => this.onChunk(chunk));
+      await Tmux.pipePane(session, this.fifo.path);
+      console.log(`[AgentRuntime] re-stream succeeded for ${this.agent.id}`);
+    } catch (restreamErr) {
+      console.error(
+        `[AgentRuntime] re-stream failed for ${this.agent.id}; live output stopped until reattach:`,
+        restreamErr
+      );
+    } finally {
+      this.restreamInFlight = false;
+    }
   }
 
   /** Serialize input through a promise chain so two keystrokes never interleave. */

@@ -27,24 +27,38 @@ import type { AgentRow } from '../db/types.js';
 // `vi.hoisted()` to exist before the SUT's import-time `import` statements run.
 // ---------------------------------------------------------------------------
 
-const { dbMocks, tmuxMocks, pushMocks, MockFifoStreamer } = vi.hoisted(() => {
+const { dbMocks, tmuxMocks, pushMocks, MockFifoStreamer, fifoInstances } = vi.hoisted(() => {
+  // Constructed instances, newest last — lets tests grab the FifoStreamer a
+  // runtime built internally to drive its 'error' event and inspect calls.
+  const fifoInstances: MockFifoStreamer[] = [];
+
+  // Minimal EventEmitter-ish stub: AgentRuntime only ever subscribes to
+  // 'error'. create/start/stop are spies so re-stream behavior is assertable.
   class MockFifoStreamer {
     readonly path: string;
+    onChunk: ((chunk: Buffer) => void) | null = null;
+    private errorHandler: ((err: unknown) => void) | null = null;
+    create = vi.fn<() => Promise<void>>(async () => undefined);
+    start = vi.fn<(cb: (chunk: Buffer) => void) => void>((cb) => {
+      this.onChunk = cb;
+    });
+    stop = vi.fn<() => Promise<void>>(async () => undefined);
     constructor(opts: { fifoDir: string; agentId: string }) {
       this.path = `${opts.fifoDir}/fifo-${opts.agentId}`;
+      fifoInstances.push(this);
     }
-    async create(): Promise<void> {
-      /* no-op */
+    on(event: string, handler: (err: unknown) => void): this {
+      if (event === 'error') this.errorHandler = handler;
+      return this;
     }
-    start(_cb: (chunk: Buffer) => void): void {
-      /* no-op — tests never feed bytes through here */
-    }
-    async stop(): Promise<void> {
-      /* no-op */
+    /** Test hook: fire the 'error' event the way the real ReadStream would. */
+    emitError(err: unknown): void {
+      this.errorHandler?.(err);
     }
   }
 
   return {
+    fifoInstances,
     dbMocks: {
       getTask: vi.fn(),
       insertAlert: vi.fn(),
@@ -72,6 +86,7 @@ const { dbMocks, tmuxMocks, pushMocks, MockFifoStreamer } = vi.hoisted(() => {
           async () => undefined
         ),
         stopPipePane: vi.fn<(session: string) => Promise<void>>(async () => undefined),
+        hasSession: vi.fn<(session: string) => Promise<boolean>>(async () => true),
         resizeWindow: vi.fn<(session: string, cols: number, rows: number) => Promise<void>>(
           async () => undefined
         ),
@@ -184,14 +199,22 @@ function processEvent(rt: AgentRuntime, event: AdapterEvent, source: 'regex' | '
   );
 }
 
+/** Await the private FIFO-error recovery path directly so its full async
+ *  chain (teardown → hasSession → re-stream) settles deterministically. */
+function handleFifoError(rt: AgentRuntime, err: unknown): Promise<void> {
+  return (rt as unknown as { handleFifoError: (e: unknown) => Promise<void> }).handleFifoError(err);
+}
+
 beforeEach(() => {
   Object.values(dbMocks).forEach((fn) => fn.mockClear());
   Object.values(tmuxMocks.Tmux).forEach((fn) => fn.mockClear());
   pushMocks.notifyUser.mockClear();
+  fifoInstances.length = 0;
   // sensible defaults
   dbMocks.listRecentAlerts.mockReturnValue([]);
   dbMocks.getUserSetting.mockReturnValue(null);
   dbMocks.getLatestTerminalSeq.mockReturnValue(0);
+  tmuxMocks.Tmux.hasSession.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -627,6 +650,80 @@ describe('AgentRuntime', () => {
         'regex'
       );
       expect(dbMocks.insertAlert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('FIFO error recovery', () => {
+    it("attaches an 'error' listener so a FIFO error never crashes the process", () => {
+      const agent = makeAgent();
+      new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+      const fifo = fifoInstances.at(-1)!;
+
+      // Before the fix this re-emit had no listener → Node throws and the
+      // whole process dies. The listener must absorb it synchronously.
+      expect(() => fifo.emitError(new Error('EBADF: bad file descriptor, close'))).not.toThrow();
+    });
+
+    it('re-streams once (recreate FIFO + pipe-pane) when the session is still alive', async () => {
+      const agent = makeAgent();
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+      const fifo = fifoInstances.at(-1)!;
+      tmuxMocks.Tmux.hasSession.mockResolvedValue(true);
+
+      await handleFifoError(rt, new Error('EBADF'));
+
+      // Broken reader + stale pipe-pane torn down first…
+      expect(tmuxMocks.Tmux.stopPipePane).toHaveBeenCalledWith('maw-agent-test-1');
+      expect(fifo.stop).toHaveBeenCalled();
+      // …then the stream is rebuilt and re-attached.
+      expect(tmuxMocks.Tmux.hasSession).toHaveBeenCalledWith('maw-agent-test-1');
+      expect(fifo.create).toHaveBeenCalledTimes(1);
+      expect(fifo.start).toHaveBeenCalledTimes(1);
+      expect(tmuxMocks.Tmux.pipePane).toHaveBeenCalledWith('maw-agent-test-1', fifo.path);
+    });
+
+    it('does NOT re-stream when the tmux session is gone (leaves stream stopped)', async () => {
+      const agent = makeAgent();
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+      const fifo = fifoInstances.at(-1)!;
+      tmuxMocks.Tmux.hasSession.mockResolvedValue(false);
+
+      await handleFifoError(rt, new Error('EBADF'));
+
+      // Teardown still happens, but no rebuild.
+      expect(fifo.stop).toHaveBeenCalled();
+      expect(fifo.create).not.toHaveBeenCalled();
+      expect(tmuxMocks.Tmux.pipePane).not.toHaveBeenCalled();
+    });
+
+    it('suppresses a second re-stream within the cooldown window (no tight loop)', async () => {
+      const agent = makeAgent();
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+      const fifo = fifoInstances.at(-1)!;
+      tmuxMocks.Tmux.hasSession.mockResolvedValue(true);
+
+      await handleFifoError(rt, new Error('EBADF #1'));
+      await handleFifoError(rt, new Error('EBADF #2'));
+
+      // First incident rebuilds; the immediate second one is left stopped.
+      expect(fifo.create).toHaveBeenCalledTimes(1);
+      expect(tmuxMocks.Tmux.pipePane).toHaveBeenCalledTimes(1);
+    });
+
+    it('no-ops once the runtime has been stopped', async () => {
+      const agent = makeAgent();
+      const rt = new AgentRuntime(agent, makeAdapter(), '/tmp/fifos');
+      const fifo = fifoInstances.at(-1)!;
+      await rt.stop();
+      fifo.create.mockClear();
+      fifo.stop.mockClear();
+      tmuxMocks.Tmux.pipePane.mockClear();
+
+      await handleFifoError(rt, new Error('EBADF after stop'));
+
+      expect(fifo.create).not.toHaveBeenCalled();
+      expect(fifo.stop).not.toHaveBeenCalled();
+      expect(tmuxMocks.Tmux.pipePane).not.toHaveBeenCalled();
     });
   });
 });
