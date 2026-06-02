@@ -31,6 +31,24 @@ function t(args: string[]): string[] {
   return ['-L', SOCKET, ...args];
 }
 
+/**
+ * POSIX single-quote shell escaping. Everything inside `'…'` is taken
+ * literally by the shell, so `$`, backticks, `"`, `\` and newlines all pass
+ * through verbatim; the only character that can't appear inside single quotes
+ * is `'` itself, emitted via the standard `'\''` idiom (close quote, escaped
+ * quote, reopen quote).
+ *
+ * `JSON.stringify` is NOT a substitute: it wraps in double quotes and escapes
+ * only `"` and `\`, leaving `$` and backtick live. A task body or env value
+ * carrying an unbalanced backtick or `$(` then opens a command substitution
+ * the shell never closes → `sh: Syntax error: end of file unexpected` and the
+ * spawn dies before the CLI is exec'd. See
+ * `docs/plans/fix-crash-on-agent-start.md`.
+ */
+export function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
 export interface SpawnOptions {
   session: string;            // e.g. 'maw-agent-<ulid>'
   command: string;            // the CLI binary name
@@ -103,11 +121,15 @@ export class Tmux {
     const rows = opts.rows ?? 32;
 
     // Build `env VAR=val ... command args...` as a single shell string.
+    // Values, command and args are single-quote escaped (see `shQuote`) so
+    // arbitrary bytes — backticks, `$(`, quotes, newlines — can't break the
+    // shell parse. Env keys stay bare: `env NAME=value` requires the name
+    // unquoted, and keys are fixed identifiers from adapter config + MAW_*.
     const envParts = Object.entries(opts.env).map(
-      ([k, v]) => `${k}=${JSON.stringify(v)}`
+      ([k, v]) => `${k}=${shQuote(v)}`
     );
-    const cmdParts = [opts.command, ...opts.args].map((s) => JSON.stringify(s));
-    const shellLine = `cd ${JSON.stringify(opts.cwd)} && exec env ${envParts.join(' ')} ${cmdParts.join(' ')}`;
+    const cmdParts = [opts.command, ...opts.args].map(shQuote);
+    const shellLine = `cd ${shQuote(opts.cwd)} && exec env ${envParts.join(' ')} ${cmdParts.join(' ')}`;
 
     await execa('tmux', t([
       'new-session',
@@ -145,7 +167,7 @@ export class Tmux {
       'pipe-pane',
       '-t',
       session,
-      `cat >> ${JSON.stringify(fifoPath)}`
+      `cat >> ${shQuote(fifoPath)}`
     ]));
   }
 

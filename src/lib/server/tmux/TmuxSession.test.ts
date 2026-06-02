@@ -5,7 +5,8 @@ vi.mock('execa', () => ({
   execa: (cmd: string, args: string[]) => execaMock(cmd, args)
 }));
 
-import { Tmux, SESSION_PREFIX } from './TmuxSession.js';
+import { spawnSync } from 'node:child_process';
+import { Tmux, SESSION_PREFIX, shQuote } from './TmuxSession.js';
 
 beforeEach(() => {
   execaMock.mockReset();
@@ -56,6 +57,24 @@ describe('Tmux — server + session probes', () => {
   });
 });
 
+describe('shQuote', () => {
+  it('wraps in single quotes so metacharacters are literal', () => {
+    expect(shQuote('bar')).toBe("'bar'");
+    expect(shQuote('a b')).toBe("'a b'");
+    expect(shQuote('$(rm -rf /)')).toBe("'$(rm -rf /)'");
+    expect(shQuote('`whoami`')).toBe('\'`whoami`\'');
+  });
+
+  it('escapes an embedded single quote via the `\'\\\'\'` idiom', () => {
+    expect(shQuote("it's")).toBe("'it'\\''s'");
+    expect(shQuote("'")).toBe("''\\'''");
+  });
+
+  it('handles the empty string', () => {
+    expect(shQuote('')).toBe("''");
+  });
+});
+
 describe('Tmux.newSession', () => {
   it('builds a -d -s new-session argv with quoted env + command parts', async () => {
     execaMock.mockResolvedValueOnce({ stdout: '' });
@@ -85,10 +104,41 @@ describe('Tmux.newSession', () => {
     expect(args[10]).toBe('sh');
     expect(args[11]).toBe('-lc');
     const shell = args[12] as string;
-    expect(shell).toContain('cd "/some/cwd"');
-    expect(shell).toContain('FOO="bar"');
-    expect(shell).toContain('QUOTED="a b"');
-    expect(shell).toContain('"bash" "-lc" "echo hi"');
+    expect(shell).toContain("cd '/some/cwd'");
+    expect(shell).toContain("FOO='bar'");
+    expect(shell).toContain("QUOTED='a b'");
+    expect(shell).toContain("'bash' '-lc' 'echo hi'");
+  });
+
+  // Regression: the spawn line used to quote with JSON.stringify (double
+  // quotes), under which `$` and backtick stay live. A task body carrying an
+  // unbalanced backtick or `$(` opened a command substitution the shell never
+  // closed → `sh: Syntax error: end of file unexpected` and the agent died
+  // before exec. shQuote (single quotes) keeps every byte literal.
+  it('renders hostile env/args into a syntactically valid shell line', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    const body = 'review `whoami` and run $(rm -rf /); it\'s "done"\nline2';
+    await Tmux.newSession({
+      session: 'maw-agent-x',
+      command: 'claude',
+      args: ['--print', body],
+      env: { ANTHROPIC_API_KEY: 'sk-`echo pwn`', WEIRD: '$(touch /tmp/x)' },
+      cwd: "/repo/it's a dir"
+    });
+    const [, args] = execaMock.mock.calls[0];
+    const shell = args[12] as string;
+    // Metacharacters survive verbatim inside single quotes; the only escaping
+    // is the `'\''` idiom for embedded single quotes.
+    expect(shell).toContain("ANTHROPIC_API_KEY='sk-`echo pwn`'");
+    expect(shell).toContain("WEIRD='$(touch /tmp/x)'");
+    expect(shell).toContain("cd '/repo/it'\\''s a dir'");
+    expect(shell).toContain("'review `whoami` and run $(rm -rf /); it'\\''s \"done\"");
+
+    // The real proof: `sh -n -c` parses the produced line without executing
+    // it. Before the fix this exited non-zero with a syntax error.
+    const check = spawnSync('sh', ['-n', '-c', shell]);
+    expect(check.status).toBe(0);
+    expect(String(check.stderr)).not.toMatch(/Syntax error/);
   });
 
   it('defaults cols=120 rows=32 when not given', async () => {
@@ -109,12 +159,12 @@ describe('Tmux.newSession', () => {
 });
 
 describe('Tmux — pipePane + stopPipePane', () => {
-  it('pipePane wires `cat >> "<fifo>"` without -o so every call destroys+replaces the prior pipe', async () => {
+  it('pipePane wires `cat >> <fifo>` without -o so every call destroys+replaces the prior pipe', async () => {
     execaMock.mockResolvedValueOnce({ stdout: '' });
     await Tmux.pipePane('sid', '/tmp/x with space/fifo');
     const args = execaMock.mock.calls[0][1];
     expect(args.slice(0, 5)).toEqual(['-L', 'maw', 'pipe-pane', '-t', 'sid']);
-    expect(args[5]).toBe('cat >> "/tmp/x with space/fifo"');
+    expect(args[5]).toBe("cat >> '/tmp/x with space/fifo'");
   });
 
   it('pipePane never uses -o — regression guard for the reattach dead-stream bug', async () => {
