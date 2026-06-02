@@ -258,9 +258,40 @@ All configuration lives in `.env`. See `.env.example` for the full list
   `${MAW_DATA_DIR}/auth.log`. Symlink it to `/var/log/maw/auth.log` for
   the included fail2ban jail.
 - `MAW_LOGIN_RATE_LIMIT` — `count/windowSeconds` (default `10/60`).
+- `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` — auth for spawned
+  `claude-code` agents. See **Agent CLI authentication** below.
 
 **Never commit `.env` or any credential.** See `CLAUDE.md` for the full
 rules.
+
+### Agent CLI authentication
+
+Each spawned agent runs in its own isolated `CLAUDE_CONFIG_DIR`, so it does
+**not** inherit an interactive `claude /login` you ran in your own shell —
+without explicit auth a fresh agent fails its first call with
+`401 Please run /login`. MAW injects credentials into every spawn from the
+environment instead:
+
+- **`CLAUDE_CODE_OAUTH_TOKEN`** (recommended for Pro/Max subscribers) — a
+  long-lived (~1-year), inference-scoped token. Generate it once on the host
+  and put it in `.env`:
+
+  ```sh
+  claude setup-token            # prints the token; copy it
+  # then add to .env:
+  #   CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
+  ```
+
+  It is read directly as a bearer token — no credentials file, no refresh
+  rotation — so it survives the per-agent config isolation cleanly.
+
+- **`ANTHROPIC_API_KEY`** (Console API key) — if set, it **takes precedence**
+  over the OAuth token and bills pay-per-token instead of using the
+  subscription. Leave it blank to use the subscription token.
+
+If both are blank, agents spawn logged out. After editing `.env`, restart MAW
+(`systemctl restart maw.service`, or `systemctl --user restart maw` — see
+[Running under systemd](#running-under-systemd)) so the new value is loaded.
 
 ### fail2ban (prod)
 
