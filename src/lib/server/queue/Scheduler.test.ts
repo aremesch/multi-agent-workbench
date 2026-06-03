@@ -125,7 +125,6 @@ vi.mock('../uploads/taskAttachmentUploads.js', async () => {
 import {
   getQueueEntry,
   insertQueueEntry,
-  insertProject,
   insertRepo,
   insertRole,
   insertUser,
@@ -233,11 +232,9 @@ function seed(): {
 } {
   const userId = 'u1';
   insertUser({ id: userId, username: 'alice', password_hash: 'h', must_change_password: false });
-  insertProject({ id: 'p1', user_id: userId, name: 'P', default_branch: 'main' });
   insertRepo({
     id: 'r1',
     user_id: userId,
-    project_id: 'p1',
     path: '/tmp/r1',
     origin_url: null,
     default_branch: 'main'
@@ -245,7 +242,6 @@ function seed(): {
   insertRepo({
     id: 'r2',
     user_id: userId,
-    project_id: 'p1',
     path: '/tmp/r2',
     origin_url: null,
     default_branch: 'main'

@@ -17,7 +17,6 @@ import {
   getAgent,
   getRepo,
   getWorktree,
-  getProject,
   listPersistedAgentCommits,
   replaceAgentCommits,
   updateAgentCommitSnapshot
@@ -76,13 +75,9 @@ export async function snapshotAgentCommits(agentId: string): Promise<SnapshotRes
     }
 
     if (commits.length === 0 && !agent.base_sha) {
-      // repos now carry default_branch directly (migration 004); fall back
-      // through the legacy projects.default_branch for repos attached
-      // before that migration, then 'main'.
-      const defaultBranch =
-        repo.default_branch ??
-        (repo.project_id ? getProject(repo.project_id)?.default_branch : null) ??
-        'main';
+      // repos carry default_branch directly (migration 004); fall back to
+      // 'main' when unset.
+      const defaultBranch = repo.default_branch ?? 'main';
       commits = await listAgentCommitsViaMergeBase(repo.path, wt.branch, defaultBranch);
       source = 'merge_base';
     }

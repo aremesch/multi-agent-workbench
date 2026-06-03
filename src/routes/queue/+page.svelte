@@ -103,7 +103,7 @@
   function repoLabel(repoId: string): string {
     const r = data.repos.find((x) => x.id === repoId);
     if (!r) return repoId;
-    return r.projectName ? `${r.projectName} — ${r.path}` : r.path;
+    return r.path;
   }
 
   function depTitle(id: string): string {

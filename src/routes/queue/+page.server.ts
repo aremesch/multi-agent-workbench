@@ -5,7 +5,7 @@ import {
   getSpawnDefaultsAll,
   listAgentCardsByIds,
   listQueueEntriesForUser,
-  listReposWithProjectForUser,
+  listRepoOptionsForUser,
   listRoles
 } from '$lib/server/db/queries';
 
@@ -20,10 +20,9 @@ import {
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) throw redirect(303, '/login');
   const cliKinds = locals.supervisor.registry.list();
-  const repos = listReposWithProjectForUser(locals.user.id).map((r) => ({
+  const repos = listRepoOptionsForUser(locals.user.id).map((r) => ({
     id: r.id,
-    path: r.path,
-    projectName: r.project_name
+    path: r.path
   }));
 
   // Only "agentic coding CLI" adapters (claude-code, codex, gemini) belong

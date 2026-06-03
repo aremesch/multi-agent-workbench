@@ -4,7 +4,7 @@ import { isAbsolute, basename } from 'node:path';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { ulid } from 'ulid';
 import type { RequestHandler } from './$types';
-import { getProject, insertRepo } from '$lib/server/db/queries';
+import { insertRepo } from '$lib/server/db/queries';
 import { WorktreeManager } from '$lib/server/git/WorktreeManager';
 import { cloneInto, CloneError } from '$lib/server/git/clone';
 import { getGit } from '$lib/server/git/client';
@@ -23,25 +23,13 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
   }
 
   const b = body as Record<string, unknown>;
-  const project_id_raw = String(b.project_id ?? '').trim();
-  const project_id: string | null = project_id_raw || null;
   const path = String(b.path ?? '').trim();
   const origin_url = String(b.origin_url ?? '').trim() || null;
   const clone_url = String(b.clone_url ?? '').trim() || null;
   const default_branch_in = String(b.default_branch ?? '').trim();
 
-  let projectName = '';
-  let storedDefaultBranch: string | null = default_branch_in || null;
-  let effectiveDefaultBranch = default_branch_in || 'main';
-
-  if (project_id) {
-    const project = getProject(project_id);
-    if (!project) return json({ error: t(locals.locale, 'common.error.projectNotFound') }, { status: 400 });
-    if (project.user_id !== locals.user.id) return json({ error: t(locals.locale, 'common.error.forbidden') }, { status: 403 });
-    projectName = project.name;
-    effectiveDefaultBranch = project.default_branch;
-    storedDefaultBranch = null; // inherit from project
-  }
+  const storedDefaultBranch: string | null = default_branch_in || null;
+  const effectiveDefaultBranch = default_branch_in || 'main';
 
   if (!path) return json({ error: t(locals.locale, 'common.error.pathRequired') }, { status: 400 });
   if (!isAbsolute(path)) return json({ error: t(locals.locale, 'common.error.pathNotAbsolute') }, { status: 400 });
@@ -130,10 +118,9 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
   insertRepo({
     id,
     user_id: locals.user.id,
-    project_id,
     path,
     origin_url,
     default_branch: storedDefaultBranch
   });
-  return json({ id, path, projectName: projectName || basename(path) });
+  return json({ id, path, projectName: basename(path) });
 };

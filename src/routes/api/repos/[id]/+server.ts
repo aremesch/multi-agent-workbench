@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { basename } from 'node:path';
 import type { RequestHandler } from './$types';
 import { verifyCsrf } from '$lib/server/auth/csrf';
-import { getProject, getRepo, updateRepo } from '$lib/server/db/queries';
+import { getRepo, updateRepo } from '$lib/server/db/queries';
 import { t } from '$lib/i18n';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -11,13 +11,12 @@ export const GET: RequestHandler = async ({ locals, params }) => {
   if (!repo || repo.user_id !== locals.user.id) {
     return json({ error: t(locals.locale, 'common.error.repoNotFound') }, { status: 404 });
   }
-  const projectName = repo.project_id ? (getProject(repo.project_id)?.name ?? null) : null;
   return json({
     id: repo.id,
     path: repo.path,
     origin_url: repo.origin_url,
     default_branch: repo.default_branch,
-    projectName: projectName ?? basename(repo.path)
+    projectName: basename(repo.path)
   });
 };
 

@@ -91,7 +91,7 @@
   open={openAgent !== null}
   onClose={closeModal}
   title={openAgent
-    ? `${openAgent.project_name}${openAgent.task_title ? `/${openAgent.task_title}` : ''} — ${openAgent.role_name} — ${openAgent.cli_kind}`
+    ? `${openAgent.task_title ? `${openAgent.task_title} — ` : ''}${openAgent.role_name} — ${openAgent.cli_kind}`
     : ''}
   headerRight={openAgentStatus ? statusBadge : undefined}
 >

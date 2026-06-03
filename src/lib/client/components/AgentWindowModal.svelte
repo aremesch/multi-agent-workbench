@@ -31,7 +31,6 @@
     status: AgentStatus;
     tmux_session: string;
     target_url: string | null;
-    project_name: string | null;
     role_name: string;
     task_title: string | null;
   }
@@ -132,7 +131,7 @@
   open={open && agent !== null}
   {onClose}
   title={agent
-    ? `${agent.project_name}${agent.task_title ? `/${agent.task_title}` : ''} — ${agent.role_name} — ${agent.cli_kind}`
+    ? `${agent.task_title ? `${agent.task_title} — ` : ''}${agent.role_name} — ${agent.cli_kind}`
     : ''}
   headerRight={openAgentStatus ? statusBadge : undefined}
 >

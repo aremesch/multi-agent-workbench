@@ -5,7 +5,7 @@ import { getConfig } from '$lib/server/config';
 import {
   getSpawnDefaultsAll,
   isSlugInUse,
-  listReposWithProjectForUser,
+  listRepoOptionsForUser,
   listRoles
 } from '$lib/server/db/queries';
 import {
@@ -18,14 +18,12 @@ import {
 interface RepoOption {
   id: string;
   path: string;
-  projectName: string | null;
 }
 
 function loadRepoOptions(userId: string): RepoOption[] {
-  return listReposWithProjectForUser(userId).map((r) => ({
+  return listRepoOptionsForUser(userId).map((r) => ({
     id: r.id,
-    path: r.path,
-    projectName: r.project_name
+    path: r.path
   }));
 }
 

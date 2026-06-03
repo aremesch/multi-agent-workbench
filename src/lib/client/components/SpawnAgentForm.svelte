@@ -23,7 +23,6 @@
   export interface SpawnRepoOption {
     id: string;
     path: string;
-    projectName: string | null;
   }
   export interface OptionalArgMeta {
     id: string;
@@ -745,15 +744,14 @@
           clone_url: newRepoCloneUrl || undefined
         })
       });
-      const data = (await res.json()) as { id?: string; path?: string; projectName?: string; error?: string };
+      const data = (await res.json()) as { id?: string; path?: string; error?: string };
       if (!res.ok || !data.id) {
         newRepoError = data.error ?? t('spawn.error.failedAddRepo');
         return;
       }
       const created: SpawnRepoOption = {
         id: data.id,
-        path: data.path ?? newRepoPath,
-        projectName: data.projectName ?? null
+        path: data.path ?? newRepoPath
       };
       repoOptions = [...repoOptions, created];
       selectedRepoId = created.id;
@@ -829,7 +827,7 @@
           <span>{t('spawn.repo')}</span>
           <select name="repo_id" bind:value={selectedRepoId} required>
             {#each repoOptions as r (r.id)}
-              <option value={r.id}>{r.projectName ? `${r.projectName} — ${r.path}` : r.path}</option>
+              <option value={r.id}>{r.path}</option>
             {/each}
           </select>
         </label>

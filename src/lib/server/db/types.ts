@@ -58,22 +58,9 @@ export interface AuthEventRow {
   detail: string | null;
 }
 
-export interface ProjectRow {
-  id: string;
-  user_id: string;
-  name: string;
-  default_branch: string;
-  /** Absolute path of the shared parent dir for a polyrepo workspace, or null.
-   *  Set lazily on the first batch import from a workspace folder. */
-  workspace_root: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
 export interface RepoRow {
   id: string;
   user_id: string;
-  project_id: string | null;
   path: string;
   origin_url: string | null;
   default_branch: string | null;

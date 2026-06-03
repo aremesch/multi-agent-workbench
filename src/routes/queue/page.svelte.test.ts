@@ -70,7 +70,7 @@ function makeData(entries: QueueEntryRow[]) {
     entries,
     agentsById: {},
     roles: [{ id: 'role-1', name: 'Implementer' }],
-    repos: [{ id: 'repo-1', path: '/srv/app', projectName: 'App' }],
+    repos: [{ id: 'repo-1', path: '/srv/app' }],
     cliKinds: [],
     spawnDefaults: {}
   } as unknown as Parameters<typeof render>[1]['props']['data'];

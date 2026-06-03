@@ -4,7 +4,7 @@ import { getAgentCard } from '$lib/server/db/queries';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
   if (!locals.user) throw redirect(303, '/login');
-  // Full card (role/project/task join) so the standalone route can render the
+  // Full card (role/repo/task join) so the standalone route can render the
   // same captioned AgentWindowModal as the dashboard/repo pages. No status
   // filter in getAgentCard — exited agents still deep-link here.
   const agent = getAgentCard(params.id);
@@ -17,7 +17,6 @@ export const load: PageServerLoad = async ({ locals, params }) => {
       status: agent.status,
       tmux_session: agent.tmux_session,
       target_url: agent.target_url,
-      project_name: agent.project_name,
       role_name: agent.role_name,
       task_title: agent.task_title
     }

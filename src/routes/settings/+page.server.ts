@@ -4,7 +4,7 @@ import {
   getQueueConcurrency,
   getSpawnDefaultsAll,
   getUserSetting,
-  listReposWithProjectForUser
+  listRepoOptionsForUser
 } from '$lib/server/db/queries';
 import { getConfig } from '$lib/server/config';
 import { PUSH_PREFS_KEY, parseNotifyKinds } from '$lib/server/push/pushPrefs';
@@ -33,10 +33,9 @@ export const load: PageServerLoad = async ({ locals }) => {
     getUserSetting(locals.user.id, MOBILE_QUICK_KEYS_SETTING_KEY)
   );
   const queueConcurrency = getQueueConcurrency(locals.user.id);
-  const queueRepos = listReposWithProjectForUser(locals.user.id).map((r) => ({
+  const queueRepos = listRepoOptionsForUser(locals.user.id).map((r) => ({
     id: r.id,
-    path: r.path,
-    projectName: r.project_name
+    path: r.path
   }));
   return {
     cliKinds,

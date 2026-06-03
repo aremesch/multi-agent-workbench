@@ -35,7 +35,6 @@ import {
   getLatestRunForAgent,
   getLatestTerminalSeq,
   getMustChangePasswordById,
-  getProject,
   getRepo,
   getRole,
   getSpawnDefaults,
@@ -51,7 +50,6 @@ import {
   insertBetterAuthUser,
   insertEvent,
   insertMessage,
-  insertProject,
   insertQueueEntry,
   insertRepo,
   insertRole,
@@ -67,13 +65,11 @@ import {
   listEventsForAgent,
   listInbox,
   listLiveAgents,
-  listProjects,
   listPushSubsForUser,
   listRecentAlerts,
   listRecentAuthEvents,
-  listReposForProject,
   listReposForUser,
-  listReposWithProjectForUser,
+  listRepoOptionsForUser,
   listRoles,
   listTasksForAgent,
   listTerminalChunksSince,
@@ -119,20 +115,10 @@ function seedUser(id = 'user-1', username = 'alice'): void {
   });
 }
 
-function seedProject(id = 'proj-1', userId = 'user-1', name = 'Proj'): void {
-  insertProject({ id, user_id: userId, name, default_branch: 'main' });
-}
-
-function seedRepo(
-  id = 'repo-1',
-  userId = 'user-1',
-  projectId: string | null = 'proj-1',
-  path = '/tmp/repo'
-): void {
+function seedRepo(id = 'repo-1', userId = 'user-1', path = '/tmp/repo'): void {
   insertRepo({
     id,
     user_id: userId,
-    project_id: projectId,
     path,
     origin_url: null,
     default_branch: 'main'
@@ -183,7 +169,6 @@ function seedAgent(
 
 function seedFullStack(): void {
   seedUser();
-  seedProject();
   seedRepo();
   seedWorktree();
   seedRole();
@@ -281,61 +266,29 @@ describe('auth events', () => {
   });
 });
 
-// ----- projects -----------------------------------------------------------
-
-describe('projects', () => {
-  beforeEach(() => {
-    seedUser();
-  });
-
-  it('insertProject + getProject + listProjects', () => {
-    seedProject('p1', 'user-1', 'Bravo');
-    seedProject('p2', 'user-1', 'Alpha');
-    expect(getProject('p1')?.name).toBe('Bravo');
-    const list = listProjects('user-1');
-    // Ordered by name: Alpha < Bravo.
-    expect(list.map((p) => p.name)).toEqual(['Alpha', 'Bravo']);
-  });
-
-  it('listProjects is scoped to user_id', () => {
-    seedUser('u2', 'bob');
-    seedProject('p1', 'user-1');
-    seedProject('p2', 'u2');
-    expect(listProjects('user-1').map((p) => p.id)).toEqual(['p1']);
-    expect(listProjects('u2').map((p) => p.id)).toEqual(['p2']);
-  });
-});
-
 // ----- repos --------------------------------------------------------------
 
 describe('repos', () => {
   beforeEach(() => {
     seedUser();
-    seedProject();
   });
 
   it('insertRepo + getRepo + listReposForUser', () => {
     seedRepo('r1');
-    seedRepo('r2', 'user-1', null, '/tmp/solo');
+    seedRepo('r2', 'user-1', '/tmp/solo');
     expect(getRepo('r1')?.path).toBe('/tmp/repo');
-    expect(getRepo('r2')?.project_id).toBeNull();
     const list = listReposForUser('user-1');
     expect(list.map((r) => r.id).sort()).toEqual(['r1', 'r2']);
   });
 
-  it('listReposForProject is scoped to project_id', () => {
-    seedRepo('r1', 'user-1', 'proj-1');
-    seedRepo('r2', 'user-1', null, '/tmp/solo');
-    expect(listReposForProject('proj-1').map((r) => r.id)).toEqual(['r1']);
-  });
-
-  it('listReposWithProjectForUser joins project name, NULL for unprojected repos', () => {
-    seedRepo('r1', 'user-1', 'proj-1');
-    seedRepo('r2', 'user-1', null, '/tmp/solo');
-    const rows = listReposWithProjectForUser('user-1');
-    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
-    expect(byId['r1']?.project_name).toBe('Proj');
-    expect(byId['r2']?.project_name).toBeNull();
+  it('listRepoOptionsForUser returns id + path, ordered by path, scoped to user', () => {
+    seedUser('u2', 'bob');
+    seedRepo('r1', 'user-1', '/tmp/repo');
+    seedRepo('r2', 'user-1', '/tmp/solo');
+    seedRepo('r3', 'u2', '/tmp/other');
+    const rows = listRepoOptionsForUser('user-1');
+    expect(rows.map((r) => r.id)).toEqual(['r1', 'r2']);
+    expect(rows.map((r) => r.path)).toEqual(['/tmp/repo', '/tmp/solo']);
   });
 
   it('updateRepo sets origin_url for the owner and bumps updated_at', async () => {
@@ -353,7 +306,6 @@ describe('repos', () => {
     insertRepo({
       id: 'r1',
       user_id: 'user-1',
-      project_id: 'proj-1',
       path: '/tmp/repo',
       origin_url: 'https://example.com/x.git',
       default_branch: 'main'
@@ -366,7 +318,6 @@ describe('repos', () => {
     insertRepo({
       id: 'r1',
       user_id: 'user-1',
-      project_id: 'proj-1',
       path: '/tmp/repo',
       origin_url: 'https://original.example/x.git',
       default_branch: 'main'
@@ -388,7 +339,6 @@ describe('repos', () => {
 describe('worktrees', () => {
   beforeEach(() => {
     seedUser();
-    seedProject();
     seedRepo();
   });
 
@@ -453,7 +403,6 @@ describe('roles', () => {
 describe('agents', () => {
   beforeEach(() => {
     seedUser();
-    seedProject();
     seedRepo();
     seedWorktree();
     seedRole();
@@ -573,7 +522,6 @@ describe('agent card join queries', () => {
     expect(cards).toHaveLength(1);
     expect(cards[0]?.role_name).toBe('Coder');
     expect(cards[0]?.repo_path).toBe('/tmp/repo');
-    expect(cards[0]?.project_name).toBe('Proj');
     expect(cards[0]?.task_title).toBe('implement x');
   });
 
@@ -583,7 +531,7 @@ describe('agent card join queries', () => {
   });
 
   it('listAgentCardsForRepo scopes by repo_id', () => {
-    seedRepo('repo-other', 'user-1', 'proj-1', '/tmp/other');
+    seedRepo('repo-other', 'user-1', '/tmp/other');
     seedWorktree('wt-other', 'user-1', 'repo-other', '/tmp/wt-other');
     insertAgent({
       id: 'agent-other',
@@ -1133,7 +1081,6 @@ describe('queue entries — backlog/queue admission and plan storage', () => {
 
   beforeEach(() => {
     seedUser();
-    seedProject();
     seedRepo();
     seedRole();
   });

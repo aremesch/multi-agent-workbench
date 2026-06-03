@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   getAgent: vi.fn(),
   getRepo: vi.fn(),
   getWorktree: vi.fn(),
-  getProject: vi.fn(),
   listPersistedAgentCommits: vi.fn(),
   replaceAgentCommits: vi.fn(),
   updateAgentCommitSnapshot: vi.fn(),
@@ -22,7 +21,6 @@ vi.mock('../db/queries.js', () => ({
   getAgent: mocks.getAgent,
   getRepo: mocks.getRepo,
   getWorktree: mocks.getWorktree,
-  getProject: mocks.getProject,
   listPersistedAgentCommits: mocks.listPersistedAgentCommits,
   replaceAgentCommits: mocks.replaceAgentCommits,
   updateAgentCommitSnapshot: mocks.updateAgentCommitSnapshot
@@ -47,7 +45,7 @@ const baseAgent = {
   base_sha: 'BASE',
   committer_email: 'agt@maw.local'
 };
-const baseRepo = { id: 'r', path: '/repo', default_branch: 'main', project_id: null };
+const baseRepo = { id: 'r', path: '/repo', default_branch: 'main' };
 const baseWt = { id: 'w', branch: 'maw/agt', path: '/worktrees/agt' };
 
 beforeEach(() => {

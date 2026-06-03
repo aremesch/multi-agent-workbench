@@ -137,15 +137,28 @@ describe('runMigrations', () => {
     expect(cols).toContain('cli_session_id');
   });
 
-  it('lands migration 004 — repos.project_id is nullable and default_branch is on repos', () => {
+  it('lands migration 004 — repos.default_branch exists', () => {
     runMigrations();
     const cols = db!
-      .prepare<[], { name: string; notnull: number }>('PRAGMA table_info(repos)')
-      .all();
-    const projectIdCol = cols.find((c) => c.name === 'project_id');
-    expect(projectIdCol).toBeDefined();
-    expect(projectIdCol!.notnull).toBe(0);
-    expect(cols.find((c) => c.name === 'default_branch')).toBeDefined();
+      .prepare<[], { name: string }>('PRAGMA table_info(repos)')
+      .all()
+      .map((c) => c.name);
+    expect(cols).toContain('default_branch');
+  });
+
+  it('lands migration 014 — projects table dropped and repos.project_id removed', () => {
+    runMigrations();
+    const repoCols = db!
+      .prepare<[], { name: string }>('PRAGMA table_info(repos)')
+      .all()
+      .map((c) => c.name);
+    expect(repoCols).not.toContain('project_id');
+    expect(repoCols).toContain('default_branch');
+    const tables = db!
+      .prepare<[], { name: string }>("SELECT name FROM sqlite_master WHERE type='table'")
+      .all()
+      .map((t) => t.name);
+    expect(tables).not.toContain('projects');
   });
 
   it('rolls back a failing migration — tracking table is unchanged', () => {

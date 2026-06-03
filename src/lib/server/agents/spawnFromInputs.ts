@@ -23,7 +23,6 @@ import { ulid } from 'ulid';
 import { getConfig } from '../config.js';
 import {
   findActiveWorktreeByPath,
-  getProject,
   getRepo,
   getRole,
   insertTask,
@@ -222,7 +221,6 @@ export async function validateSpawnInputs(
   const branchStartPoint =
     raw.branch ||
     repo.default_branch ||
-    (repo.project_id ? getProject(repo.project_id)?.default_branch : null) ||
     'main';
 
   if (opts.verifyBranchExists && adapterSupportsWorktree) {

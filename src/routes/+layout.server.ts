@@ -5,7 +5,7 @@ import {
   getSpawnDefaultsAll,
   getUserSetting,
   listAgentCardsForUser,
-  listReposWithProjectForUser
+  listRepoOptionsForUser
 } from '$lib/server/db/queries';
 import type { AgentStatus } from '$lib/server/db/types';
 import {
@@ -39,7 +39,6 @@ function groupByRepo(agents: AgentCardRow[]): SidebarRepoNode[] {
       node = {
         repoId: a.repo_id,
         repoPath: a.repo_path,
-        projectName: a.project_name,
         agents: []
       };
       byRepo.set(a.repo_id, node);
@@ -78,13 +77,12 @@ export const load: LayoutServerLoad = async ({ locals }) => {
   }
   const liveByRepo = groupByRepo(live);
   const liveIndex = new Map(liveByRepo.map((n) => [n.repoId, n]));
-  const allRepos = listReposWithProjectForUser(locals.user.id);
+  const allRepos = listRepoOptionsForUser(locals.user.id);
   const activeRepos: SidebarRepoNode[] = allRepos.map(
     (r) =>
       liveIndex.get(r.id) ?? {
         repoId: r.id,
         repoPath: r.path,
-        projectName: r.project_name,
         agents: []
       }
   );

@@ -121,7 +121,7 @@
                 <a
                   class="row-link"
                   href={queueRepoHref(repo.repoId)}
-                  title={repo.projectName ? `${repo.projectName} — ${repo.repoPath}` : repo.repoPath}
+                  title={repo.repoPath}
                 >
                   <span class="label">{repoLabel(repo)}</span>
                   <span class="count">{queueOpenByRepo[repo.repoId]}</span>
@@ -168,7 +168,7 @@
                 <a
                   class="row-link"
                   href={repoHref(repo.repoId)}
-                  title={repo.projectName ? `${repo.projectName} — ${repo.repoPath}` : repo.repoPath}
+                  title={repo.repoPath}
                 >
                   <span class="label">{repoLabel(repo)}</span>
                   {#if queueOpenByRepo[repo.repoId]}
@@ -238,7 +238,7 @@
                   <a
                     class="row-link"
                     href={archiveHref(repo.repoId)}
-                    title={repo.projectName ? `${repo.projectName} — ${repo.repoPath}` : repo.repoPath}
+                    title={repo.repoPath}
                   >
                     <span class="label">{repoLabel(repo)}</span>
                     <span class="count">{repo.agents.length}</span>

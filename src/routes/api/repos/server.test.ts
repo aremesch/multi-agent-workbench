@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const verifyCsrfMock = vi.fn();
-const getProjectMock = vi.fn();
 const insertRepoMock = vi.fn();
 const cloneIntoMock = vi.fn();
 const ensureDefaultBranchMock = vi.fn();
@@ -19,7 +18,6 @@ vi.mock('$lib/server/auth/csrf', () => ({
 }));
 
 vi.mock('$lib/server/db/queries', () => ({
-  getProject: (id: string) => getProjectMock(id),
   insertRepo: (...args: unknown[]) => insertRepoMock(...args)
 }));
 
@@ -96,7 +94,6 @@ async function call(opts: CallOpts = {}): Promise<Response> {
 
 beforeEach(() => {
   verifyCsrfMock.mockReset();
-  getProjectMock.mockReset();
   insertRepoMock.mockReset();
   cloneIntoMock.mockReset();
   ensureDefaultBranchMock.mockReset();
@@ -164,50 +161,6 @@ describe('POST /api/repos — guards', () => {
   });
 });
 
-describe('POST /api/repos — project lookups', () => {
-  beforeEach(() => {
-    existsSyncMock.mockReturnValue(true);
-    statSyncMock.mockReturnValue({ isDirectory: () => true });
-    readdirSyncMock.mockReturnValue([]);
-    initEmptyMock.mockResolvedValue(undefined);
-  });
-
-  it('400 when referenced project does not exist', async () => {
-    getProjectMock.mockReturnValue(undefined);
-    const res = await call({ body: { path: '/r', project_id: 'proj-x' } });
-    expect(res.status).toBe(400);
-  });
-
-  it('403 when project belongs to a different user', async () => {
-    getProjectMock.mockReturnValue({
-      id: 'proj-x',
-      user_id: 'other-user',
-      name: 'X',
-      default_branch: 'main'
-    });
-    const res = await call({ body: { path: '/r', project_id: 'proj-x' } });
-    expect(res.status).toBe(403);
-  });
-
-  it('inherits default_branch from project and stores null on the repo', async () => {
-    getProjectMock.mockReturnValue({
-      id: 'proj-1',
-      user_id: 'user-1',
-      name: 'My',
-      default_branch: 'develop'
-    });
-    const res = await call({ body: { path: '/r', project_id: 'proj-1' } });
-    expect(res.status).toBe(200);
-    expect(initEmptyMock).toHaveBeenCalledWith('/r', 'develop', expect.anything());
-    expect(insertRepoMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        project_id: 'proj-1',
-        default_branch: null
-      })
-    );
-  });
-});
-
 describe('POST /api/repos — empty directory init', () => {
   beforeEach(() => {
     existsSyncMock.mockReturnValue(true);
@@ -231,7 +184,6 @@ describe('POST /api/repos — empty directory init', () => {
     expect(insertRepoMock).toHaveBeenCalledWith(
       expect.objectContaining({
         path: '/empty',
-        project_id: null,
         // Stored value is null when no explicit default_branch was sent
         // (route only uses 'main' as the effective branch for init).
         default_branch: null

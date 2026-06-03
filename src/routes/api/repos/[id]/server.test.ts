@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const verifyCsrfMock = vi.fn();
 const getRepoMock = vi.fn();
-const getProjectMock = vi.fn();
 const updateRepoMock = vi.fn();
 
 vi.mock('$lib/server/auth/csrf', () => ({
@@ -11,7 +10,6 @@ vi.mock('$lib/server/auth/csrf', () => ({
 
 vi.mock('$lib/server/db/queries', () => ({
   getRepo: (id: string) => getRepoMock(id),
-  getProject: (id: string) => getProjectMock(id),
   updateRepo: (...args: unknown[]) => updateRepoMock(...args)
 }));
 
@@ -42,7 +40,6 @@ function makeEvent(opts: {
 beforeEach(() => {
   verifyCsrfMock.mockReset();
   getRepoMock.mockReset();
-  getProjectMock.mockReset();
   updateRepoMock.mockReset();
 });
 afterEach(() => {
@@ -80,65 +77,30 @@ describe('GET /api/repos/[id]', () => {
       user_id: 'other-user',
       path: '/r',
       origin_url: null,
-      default_branch: 'main',
-      project_id: null
+      default_branch: 'main'
     });
     const res = await GET(makeEvent({}) as unknown as Parameters<typeof GET>[0]);
     expect(res.status).toBe(404);
   });
 
-  it('200 with project name when project_id is set and project resolves', async () => {
+  it('200 returns repo with projectName = basename(path)', async () => {
     getRepoMock.mockReturnValue({
       id: 'repo-1',
       user_id: 'user-1',
-      path: '/r',
+      path: '/some/dir/myrepo',
       origin_url: 'git@x:y.git',
-      default_branch: 'main',
-      project_id: 'proj-1'
+      default_branch: 'main'
     });
-    getProjectMock.mockReturnValue({ id: 'proj-1', name: 'My Project' });
     const res = await GET(makeEvent({}) as unknown as Parameters<typeof GET>[0]);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({
       id: 'repo-1',
-      path: '/r',
+      path: '/some/dir/myrepo',
       origin_url: 'git@x:y.git',
       default_branch: 'main',
-      projectName: 'My Project'
+      projectName: 'myrepo'
     });
-  });
-
-  it('200 with basename(path) when project_id is null', async () => {
-    getRepoMock.mockReturnValue({
-      id: 'repo-1',
-      user_id: 'user-1',
-      path: '/some/dir/myrepo',
-      origin_url: null,
-      default_branch: 'main',
-      project_id: null
-    });
-    const res = await GET(makeEvent({}) as unknown as Parameters<typeof GET>[0]);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.projectName).toBe('myrepo');
-    expect(getProjectMock).not.toHaveBeenCalled();
-  });
-
-  it('200 with basename fallback when project lookup returns null', async () => {
-    getRepoMock.mockReturnValue({
-      id: 'repo-1',
-      user_id: 'user-1',
-      path: '/x/y',
-      origin_url: null,
-      default_branch: 'main',
-      project_id: 'proj-x'
-    });
-    getProjectMock.mockReturnValue(undefined);
-    const res = await GET(makeEvent({}) as unknown as Parameters<typeof GET>[0]);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.projectName).toBe('y');
   });
 });
 

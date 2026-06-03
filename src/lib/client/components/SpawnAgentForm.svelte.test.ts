@@ -32,7 +32,7 @@ const roles = [
     default_permission_mode: null
   }
 ];
-const repos = [{ id: 'repo-1', path: '/srv/app', projectName: 'App' }];
+const repos = [{ id: 'repo-1', path: '/srv/app' }];
 const cliKinds = [
   {
     kind: 'claude-code',

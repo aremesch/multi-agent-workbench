@@ -150,7 +150,6 @@ const en = {
   'spawn.originUrl': 'Origin URL',
   'spawn.httpsOriginUrl': 'HTTP(S) Origin URL',
   'spawn.defaultBranch': 'Default branch',
-  'spawn.projectName': 'Project name',
   'spawn.systemPrompt': 'System prompt',
   'spawn.cancel': 'Cancel',
   'spawn.spawn': 'Spawn',
@@ -159,28 +158,22 @@ const en = {
   'spawn.adding': 'Adding\u2026',
   'spawn.createRole': 'Create role',
   'spawn.addRepo': 'Add repo',
-  'spawn.createProject': 'Create project',
   'spawn.newRole': '+ Role',
   'spawn.newRepo': '+ Repo',
-  'spawn.newProject': '+ Project',
   'spawn.collapseRole': '\u2212',
   'spawn.collapseRepo': '\u2212',
-  'spawn.collapseProject': '\u2212',
   'spawn.titleCreateRole': 'Create new role',
   'spawn.titleAddRepo': 'Add new repo',
-  'spawn.titleCreateProject': 'Create new project',
   'spawn.error.roleRepoRequired': 'Role and repo are required',
   'spawn.error.unknownRole': 'Unknown role',
   'spawn.error.unknownRepo': 'Unknown repo',
   'spawn.error.unknownCliKind': 'Unknown CLI kind',
-  'spawn.error.orphanedRepo': 'Repo is orphaned (no project)',
   'spawn.error.titleRequired': 'Title is required',
   'spawn.error.titleUnslugifiable': 'Title must contain at least one letter or digit',
   'spawn.error.titleTaken': 'Title already used — pick a different one',
   'spawn.error.spawnFailed': 'Spawn failed',
   'spawn.error.worktreeFailed': 'Worktree creation failed: {message}',
   'spawn.error.failedCreateRole': 'Failed to create role',
-  'spawn.error.failedCreateProject': 'Failed to create project',
   'spawn.error.failedAddRepo': 'Failed to add repo',
   'spawn.error.networkError': 'Network error',
   'spawn.error.branchListFailed': 'Could not list branches: {message}',
@@ -286,40 +279,6 @@ const en = {
   // ── New role ─────────────────────────────────────────────────────
   'newRole.title': 'New role',
 
-  // ── Projects ─────────────────────────────────────────────────────
-  'projects.newProject': 'New project',
-  'projects.defaultBranch': 'default branch {branch}',
-  'projects.repositories': 'Repositories ({count})',
-  'projects.newRepo': 'New repo',
-  'projects.noRepos': 'No repos attached yet.',
-  'projects.backToDashboard': '\u2190 Back to dashboard',
-  'projects.workspaceRoot': 'Workspace:',
-  'projects.addFromWorkspace': 'Add repos from workspace folder',
-  'projects.addMoreFromWorkspace': 'Add more repos from workspace folder',
-
-  // ── New project ──────────────────────────────────────────────────
-  'newProject.title': 'New project',
-
-  // ── Repos / new repo ─────────────────────────────────────────────
-  'newRepo.title': 'New repo',
-  'newRepo.attachDesc': 'Attach an existing git working tree to {projectName}.',
-  'newRepo.absolutePath': 'Absolute path',
-  'newRepo.attachRepo': 'Attach repo',
-
-  // ── Repos / batch import from a workspace folder ──
-  'import.title': 'Add repos from workspace folder',
-  'import.desc': 'Pick a parent folder and attach its sibling git repos to {projectName} in one go.',
-  'import.chooseFolder': 'Choose workspace folder…',
-  'import.changeFolder': 'Change folder…',
-  'import.discovered': '{count} git repos found',
-  'import.alreadyAdded': 'already added',
-  'import.selectAll': 'Select all',
-  'import.attachSelected': 'Attach selected ({count})',
-  'import.importedCount': 'Imported {count} repos.',
-  'import.someFailed': 'Some repos could not be imported:',
-  'import.noGitChildren': 'No git repos found directly under this folder.',
-  'import.error.noneSelected': 'Select at least one repo to import.',
-
   // ── Archive ──────────────────────────────────────────────────────
   'archive.title': 'Archive',
   'archive.noArchived': 'No archived agents for this repo.',
@@ -361,7 +320,6 @@ const en = {
   // ── Archive overview (cross-repo) ────────────────────────────────
   'archive.overview.title': 'Archive overview',
   'archive.overview.empty': 'No archived agents across any repo.',
-  'archive.overview.th.project': 'Project',
   'archive.overview.th.repo': 'Repo',
   'archive.overview.th.agents': 'Agents',
   'archive.overview.note':
@@ -377,7 +335,6 @@ const en = {
   'common.error.invalidJson': 'Invalid JSON',
   'common.error.invalidTheme': 'Invalid theme',
   'common.error.invalidLocale': 'Invalid locale',
-  'common.error.projectNotFound': 'Project not found',
   'common.error.forbidden': 'Forbidden',
   'common.error.nameRequired': 'Name is required',
   'common.error.invalidBranch': 'Default branch contains invalid characters',

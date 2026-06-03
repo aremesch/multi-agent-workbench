@@ -16,7 +16,6 @@ export interface ArchiveRepoSummary {
   repo: {
     id: string;
     path: string;
-    projectName: string | null;
   };
   archivedCount: number;
   totals: {
@@ -88,8 +87,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       return {
         repo: {
           id: repo.repo_id,
-          path: repo.repo_path,
-          projectName: repo.project_name
+          path: repo.repo_path
         },
         archivedCount: repoAgents.length,
         totals

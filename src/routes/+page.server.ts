@@ -4,7 +4,7 @@ import {
   getSpawnDefaultsAll,
   getUserSetting,
   listAgentCardsForUser,
-  listReposWithProjectForUser,
+  listRepoOptionsForUser,
   listRoles
 } from '$lib/server/db/queries';
 import type { AgentStatus } from '$lib/server/db/types';
@@ -14,7 +14,6 @@ import type { LayoutEntry } from '$lib/shared/types';
 interface DashboardRepoOption {
   id: string;
   path: string;
-  projectName: string | null;
 }
 
 interface DashboardRoleOption {
@@ -26,10 +25,9 @@ interface DashboardRoleOption {
 }
 
 function loadRepoOptions(userId: string): DashboardRepoOption[] {
-  return listReposWithProjectForUser(userId).map((r) => ({
+  return listRepoOptionsForUser(userId).map((r) => ({
     id: r.id,
-    path: r.path,
-    projectName: r.project_name
+    path: r.path
   }));
 }
 

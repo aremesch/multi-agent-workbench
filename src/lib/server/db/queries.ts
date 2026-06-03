@@ -26,7 +26,6 @@ import type {
   AlertSeverity,
   EventRow,
   MessageRow,
-  ProjectRow,
   PushSubscriptionRow,
   QueueEntryRow,
   QueueEntryStatus,
@@ -186,67 +185,16 @@ export function listRecentAuthEvents(limit = 100): AuthEventRow[] {
   ).all(limit);
 }
 
-// --------------- projects ---------------
-
-export function listProjects(userId: string): ProjectRow[] {
-  return prep<[string], ProjectRow>(
-    'SELECT * FROM projects WHERE user_id = ? ORDER BY name'
-  ).all(userId);
-}
-
-export function getProject(id: string): ProjectRow | undefined {
-  return prep<[string], ProjectRow>('SELECT * FROM projects WHERE id = ?').get(id);
-}
-
-export function insertProject(row: {
-  id: string;
-  user_id: string;
-  name: string;
-  default_branch: string;
-}): void {
-  const ts = now();
-  prep<[string, string, string, string, number, number]>(
-    'INSERT INTO projects (id, user_id, name, default_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(row.id, row.user_id, row.name, row.default_branch, ts, ts);
-}
-
-/**
- * Set a project's polyrepo workspace root (the shared parent dir whose sibling
- * repos were batch-imported). Owner-scoped. Returns true when a row matched —
- * false means the project doesn't exist or isn't owned by the caller.
- */
-export function setProjectWorkspaceRoot(
-  id: string,
-  userId: string,
-  workspace_root: string
-): boolean {
-  const res = prep<[string, number, string, string]>(
-    'UPDATE projects SET workspace_root = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-  ).run(workspace_root, now(), id, userId);
-  return res.changes > 0;
-}
-
 // --------------- repos ---------------
 
-export function listReposForProject(projectId: string): RepoRow[] {
-  return prep<[string], RepoRow>(
-    'SELECT * FROM repos WHERE project_id = ? ORDER BY created_at'
-  ).all(projectId);
-}
-
-export interface RepoWithProjectRow {
+export interface RepoOptionRow {
   id: string;
   path: string;
-  project_name: string | null;
 }
 
-export function listReposWithProjectForUser(userId: string): RepoWithProjectRow[] {
-  return prep<[string], RepoWithProjectRow>(
-    `SELECT r.id AS id, r.path AS path, p.name AS project_name
-       FROM repos r
-       LEFT JOIN projects p ON p.id = r.project_id
-      WHERE r.user_id = ?
-      ORDER BY r.path`
+export function listRepoOptionsForUser(userId: string): RepoOptionRow[] {
+  return prep<[string], RepoOptionRow>(
+    'SELECT id, path FROM repos WHERE user_id = ? ORDER BY path'
   ).all(userId);
 }
 
@@ -263,18 +211,16 @@ export function getRepo(id: string): RepoRow | undefined {
 export function insertRepo(row: {
   id: string;
   user_id: string;
-  project_id: string | null;
   path: string;
   origin_url: string | null;
   default_branch: string | null;
 }): void {
   const ts = now();
-  prep<[string, string, string | null, string, string | null, string | null, number, number]>(
-    'INSERT INTO repos (id, user_id, project_id, path, origin_url, default_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  prep<[string, string, string, string | null, string | null, number, number]>(
+    'INSERT INTO repos (id, user_id, path, origin_url, default_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(
     row.id,
     row.user_id,
-    row.project_id,
     row.path,
     row.origin_url,
     row.default_branch,
@@ -532,14 +478,13 @@ export function listAgentsForUser(userId: string): AgentRow[] {
 }
 
 /**
- * Agent row joined with its role name + repo path + project name + current
- * task title for dashboard display. Filtered by the caller-provided status
- * set. Ordered newest-first.
+ * Agent row joined with its role name + repo path + current task title for
+ * dashboard display. Filtered by the caller-provided status set. Ordered
+ * newest-first.
  */
 export interface AgentCardRow extends AgentRow {
   role_name: string;
   repo_path: string;
-  project_name: string | null;
   task_title: string | null;
 }
 
@@ -553,12 +498,10 @@ export function listAgentCardsForUser(
     SELECT a.*,
            r.name AS role_name,
            rp.path AS repo_path,
-           p.name AS project_name,
            t.title AS task_title
     FROM agents a
     JOIN roles r ON r.id = a.role_id
     JOIN repos rp ON rp.id = a.repo_id
-    LEFT JOIN projects p ON p.id = rp.project_id
     LEFT JOIN tasks t ON t.id = a.current_task_id
     WHERE a.user_id = ? AND a.status IN (${placeholders})
     ORDER BY a.created_at DESC
@@ -578,12 +521,10 @@ export function listAgentCardsForRepo(
     SELECT a.*,
            r.name AS role_name,
            rp.path AS repo_path,
-           p.name AS project_name,
            t.title AS task_title
     FROM agents a
     JOIN roles r ON r.id = a.role_id
     JOIN repos rp ON rp.id = a.repo_id
-    LEFT JOIN projects p ON p.id = rp.project_id
     LEFT JOIN tasks t ON t.id = a.current_task_id
     WHERE a.user_id = ? AND a.repo_id = ? AND a.status IN (${placeholders})
     ORDER BY a.created_at DESC
@@ -603,12 +544,10 @@ export function getAgentCard(id: string): AgentCardRow | undefined {
     `SELECT a.*,
             r.name AS role_name,
             rp.path AS repo_path,
-            p.name AS project_name,
             t.title AS task_title
        FROM agents a
        JOIN roles r ON r.id = a.role_id
        JOIN repos rp ON rp.id = a.repo_id
-       LEFT JOIN projects p ON p.id = rp.project_id
        LEFT JOIN tasks t ON t.id = a.current_task_id
       WHERE a.id = ?`
   ).get(id);
@@ -627,12 +566,10 @@ export function listAgentCardsByIds(userId: string, ids: string[]): AgentCardRow
     SELECT a.*,
            r.name AS role_name,
            rp.path AS repo_path,
-           p.name AS project_name,
            t.title AS task_title
     FROM agents a
     JOIN roles r ON r.id = a.role_id
     JOIN repos rp ON rp.id = a.repo_id
-    LEFT JOIN projects p ON p.id = rp.project_id
     LEFT JOIN tasks t ON t.id = a.current_task_id
     WHERE a.user_id = ? AND a.id IN (${placeholders})
   `;

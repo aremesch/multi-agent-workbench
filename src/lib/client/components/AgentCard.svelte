@@ -198,7 +198,7 @@
       title={t('agent.dragHandle')}>⠿</span>
     <div class="titles">
       <span class="name"
-        >{agent.task_title ?? agent.project_name ?? ''}</span
+        >{agent.task_title ?? ''}</span
       >
       <span class="role">{agent.role_name}</span>
       <span class="cli">{agent.cli_kind}</span>

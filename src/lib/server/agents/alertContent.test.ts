@@ -28,7 +28,6 @@ vi.mock('../db/index.js', () => ({
 import { alertReason, alertBody, agentDisplayName } from './AgentRuntime.js';
 import {
   insertAgent,
-  insertProject,
   insertRepo,
   insertRole,
   insertTask,
@@ -49,11 +48,9 @@ beforeEach(() => {
   // alertContent functions don't require any of this; it's only here
   // because `getTask(...)` is read at runtime by `agentDisplayName`.
   insertUser({ id: 'u1', username: 'alice', password_hash: 'hash' });
-  insertProject({ id: 'p1', user_id: 'u1', name: 'P', default_branch: 'main' });
   insertRepo({
     id: 'repo-1',
     user_id: 'u1',
-    project_id: 'p1',
     path: '/tmp/r',
     origin_url: null,
     default_branch: 'main'
