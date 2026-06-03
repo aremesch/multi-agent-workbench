@@ -25,6 +25,7 @@
     "vapid:gen": "node scripts/generate-vapid-keys.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.59.1",
     "@sveltejs/adapter-node": "^5.2.12",
     "@sveltejs/kit": "^2.20.0",
@@ -39,6 +40,9 @@
     "autoprefixer": "^10.4.20",
     "esbuild": "^0.28.0",
     "eslint": "^9.20.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-svelte": "^3.19.0",
+    "globals": "^17.6.0",
     "jsdom": "^26.0.0",
     "postcss": "^8.5.1",
     "prettier": "^3.4.2",
@@ -46,10 +50,12 @@
     "prettier-plugin-tailwindcss": "^0.6.11",
     "svelte": "^5.19.6",
     "svelte-check": "^4.1.4",
+    "svelte-eslint-parser": "^1.7.1",
     "tailwindcss": "^4.2.2",
     "terser": "^5.46.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.60.1",
     "vite": "^6.0.11",
     "vitest": "^3.0.5"
   },
