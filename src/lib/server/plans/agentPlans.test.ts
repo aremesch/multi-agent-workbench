@@ -48,8 +48,14 @@ import {
 
 const GLOBAL_DIR = '/home/test/.claude/plans';
 const LOCAL_DIR_ABS = '/wt/docs/plans';
-/** Default agent-creation timestamp used by tests (ms since epoch). */
-const AGENT_CREATED_MS = 10_000_000;
+/**
+ * Default agent-creation timestamp. `agents.created_at` is epoch
+ * *seconds* (DB-wide convention), so `listAgentPlans` is called with the
+ * seconds value; the derived ms value is what mocked file mtimes use,
+ * since `stat().mtimeMs` is milliseconds.
+ */
+const AGENT_CREATED_SEC = 10_000;
+const AGENT_CREATED_MS = AGENT_CREATED_SEC * 1000;
 /** Skew buffer used by the SUT — keep in sync with agentPlans.ts. */
 const GLOBAL_MTIME_SKEW_MS = 60_000;
 
@@ -163,12 +169,12 @@ describe('displayDir', () => {
 describe('listAgentPlans (local-only behaviour preserved)', () => {
   it('returns [] when the local plans dir does not exist (and global empty)', async () => {
     scriptDirs(null, []);
-    expect(await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS)).toEqual([]);
+    expect(await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC)).toEqual([]);
   });
 
   it('returns [] when no markdown files in either dir', async () => {
     scriptDirs(['README', 'config.json'], []);
-    expect(await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS)).toEqual([]);
+    expect(await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC)).toEqual([]);
   });
 
   it('lists ALL local .md when baseSha is null and tags them source=local', async () => {
@@ -176,7 +182,7 @@ describe('listAgentPlans (local-only behaviour preserved)', () => {
     statMock.mockImplementation((p: string) =>
       Promise.resolve(p.endsWith('v0.2.md') ? fakeStat(2000, 50) : fakeStat(1000, 30))
     );
-    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC);
     expect(out.map((s) => s.name)).toEqual(['v0.2.md', 'v0.1.md']); // sorted desc
     expect(out[0]!.source).toBe('local');
     expect(out[0]!.modifiedMs).toBe(2000);
@@ -188,7 +194,7 @@ describe('listAgentPlans (local-only behaviour preserved)', () => {
     scriptDirs(['a.md'], []);
     statMock.mockResolvedValue(fakeStat(1000, 10));
     revparseMock.mockRejectedValue(new Error('unknown revision'));
-    const out = await listAgentPlans('/wt', 'docs/plans', 'deadbeef', AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', 'deadbeef', AGENT_CREATED_SEC);
     expect(out.map((s) => s.name)).toEqual(['a.md']);
     expect(out[0]!.source).toBe('local');
     // After the rev-parse failure, we shouldn't have called diff or status.
@@ -211,7 +217,7 @@ describe('listAgentPlans (local-only behaviour preserved)', () => {
     statusMock.mockResolvedValue({
       files: [{ path: 'docs/plans/staged.md', index: '?', working_dir: '?' }]
     });
-    const out = await listAgentPlans('/wt', 'docs/plans', 'BASE', AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', 'BASE', AGENT_CREATED_SEC);
     expect(out.map((s) => s.name)).toEqual(['kept.md', 'staged.md']);
     expect(out.every((s) => s.source === 'local')).toBe(true);
   });
@@ -226,7 +232,7 @@ describe('listAgentPlans (local-only behaviour preserved)', () => {
     revparseMock.mockResolvedValue('BASE\n');
     diffMock.mockResolvedValue('docs/plans/one.md\ndocs/plans/two.md\n');
     statusMock.mockResolvedValue({ files: [] });
-    const out = await listAgentPlans('/wt', 'docs/plans', 'BASE', AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', 'BASE', AGENT_CREATED_SEC);
     expect(out.map((s) => s.name).sort()).toEqual(['one.md', 'two.md']);
   });
 
@@ -237,14 +243,14 @@ describe('listAgentPlans (local-only behaviour preserved)', () => {
         ? Promise.reject(new Error('ENOENT'))
         : Promise.resolve(fakeStat(1, 1))
     );
-    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC);
     expect(out.map((s) => s.name)).toEqual(['a.md']);
   });
 
   it('rejects readdir entries with unsafe filenames (defensive)', async () => {
     scriptDirs(['ok.md', '../escape.md', '.hidden.md'], []);
     statMock.mockResolvedValue(fakeStat(1, 1));
-    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC);
     expect(out.map((s) => s.name)).toEqual(['ok.md']);
   });
 });
@@ -253,10 +259,28 @@ describe('listAgentPlans — global plans (~/.claude/plans)', () => {
   it('surfaces a recent global plan when local is empty', async () => {
     scriptDirs([], ['recent.md']);
     statMock.mockResolvedValue(fakeStat(AGENT_CREATED_MS + 5_000, 42));
-    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC);
     expect(out.length).toBe(1);
     expect(out[0]!.name).toBe('recent.md');
     expect(out[0]!.source).toBe('global');
+  });
+
+  it('regression: created_at in epoch SECONDS — a global plan days older than spawn is excluded, one after spawn is included', async () => {
+    // Realistic epoch-*seconds* spawn time. The original bug compared this
+    // seconds value directly against millisecond mtimes, so the cutoff was
+    // ~1000x too small and EVERY global plan passed regardless of age.
+    const createdAtSec = 1_749_000_000;
+    const createdAtMs = createdAtSec * 1000;
+    scriptDirs([], ['stale.md', 'fresh.md']);
+    statMock.mockImplementation((p: string) =>
+      Promise.resolve(
+        p.endsWith('stale.md')
+          ? fakeStat(createdAtMs - 3 * 86_400 * 1000, 10) // 3 days before spawn
+          : fakeStat(createdAtMs + 60_000, 10) // a minute after spawn
+      )
+    );
+    const out = await listAgentPlans('/wt', 'docs/plans', null, createdAtSec);
+    expect(out.map((s) => s.name)).toEqual(['fresh.md']);
   });
 
   it('excludes a global plan older than created_at − 60s', async () => {
@@ -265,7 +289,7 @@ describe('listAgentPlans — global plans (~/.claude/plans)', () => {
     statMock.mockResolvedValue(
       fakeStat(AGENT_CREATED_MS - GLOBAL_MTIME_SKEW_MS - 1, 10)
     );
-    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC);
     expect(out).toEqual([]);
   });
 
@@ -278,14 +302,14 @@ describe('listAgentPlans — global plans (~/.claude/plans)', () => {
           : fakeStat(AGENT_CREATED_MS - GLOBAL_MTIME_SKEW_MS - 1, 1)
       )
     );
-    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC);
     expect(out.map((s) => s.name)).toEqual(['edge-in.md']);
   });
 
   it('treats a missing ~/.claude/plans dir as no global plans (no throw)', async () => {
     scriptDirs(['local.md'], null);
     statMock.mockResolvedValue(fakeStat(AGENT_CREATED_MS + 1_000, 5));
-    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC);
     expect(out.map((s) => s.name)).toEqual(['local.md']);
     expect(out[0]!.source).toBe('local');
   });
@@ -308,7 +332,7 @@ describe('listAgentPlans — global plans (~/.claude/plans)', () => {
       }
       return Promise.reject(new Error(`unexpected stat: ${p}`));
     });
-    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_MS);
+    const out = await listAgentPlans('/wt', 'docs/plans', null, AGENT_CREATED_SEC);
     expect(out.map((s) => ({ name: s.name, source: s.source }))).toEqual([
       { name: 'l-new.md', source: 'local' },
       { name: 'g-new.md', source: 'global' },
