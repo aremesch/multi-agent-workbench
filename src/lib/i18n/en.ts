@@ -42,6 +42,14 @@ const en = {
   'repoEdit.loading': 'Loading\u2026',
   'repoEdit.failedLoad': 'Failed to load repository',
   'repoEdit.failedSave': 'Failed to save repository',
+  'repoEdit.delete': 'Delete repository',
+  'repoEdit.deleting': 'Deleting…',
+  'repoEdit.confirmDeleteTitle': 'Delete repository?',
+  'repoEdit.confirmDeleteBody':
+    'Permanently remove "{path}" from the workbench? This only removes it from MAW — your files on disk are untouched. This cannot be undone.',
+  'repoEdit.failedDelete': 'Failed to delete repository',
+  'repoEdit.inUse':
+    "Can't delete: this repository still has {agents} agent(s) and {tasks} open task(s). Remove them first.",
 
   // ── Login ────────────────────────────────────────────────────────
   'login.title': 'Sign in',
