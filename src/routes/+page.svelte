@@ -4,9 +4,9 @@
   import type { PageData } from './$types';
   import type { AgentCardRow, LayoutEntry } from '$lib/shared/types';
   import AgentGrid from '$lib/client/components/AgentGrid.svelte';
-  import AgentTerminalPanel from '$lib/client/components/AgentTerminalPanel.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
   import SpawnAgentForm from '$lib/client/components/SpawnAgentForm.svelte';
+  import AgentWindowModal from '$lib/client/components/AgentWindowModal.svelte';
   import { useT } from '$lib/client/i18n.svelte';
 
   const t = useT();
@@ -14,32 +14,24 @@
   let { data }: { data: PageData } = $props();
 
   let openAgent = $state<AgentCardRow | null>(null);
-  let openAgentStatus = $state<string>('');
   let spawnOpen = $state(false);
 
   function onOpen(agent: AgentCardRow): void {
     openAgent = agent;
-    openAgentStatus = agent.status;
   }
   function closeModal(): void {
     openAgent = null;
-    openAgentStatus = '';
   }
 
-  // Auto-close the terminal modal when the underlying agent ends — same UX
-  // as an ssh session or local shell, where Ctrl-D twice closes the window
-  // immediately. `liveAgents` already excludes archived statuses, so the
-  // initial `openAgentStatus` can never start as exited/crashed; the only
-  // way to hit this branch is a live → dead transition while the modal is
-  // open. We also invalidateAll() so the card leaves the grid and reappears
-  // in the archive drawer without a manual refresh.
-  $effect(() => {
-    if (!openAgent) return;
-    if (openAgentStatus === 'exited' || openAgentStatus === 'crashed') {
-      closeModal();
-      void invalidateAll();
-    }
-  });
+  // Auto-close the terminal modal and refresh the grid when the underlying
+  // agent ends — same UX as an ssh session, where Ctrl-D twice closes the
+  // window. AgentWindowModal fires `onArchived` on the live → exited/crashed
+  // transition; invalidateAll() then drops the card from the grid and lands
+  // it in the archive drawer without a manual refresh.
+  function onAgentArchived(): void {
+    closeModal();
+    void invalidateAll();
+  }
 
   async function saveLayout(layout: LayoutEntry[]): Promise<void> {
     try {
@@ -83,33 +75,12 @@
   <span aria-hidden="true">+</span>
 </button>
 
-{#snippet statusBadge()}
-  <span class="status status-{openAgentStatus}">{openAgentStatus}</span>
-{/snippet}
-
-<Modal
+<AgentWindowModal
+  agent={openAgent}
   open={openAgent !== null}
   onClose={closeModal}
-  title={openAgent
-    ? `${openAgent.task_title ? `${openAgent.task_title} — ` : ''}${openAgent.role_name} — ${openAgent.cli_kind}`
-    : ''}
-  headerRight={openAgentStatus ? statusBadge : undefined}
->
-  {#if openAgent}
-    {#key openAgent.id}
-      <AgentTerminalPanel
-        agent={{
-          id: openAgent.id,
-          cli_kind: openAgent.cli_kind,
-          status: openAgent.status,
-          tmux_session: openAgent.tmux_session,
-          target_url: openAgent.target_url
-        }}
-        onStatusChange={(s) => (openAgentStatus = s)}
-      />
-    {/key}
-  {/if}
-</Modal>
+  onArchived={onAgentArchived}
+/>
 
 <Modal open={spawnOpen} onClose={() => (spawnOpen = false)} title={t('spawn.title')}>
   {#if spawnOpen}
@@ -145,36 +116,5 @@
   }
   .fab:hover {
     background: #1d4ed8;
-  }
-
-  /* Status pill rendered in the terminal-modal title bar. Matches the grid
-     tile's colors so the same state reads the same in both places. */
-  .status {
-    font-size: 0.7rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 0.25rem;
-    background: #1f2937;
-    color: #9ca3af;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    font-weight: 500;
-  }
-  .status-running {
-    background: #065f46;
-    color: #d1fae5;
-  }
-  .status-waiting_input {
-    background: #92400e;
-    color: #fef3c7;
-  }
-  .status-spawning,
-  .status-idle {
-    background: #1e3a8a;
-    color: #dbeafe;
-  }
-  .status-exited,
-  .status-crashed {
-    background: #7f1d1d;
-    color: #fecaca;
   }
 </style>
