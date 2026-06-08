@@ -19,10 +19,12 @@
  *     branch has added or modified relative to its base SHA. We fall
  *     back to listing every `*.md` if the base SHA is unreachable.
  *   - GLOBAL: files under `~/.claude/plans` whose mtime is at or
- *     after `agent.created_at − 60s` (a heuristic — there's no
- *     authoritative agent↔global-plan link without parsing Claude
- *     Code's stdout for the announced path; the −60s buffer absorbs
- *     clock skew between plan-mode activation and the DB row insert).
+ *     after `agent.created_at − 60s`. Note `agent.created_at` is epoch
+ *     *seconds* (the DB-wide convention), converted to ms before the
+ *     comparison. This is a heuristic — there's no authoritative
+ *     agent↔global-plan link without parsing Claude Code's stdout for
+ *     the announced path; the −60s buffer absorbs clock skew between
+ *     plan-mode activation and the DB row insert.
  *
  * Markdown is rendered server-side via `marked` then sanitized with
  * DOMPurify (HTML profile) before it crosses the wire. Plan files are
@@ -192,16 +194,18 @@ async function listLocalPlans(
 
 /**
  * Global plans = `*.md` under `~/.claude/plans` with an mtime at or
- * after `agentCreatedAtMs − 60s`. The −60s buffer covers wall-clock
+ * after `agentCreatedAtSec − 60s`. `agentCreatedAtSec` is epoch
+ * *seconds* (matching `agents.created_at`); we convert to ms here to
+ * compare against the file `mtimeMs`. The −60s buffer covers wall-clock
  * jitter between Claude Code writing the plan file (at plan-mode
  * activation) and MAW recording the agent row. This is a heuristic,
  * not an exact agent↔plan mapping — see file header.
  */
-async function listGlobalPlans(agentCreatedAtMs: number): Promise<PlanFileSummary[]> {
-  const cutoff = agentCreatedAtMs - GLOBAL_MTIME_SKEW_MS;
+async function listGlobalPlans(agentCreatedAtSec: number): Promise<PlanFileSummary[]> {
+  const cutoffMs = agentCreatedAtSec * 1000 - GLOBAL_MTIME_SKEW_MS;
   const entries = await listMdFromDir(globalPlansDir());
   return entries
-    .filter((e) => e.modifiedMs >= cutoff)
+    .filter((e) => e.modifiedMs >= cutoffMs)
     .map((e) => ({ ...e, source: 'global' as const }));
 }
 
@@ -214,11 +218,11 @@ export async function listAgentPlans(
   worktreePath: string,
   plansDir: string,
   baseSha: string | null,
-  agentCreatedAtMs: number
+  agentCreatedAtSec: number
 ): Promise<PlanFileSummary[]> {
   const [local, global] = await Promise.all([
     listLocalPlans(worktreePath, plansDir, baseSha),
-    listGlobalPlans(agentCreatedAtMs)
+    listGlobalPlans(agentCreatedAtSec)
   ]);
   return [...local, ...global].sort((a, b) => b.modifiedMs - a.modifiedMs);
 }
