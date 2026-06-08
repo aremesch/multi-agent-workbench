@@ -17,6 +17,7 @@
     { "id": "down", "label": "↓",   "keys": "\u001b[B" },
     { "id": "tab",  "label": "⇥",   "keys": "\t"       },
     { "id": "esc",  "label": "Esc", "keys": "\u001b"   },
+    { "id": "enter",  "label": "⏎",  "keys": "\r"      },
     { "id": "ctrl-c", "label": "^C", "keys": "\u0003"  }
   ],
 
