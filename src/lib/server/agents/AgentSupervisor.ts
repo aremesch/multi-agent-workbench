@@ -6,16 +6,19 @@
  * fresh FIFO + pipe-pane) or marks it crashed.
  */
 
+import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { ulid } from 'ulid';
 import { AgentRuntime, agentDisplayName } from './AgentRuntime.js';
 import { AdapterRegistry } from './adapters/AdapterRegistry.js';
 import type { AgentRow } from '../db/types.js';
+import type { CliAdapter, SpawnSpec } from '$shared/adapterTypes';
 import {
   deleteAgent,
   getAgent,
   getRepo,
   getRole,
+  getTask,
   getUserSetting,
   getWorktree,
   insertAgent,
@@ -24,6 +27,7 @@ import {
   listLiveAgents,
   updateAgentStatus
 } from '../db/queries.js';
+import type { GitIdentity } from '../user/gitIdentity.js';
 import { getPushService } from '../bootstrap.js';
 import { PUSH_PREFS_KEY, DEFAULT_NOTIFY_KINDS, parseNotifyKinds } from '../push/pushPrefs.js';
 import { Tmux } from '../tmux/TmuxSession.js';
@@ -34,9 +38,11 @@ import { resolveGitIdentityForUser } from '../user/gitIdentity.js';
 import { getPlaywrightSessions } from '../preview/PlaywrightSessionManager.js';
 import { generateHookToken, writeClaudeHookSettings } from './claudeHooks.js';
 import {
+  agentClaudeConfigDir,
   ensureAgentClaudeConfigDir,
   removeAgentClaudeConfigDir
 } from './claudeConfigDir.js';
+import { jsonlPathInRoot } from './history/ClaudeJsonlTokens.js';
 import { getAlertBus } from './AlertBus.js';
 
 /** CLI kinds for which we register Claude Code hook settings at spawn /
@@ -665,6 +671,63 @@ export class AgentSupervisor {
       source_branch: args.sourceBranch ?? null
     });
 
+    // Hand off to the shared launch tail: hook settings, env assembly, tmux
+    // session, runtime start (with rollback), exit watcher, run record,
+    // status flip. On a launch failure we delete the just-inserted row so it
+    // doesn't sit at status='spawning' forever, then rethrow so
+    // spawnFromInputs can roll back the worktree too.
+    const row = getAgent(agentId)!;
+    return this.launchCliRuntime({
+      row,
+      adapter,
+      spec,
+      hookToken,
+      worktreePath: args.worktreePath,
+      committerName,
+      committerEmail,
+      authorIdentity,
+      onStartFailure: () => {
+        try {
+          deleteAgent(agentId);
+        } catch (dbErr) {
+          console.error(
+            `[AgentSupervisor] failed to delete agent row ${agentId} after spawn failure:`,
+            dbErr
+          );
+        }
+      }
+    });
+  }
+
+  /**
+   * Shared CLI-launch tail used by both {@link spawn} (fresh agent) and
+   * {@link restart} (revived crashed agent). Assumes `row` is already in the
+   * DB at status `spawning`. Writes claude hook settings, assembles env,
+   * creates the tmux session, starts the AgentRuntime (rolling back via
+   * `onStartFailure` + rethrow if the CLI dies before pipe-pane attaches),
+   * registers the exit watcher, inserts a fresh `agent_runs` row, and flips
+   * the agent to `running`.
+   *
+   * The only behavioral difference between callers is `onStartFailure`:
+   * spawn deletes the row (full rollback), restart flips it back to
+   * `crashed` (recoverable — the user can retry from the archive).
+   */
+  private async launchCliRuntime(opts: {
+    row: AgentRow;
+    adapter: CliAdapter;
+    spec: SpawnSpec;
+    hookToken: string | null;
+    worktreePath: string;
+    committerName: string;
+    committerEmail: string;
+    authorIdentity: GitIdentity;
+    onStartFailure: () => void;
+  }): Promise<AgentRow> {
+    const cfg = getConfig();
+    const { row, adapter, spec, hookToken } = opts;
+    const agentId = row.id;
+    const tmuxSession = row.tmux_session;
+
     // Write the worktree's .claude/settings.local.json so claude-code's
     // hooks fire into MAW. Always loopback (`127.0.0.1:<port>`) regardless
     // of the server's HOST bind, because the spawned agent runs on the
@@ -674,7 +737,7 @@ export class AgentSupervisor {
     if (hookToken) {
       try {
         writeClaudeHookSettings({
-          worktreePath: args.worktreePath,
+          worktreePath: opts.worktreePath,
           hookToken,
           mawUrl: mawLoopback
         });
@@ -694,10 +757,10 @@ export class AgentSupervisor {
       ...spec.env,
       MAW_AGENT_ID: agentId,
       MAW_URL: `http://${cfg.host}:${cfg.port}`,
-      GIT_COMMITTER_NAME: committerName,
-      GIT_COMMITTER_EMAIL: committerEmail,
-      GIT_AUTHOR_NAME: authorIdentity.name,
-      GIT_AUTHOR_EMAIL: authorIdentity.email
+      GIT_COMMITTER_NAME: opts.committerName,
+      GIT_COMMITTER_EMAIL: opts.committerEmail,
+      GIT_AUTHOR_NAME: opts.authorIdentity.name,
+      GIT_AUTHOR_EMAIL: opts.authorIdentity.email
     };
     if (hookToken) {
       env.MAW_AGENT_TOKEN = hookToken;
@@ -706,8 +769,10 @@ export class AgentSupervisor {
     // For claude-code agents: pin CLAUDE_CONFIG_DIR to a per-agent path so
     // each CLI reads/writes its own `.claude.json` and friends. Without
     // this, every spawn atomically rewrites the user-global `~/.claude.json`
-    // and the rename takes down already-running CLIs.
-    if (role.cli_kind === 'claude-code') {
+    // and the rename takes down already-running CLIs. Idempotent on restart —
+    // re-seeding never touches the `projects/` transcript, so `--resume`
+    // still finds its JSONL.
+    if (row.cli_kind === 'claude-code') {
       env.CLAUDE_CONFIG_DIR = ensureAgentClaudeConfigDir(agentId);
     }
 
@@ -716,7 +781,7 @@ export class AgentSupervisor {
     // (`--permission-mode`, `--model`, `--dangerously-skip-permissions`, …)
     // when diagnosing a "claude isn't in the mode I picked" report.
     console.log(
-      `[AgentSupervisor] spawn ${agentId} (${role.cli_kind}): ` +
+      `[AgentSupervisor] launch ${agentId} (${row.cli_kind}): ` +
         `${spec.command} ${spec.args.map((a) => JSON.stringify(a)).join(' ')}`
     );
 
@@ -728,25 +793,17 @@ export class AgentSupervisor {
       cwd: spec.cwd
     });
 
-    const row = getAgent(agentId)!;
     const runtime = new AgentRuntime(row, adapter, cfg.fifoDir);
     this.wireAlertBus(runtime);
     try {
       await runtime.start();
     } catch (err) {
       // The pane-alive check inside runtime.start threw — the agent CLI
-      // exited before pipe-pane could attach. Roll the agent row back so
-      // it doesn't sit at status='spawning' forever (no exit watcher
-      // would ever fire for it), tear down the (possibly-still-alive
-      // dead) session, and rethrow so spawnFromInputs sees the error and
-      // can roll back the worktree too. The captured CLI tail rides on
-      // err.message.
+      // exited before pipe-pane could attach. Tear down the (possibly-
+      // still-alive dead) session, run the caller's rollback, and rethrow
+      // so the caller can react. The captured CLI tail rides on err.message.
       await Tmux.killSession(tmuxSession).catch(() => {});
-      try {
-        deleteAgent(agentId);
-      } catch (dbErr) {
-        console.error(`[AgentSupervisor] failed to delete agent row ${agentId} after spawn failure:`, dbErr);
-      }
+      opts.onStartFailure();
       throw err;
     }
     this.runtimes.set(agentId, runtime);
@@ -754,7 +811,7 @@ export class AgentSupervisor {
 
     insertAgentRun({
       id: ulid(),
-      user_id: args.userId,
+      user_id: row.user_id,
       agent_id: agentId,
       started_at: Math.floor(Date.now() / 1000)
     });
@@ -766,7 +823,132 @@ export class AgentSupervisor {
     // configured `delivery: 'none'` simply have no initial prompt, and the
     // spawn dialog hides the task-body field for them.
 
-    return row;
+    return getAgent(agentId)!;
+  }
+
+  /**
+   * Revive a crashed agent in place. Reuses the same agent row (so token /
+   * commit history and the CLI session id stay linked), its worktree, branch,
+   * and tmux session name, and adds a fresh `agent_runs` record.
+   *
+   * Smart resume: for a claude-code agent whose JSONL transcript survived the
+   * crash (crashed agents skip the per-agent config-dir cleanup that clean
+   * exits do), relaunch with the adapter's `resume` argv (`claude --resume
+   * <uuid>`) so the conversation context is restored. Otherwise fall back to a
+   * fresh re-spawn that re-feeds the original task body.
+   *
+   * Only `crashed` agents are eligible. Browser agents survive restarts on
+   * their own and are rejected here. The worktree directory and branch must
+   * still exist (or be recoverable) — see {@link WorktreeManager.validateForReuse}.
+   */
+  async restart(agentId: string): Promise<
+    | { ok: true; mode: 'resume' | 'fresh'; row: AgentRow }
+    | {
+        ok: false;
+        code:
+          | 'not_crashed'
+          | 'worktree_gone'
+          | 'branch_gone'
+          | 'unknown_kind'
+          | 'browser_unsupported'
+          | 'launch_failed';
+        message?: string;
+      }
+  > {
+    const cfg = getConfig();
+    const agent = getAgent(agentId);
+    if (!agent) return { ok: false, code: 'not_crashed' };
+    if (agent.status !== 'crashed') return { ok: false, code: 'not_crashed' };
+    if (isBrowserKind(agent.cli_kind)) return { ok: false, code: 'browser_unsupported' };
+    if (!this.registry.has(agent.cli_kind)) return { ok: false, code: 'unknown_kind' };
+
+    const role = getRole(agent.role_id);
+    if (!role) return { ok: false, code: 'unknown_kind' };
+    const repo = getRepo(agent.repo_id);
+    if (!repo) return { ok: false, code: 'worktree_gone' };
+
+    // Defensive: a crash was detected in a prior process, so these maps are
+    // normally empty for this agent — but clear any stale entry so the new
+    // runtime / exit-watcher don't race a leftover.
+    this.stopExitWatcher(agentId);
+    this.runtimes.delete(agentId);
+
+    // Validate (and if necessary recreate) the worktree before touching it.
+    const wt = getWorktree(agent.worktree_id);
+    const valid = await WorktreeManager.validateForReuse({
+      worktree: wt,
+      repoPath: repo.path,
+      sourceBranch: agent.source_branch,
+      agentId,
+      worktreeRoot: cfg.worktreeRoot
+    });
+    if (!valid.ok) return { ok: false, code: valid.code };
+    const worktreePath = valid.path;
+
+    const adapter = this.registry.create(agent.cli_kind);
+
+    // Decide resume vs fresh. Resume needs: adapter support, a persisted
+    // session id, and a surviving transcript under the isolated config dir.
+    const transcript = agent.cli_session_id
+      ? jsonlPathInRoot(agentClaudeConfigDir(agentId), worktreePath, agent.cli_session_id)
+      : null;
+    const canResume =
+      adapter.supportsResume &&
+      agent.cli_kind === 'claude-code' &&
+      !!agent.cli_session_id &&
+      !!transcript &&
+      existsSync(transcript);
+    const mode: 'resume' | 'fresh' = canResume ? 'resume' : 'fresh';
+
+    // Re-feed the original prompt: as a nudge on resume, as the full initial
+    // input on a fresh relaunch. Pulled from the agent's current task row.
+    const task = agent.current_task_id ? getTask(agent.current_task_id) : undefined;
+
+    const spec = adapter.buildSpawnSpec({
+      role: {
+        systemPrompt: role.system_prompt,
+        toolConfig: JSON.parse(role.tool_config_json || '{}')
+      },
+      worktreeCwd: worktreePath,
+      task: task ? { title: task.title, body: task.body } : null,
+      env: {
+        ANTHROPIC_API_KEY: cfg.anthropicApiKey,
+        CLAUDE_CODE_OAUTH_TOKEN: cfg.claudeCodeOauthToken,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? ''
+      },
+      agent: { id: agentId, cliSessionId: agent.cli_session_id },
+      capabilityValues: { model: agent.model, permissionMode: agent.permission_mode },
+      // 'fresh' relaunch uses the default spawn argv (re-feeds the task body);
+      // 'resume' swaps in the adapter's `--resume` argv.
+      mode: mode === 'resume' ? 'resume' : 'spawn'
+    });
+
+    // Reconstruct the per-agent committer/author identity exactly as spawn
+    // did, so revived-run commits keep the same attribution.
+    const committerEmail = agent.committer_email ?? `${agentId}@maw.local`;
+    const committerName = `MAW-Agent-${agentId}`;
+    const authorIdentity = resolveGitIdentityForUser(agent.user_id);
+
+    // Move the row back into the pre-launch state spawn uses, then launch.
+    updateAgentStatus(agentId, 'spawning');
+    const row = getAgent(agentId)!;
+    try {
+      const launched = await this.launchCliRuntime({
+        row,
+        adapter,
+        spec,
+        hookToken: agent.hook_token,
+        worktreePath,
+        committerName,
+        committerEmail,
+        authorIdentity,
+        onStartFailure: () => updateAgentStatus(agentId, 'crashed')
+      });
+      return { ok: true, mode, row: launched };
+    } catch (err) {
+      return { ok: false, code: 'launch_failed', message: (err as Error).message };
+    }
   }
 
   async kill(agentId: string): Promise<void> {

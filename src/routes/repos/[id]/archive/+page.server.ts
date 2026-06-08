@@ -1,8 +1,11 @@
+import { existsSync } from 'node:fs';
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import {
   getLatestRunForAgent,
   getRepo,
+  getRole,
+  getTask,
   getWorktree,
   listAgentCardsForRepo,
   listPersistedAgentCommits,
@@ -10,6 +13,7 @@ import {
   type AgentCardRow,
   type TerminalActivitySummary
 } from '$lib/server/db/queries';
+import { isBrowserKind } from '$lib/server/agents/AgentSupervisor';
 import type { AgentCommitRow, AgentRunRow, AgentStatus } from '$lib/server/db/types';
 import {
   summarizeTokenUsage,
@@ -23,6 +27,22 @@ import type { AgentCommit, AgentRemote } from '$lib/shared/types';
 
 const ARCHIVED_STATUSES: AgentStatus[] = ['exited', 'crashed'];
 
+/**
+ * The original agent definition, surfaced read-only in the archive's "Show
+ * Definition" modal. Assembled from the role (system prompt) and the agent's
+ * task row (the prompt/body) plus the frozen runtime picks on the agent row.
+ */
+export interface AgentDefinition {
+  roleName: string;
+  systemPrompt: string;
+  taskTitle: string | null;
+  taskBody: string | null;
+  model: string | null;
+  permissionMode: string | null;
+  cliKind: string;
+  sourceBranch: string | null;
+}
+
 export interface ArchivedAgentEntry {
   agent: AgentCardRow;
   run: AgentRunRow | null;
@@ -30,6 +50,14 @@ export interface ArchivedAgentEntry {
   totalSec: number | null;
   tokens: TokenUsageSummary | null;
   commits: AgentCommit[];
+  /**
+   * Cheap UX gate for the "Restart/continue work" menu item: true only for a
+   * crashed CLI agent whose worktree directory is still on disk. The restart
+   * endpoint re-validates (and can recover a missing dir from the branch), so
+   * this is a disable hint, not an authorization check.
+   */
+  restartable: boolean;
+  definition: AgentDefinition;
 }
 
 export interface ArchiveTotals {
@@ -114,14 +142,36 @@ export const load: PageServerLoad = async ({ locals, params }) => {
       const endedAt = run?.ended_at ?? a.updated_at;
       const totalSec = endedAt && startedAt ? endedAt - startedAt : null;
 
+      const wt = getWorktree(a.worktree_id);
+
       let tokens: TokenUsageSummary | null = null;
-      if (a.cli_session_id) {
-        const wt = getWorktree(a.worktree_id);
-        if (wt) {
-          const path = jsonlPathFor(wt.path, a.cli_session_id);
-          tokens = await summarizeTokenUsage(path);
-        }
+      if (a.cli_session_id && wt) {
+        const path = jsonlPathFor(wt.path, a.cli_session_id);
+        tokens = await summarizeTokenUsage(path);
       }
+
+      // Agent definition for the "Show Definition" modal. role.system_prompt
+      // and task.body aren't on the AgentCardRow join, so fetch them here
+      // (both cheap indexed primary-key lookups).
+      const role = getRole(a.role_id);
+      const task = a.current_task_id ? getTask(a.current_task_id) : undefined;
+      const definition: AgentDefinition = {
+        roleName: a.role_name,
+        systemPrompt: role?.system_prompt ?? '',
+        taskTitle: task?.title ?? a.task_title ?? null,
+        taskBody: task?.body ?? null,
+        model: a.model,
+        permissionMode: a.permission_mode,
+        cliKind: a.cli_kind,
+        sourceBranch: a.source_branch
+      };
+
+      const restartable =
+        a.status === 'crashed' &&
+        !isBrowserKind(a.cli_kind) &&
+        !!wt &&
+        wt.status !== 'removed' &&
+        existsSync(wt.path);
 
       // Read persisted commits from agent_commits. Legacy agents that
       // were never snapshotted get a one-shot back-fill on first visit;
@@ -135,7 +185,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
           rows = listPersistedAgentCommits(a.id);
         }
       }
-      return { agent: a, run, stats, totalSec, tokens, rows };
+      return { agent: a, run, stats, totalSec, tokens, rows, restartable, definition };
     })
   );
 
@@ -151,7 +201,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
     stats: p.stats,
     totalSec: p.totalSec,
     tokens: p.tokens,
-    commits: p.rows.map((r) => rowToCommit(r, reachable.has(r.sha)))
+    commits: p.rows.map((r) => rowToCommit(r, reachable.has(r.sha))),
+    restartable: p.restartable,
+    definition: p.definition
   }));
 
   return {

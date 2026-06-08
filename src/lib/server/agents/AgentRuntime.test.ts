@@ -166,6 +166,7 @@ function makeAdapter(overrides: Partial<CliAdapter> = {}): CliAdapter {
     createWorktree: false,
     mobileQuickKeys: [],
     needsCliSessionId: false,
+    supportsResume: false,
     buildSpawnSpec: () => ({ command: 'bash', args: [], env: {}, cwd: '/tmp' }),
     ingest: () => [],
     state: () => 'BOOTING',

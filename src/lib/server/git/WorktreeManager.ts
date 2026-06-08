@@ -5,8 +5,9 @@
  */
 
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { GitIdentity } from '../user/gitIdentity.js';
+import type { WorktreeRow } from '../db/types.js';
 import { getGit } from './client.js';
 
 export interface WorktreeEntry {
@@ -154,6 +155,65 @@ export class WorktreeManager {
       baseSha = null;
     }
     return { path: wtPath, baseSha };
+  }
+
+  /**
+   * Validate that a crashed agent's worktree can be reused before reviving it
+   * (AgentSupervisor.restart). Three outcomes:
+   *
+   *  - `worktree_gone` — the worktree row is missing or tombstoned
+   *    (`status='removed'`), so we have no record of where the work lived.
+   *  - happy path (`recreated: false`) — the directory is still on disk; reuse
+   *    it as-is.
+   *  - `recreated: true` — the directory is gone but the agent's `sourceBranch`
+   *    still exists locally, so we re-materialize the worktree at that branch's
+   *    tip. Committed work is preserved; any uncommitted changes that were in
+   *    the lost directory are unrecoverable.
+   *  - `branch_gone` — directory AND branch are both gone; the work cannot be
+   *    resumed in place.
+   *
+   * Recreation re-points the existing branch to itself via `create()`'s `-B`,
+   * which only materializes the worktree — it does not move the branch tip.
+   * The caller MUST keep the agent's original `base_sha` (do not adopt the
+   * recreated worktree's fresh base) so commit attribution stays anchored.
+   */
+  static async validateForReuse(opts: {
+    worktree: WorktreeRow | undefined;
+    repoPath: string;
+    sourceBranch: string | null;
+    agentId: string;
+    worktreeRoot: string;
+  }): Promise<
+    | { ok: true; recreated: boolean; path: string }
+    | { ok: false; code: 'worktree_gone' | 'branch_gone' }
+  > {
+    const { worktree } = opts;
+    if (!worktree || worktree.status === 'removed') {
+      return { ok: false, code: 'worktree_gone' };
+    }
+    if (existsSync(worktree.path)) {
+      return { ok: true, recreated: false, path: worktree.path };
+    }
+    // Directory vanished (manual cleanup, lost volume, …). Recover from the
+    // branch if it still exists.
+    if (!opts.sourceBranch) return { ok: false, code: 'branch_gone' };
+    const { branches } = await WorktreeManager.listBranches(opts.repoPath);
+    if (!branches.includes(opts.sourceBranch)) {
+      return { ok: false, code: 'branch_gone' };
+    }
+    // The directory is gone but git may still have it registered as a
+    // worktree, which would make `worktree add` fail with "already exists".
+    // Prune the stale admin entry first.
+    await WorktreeManager.prune(opts.repoPath).catch(() => {});
+    const wtm = new WorktreeManager(opts.worktreeRoot);
+    const created = await wtm.create({
+      repoPath: opts.repoPath,
+      agentId: opts.agentId,
+      branch: opts.sourceBranch,
+      startPoint: opts.sourceBranch,
+      dirName: basename(worktree.path)
+    });
+    return { ok: true, recreated: true, path: created.path };
   }
 
   /**

@@ -24,17 +24,27 @@
     agent,
     onShowPlan,
     onShowLog,
+    onShowDefinition,
+    onRestart,
     onExit,
-    showExit = true
+    showExit = true,
+    restartable = false
   }: {
     agent: { id: string; cli_kind: string; status: AgentStatus };
     onShowPlan: () => void;
     onShowLog: () => void;
+    /** When provided, adds a "Show definition" row (archive surfaces). */
+    onShowDefinition?: () => void;
+    /** When provided, adds a "Restart/continue work" row. Enabled only for a
+        crashed agent whose worktree is still reusable (`restartable`). */
+    onRestart?: () => void;
     /** Required only when `showExit` is true; ignored otherwise. */
     onExit?: () => void;
     /** Set to `false` in surfaces where the agent is always already exited
         (e.g. archive view) so the perma-disabled Exit row is hidden. */
     showExit?: boolean;
+    /** Gates the Restart row's enabled state — see `onRestart`. */
+    restartable?: boolean;
   } = $props();
 
   const isArchived = $derived(agent.status === 'exited' || agent.status === 'crashed');
@@ -56,6 +66,28 @@
       icon: logIcon,
       onSelect: onShowLog
     },
+    ...(onShowDefinition
+      ? [
+          {
+            id: 'definition',
+            label: t('agentMenu.showDefinition'),
+            icon: definitionIcon,
+            onSelect: onShowDefinition
+          } satisfies OverflowMenuItem
+        ]
+      : []),
+    ...(onRestart
+      ? [
+          {
+            id: 'restart',
+            label: t('agentMenu.restart'),
+            icon: restartIcon,
+            onSelect: onRestart,
+            dividerBefore: true,
+            disabled: agent.status !== 'crashed' || !restartable
+          } satisfies OverflowMenuItem
+        ]
+      : []),
     ...(showExit
       ? [
           {
@@ -86,6 +118,24 @@
     <path
       fill="currentColor"
       d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 14H4V8h16v10ZM6 10l4 3-4 3v-6Zm6 4h6v2h-6v-2Z"
+    />
+  </svg>
+{/snippet}
+
+{#snippet definitionIcon()}
+  <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      fill="currentColor"
+      d="M4 4h16a1 1 0 0 1 1 1v3H3V5a1 1 0 0 1 1-1Zm-1 6h18v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9Zm3 2v2h5v-2H6Zm0 4v2h8v-2H6Z"
+    />
+  </svg>
+{/snippet}
+
+{#snippet restartIcon()}
+  <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      fill="currentColor"
+      d="M12 4V1L8 5l4 4V6a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8Z"
     />
   </svg>
 {/snippet}

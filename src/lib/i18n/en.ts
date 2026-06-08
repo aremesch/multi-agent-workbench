@@ -316,6 +316,28 @@ const en = {
   'archive.refresh.preserved': 'Kept existing commits; branch or base is gone.',
   'archive.refresh.error': 'Refresh failed: {message}',
   'archive.commit.stale': 'Local object missing; link may be stale.',
+  'archive.restart.working': 'Restarting…',
+  'archive.restart.error.worktree_gone':
+    "This agent's worktree no longer exists, so its work cannot be resumed.",
+  'archive.restart.error.branch_gone':
+    "This agent's worktree and branch are both gone — its work cannot be resumed in place.",
+  'archive.restart.error.not_crashed': 'This agent is no longer in a crashed state.',
+  'archive.restart.error.unknown_kind': 'No runtime is registered for this agent type.',
+  'archive.restart.error.browser_unsupported': 'Browser agents cannot be restarted this way.',
+  'archive.restart.error.launch_failed': 'The agent failed to relaunch: {message}',
+  'archive.restart.error.generic': 'Restart failed: {message}',
+
+  // ── Agent definition modal ───────────────────────────────────────
+  'archive.definition.title': 'Agent definition',
+  'archive.definition.role': 'Role',
+  'archive.definition.systemPrompt': 'System prompt',
+  'archive.definition.task': 'Task',
+  'archive.definition.prompt': 'Prompt',
+  'archive.definition.model': 'Model',
+  'archive.definition.permissionMode': 'Permission mode',
+  'archive.definition.cli': 'CLI',
+  'archive.definition.branch': 'Source branch',
+  'archive.definition.empty': '—',
 
   // ── Archive overview (cross-repo) ────────────────────────────────
   'archive.overview.title': 'Archive overview',
@@ -392,6 +414,8 @@ const en = {
   'agentMenu.button': 'Agent menu',
   'agentMenu.showPlan': 'Show plan',
   'agentMenu.showLog': 'Show log',
+  'agentMenu.showDefinition': 'Show definition',
+  'agentMenu.restart': 'Restart/continue work',
   'agentMenu.exitAgent': 'Exit agent',
 
   // ── Plan viewer modal ────────────────────────────────────────────

@@ -100,6 +100,14 @@
               }
             }
           ]
+        },
+        "resume": {
+          "type": "object",
+          "description": "Re-attach variant used by AgentSupervisor.restart to revive a crashed agent against its existing session (e.g. `claude --resume <uuid>`). 'args' replaces spawn.args in resume mode; 'initialInput' (optional) replaces spawn.initialInput. Omit for CLIs with no resume mechanism.",
+          "properties": {
+            "args": { "type": "array", "items": { "type": "string" } },
+            "initialInput": { "$ref": "#/properties/spawn/properties/initialInput" }
+          }
         }
       }
     },

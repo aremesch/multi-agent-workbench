@@ -44,6 +44,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
   readonly createWorktree: boolean;
   readonly mobileQuickKeys: MobileQuickKey[];
   readonly needsCliSessionId: boolean;
+  readonly supportsResume: boolean;
   readonly input: InputEncoding;
 
   private readonly cfg: AdapterConfig;
@@ -63,6 +64,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
     this.createWorktree = cfg.createWorktree;
     this.mobileQuickKeys = cfg.mobileQuickKeys;
     this.needsCliSessionId = scanForCliSessionIdRef(cfg);
+    this.supportsResume = !!cfg.spawn.resume;
     this.patterns = cfg.patterns.map((p) => ({
       cfg: p,
       re: new RegExp(p.regex, p.flags ?? '')
@@ -201,7 +203,12 @@ export class ConfigDrivenAdapter implements CliAdapter {
       resolvedEnv[k] = resolved;
     }
 
-    const args = this.cfg.spawn.args.map(subst);
+    // Resume mode swaps in the `spawn.resume` argv when the adapter declares
+    // one (e.g. `--resume <uuid>` instead of `--session-id <uuid>`). Without a
+    // resume block, or in the default spawn mode, we use the normal args.
+    const resume = opts.mode === 'resume' ? this.cfg.spawn.resume : undefined;
+    const baseArgs = resume ? resume.args : this.cfg.spawn.args;
+    const args = baseArgs.map(subst);
 
     // Capability args: append the substituted `arg` template when the user
     // picked a non-empty value. By convention adapters use a `default` id
@@ -226,7 +233,7 @@ export class ConfigDrivenAdapter implements CliAdapter {
     // Initial-prompt delivery via CLI arg. `delivery: 'none'` skips this
     // block entirely; the task body still gets persisted in `tasks.body`
     // by the spawn route but is never sent to the CLI.
-    const ii = this.cfg.spawn.initialInput;
+    const ii = resume?.initialInput ?? this.cfg.spawn.initialInput;
     if (ii.delivery === 'cli-arg') {
       const body = subst(ii.template);
       const isEmpty = ii.omitWhenEmpty !== false && body.trim() === '';
