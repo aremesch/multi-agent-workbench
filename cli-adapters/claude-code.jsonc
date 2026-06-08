@@ -12,15 +12,18 @@
   // Agentic coding CLI — eligible for the /queue scheduler.
   "agenticCodingCli": true,
 
-  // Phone soft keyboards hide arrow keys, Esc and Shift+Tab — every one of
-  // which Claude Code needs constantly (history recall, menu navigation,
-  // plan/thinking tab cycling, dismissing popovers). The user asked for
-  // these explicitly; tune as you hit new gaps.
+  // Phone soft keyboards hide arrow keys, Tab, Shift+Tab, Esc and Enter —
+  // every one of which Claude Code needs constantly (history recall, menu
+  // navigation, completion, plan/thinking tab cycling, dismissing popovers,
+  // submitting input). The user asked for these explicitly; tune as you hit
+  // new gaps.
   "mobileQuickKeys": [
     { "id": "up",        "label": "↑",    "keys": "\u001b[A" },
     { "id": "down",      "label": "↓",    "keys": "\u001b[B" },
+    { "id": "tab",       "label": "⇥",   "keys": "\t"       },
     { "id": "shift-tab", "label": "⇧⇥",  "keys": "\u001b[Z" },
-    { "id": "esc",       "label": "Esc",  "keys": "\u001b"   }
+    { "id": "esc",       "label": "Esc",  "keys": "\u001b"   },
+    { "id": "enter",     "label": "⏎",   "keys": "\r"       }
   ],
 
   // NOTE: these patterns are starting points. Tune against real captured

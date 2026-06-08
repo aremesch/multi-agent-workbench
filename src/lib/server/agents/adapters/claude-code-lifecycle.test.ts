@@ -79,6 +79,18 @@ describe('claude-code adapter — real cli-adapters/claude-code.jsonc', () => {
       const esc = a.mobileQuickKeys.find((k) => k.id === 'esc');
       expect(esc?.keys).toBe('');
     });
+
+    it('tab = TAB (\\t)', () => {
+      const a = loadClaudeCodeAdapter();
+      const tab = a.mobileQuickKeys.find((k) => k.id === 'tab');
+      expect(tab?.keys).toBe('\t');
+    });
+
+    it('enter = CR (\\r)', () => {
+      const a = loadClaudeCodeAdapter();
+      const enter = a.mobileQuickKeys.find((k) => k.id === 'enter');
+      expect(enter?.keys).toBe('\r');
+    });
   });
 
   describe('input.answerPrompt for documented choices', () => {
