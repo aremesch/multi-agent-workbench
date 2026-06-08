@@ -185,7 +185,25 @@ export const adapterConfigSchema = z.object({
       )
       .default([]),
     env: z.record(z.string(), z.string()).default({}),
-    initialInput: initialInputSchema.default({ delivery: 'none' })
+    initialInput: initialInputSchema.default({ delivery: 'none' }),
+
+    /**
+     * Optional re-attach variant. When present, AgentSupervisor.restart can
+     * relaunch a crashed agent's CLI against its existing session instead of
+     * spawning a brand-new one (e.g. `claude --resume <uuid>` rather than
+     * `claude --session-id <uuid>`). `args` replaces `spawn.args` in resume
+     * mode; `initialInput` (when given) replaces `spawn.initialInput` so the
+     * original task body can be re-fed as a nudge. Capability args
+     * (`--model`, `--permission-mode`) and `optionalArgs` are still appended.
+     * Omit this block for CLIs with no resume mechanism — they always
+     * re-spawn fresh.
+     */
+    resume: z
+      .object({
+        args: z.array(z.string()).default([]),
+        initialInput: initialInputSchema.optional()
+      })
+      .optional()
   }),
 
   capabilities: capabilitiesSchema,

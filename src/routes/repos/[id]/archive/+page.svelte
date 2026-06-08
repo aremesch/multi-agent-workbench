@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import type { PageData } from './$types';
   import AgentMenu from '$lib/client/components/AgentMenu.svelte';
+  import AgentDefinitionModal from '$lib/client/components/AgentDefinitionModal.svelte';
+  import type { AgentDefinitionView } from '$lib/client/components/AgentDefinitionModal.svelte';
   import ArchivedAgentLogModal from '$lib/client/components/ArchivedAgentLogModal.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
   import PlanViewerModal from '$lib/client/components/PlanViewerModal.svelte';
@@ -17,6 +19,15 @@
   let openAgentTitle = $state<string>('');
   let planAgentId = $state<string | null>(null);
   let expanded = $state<Record<string, boolean>>({});
+
+  let definitionView = $state<AgentDefinitionView | null>(null);
+  let definitionOpen = $state(false);
+
+  /** Per-row restart progress + error. On success we navigate away (the agent
+   *  is live again and no longer in the archive), so no success state needed. */
+  let restarting = $state<Record<string, boolean>>({});
+  let restartError = $state<string>('');
+  let restartErrorOpen = $state(false);
 
   /** Delete-confirm state machine. `stage` drives which body the modal renders. */
   type DeleteStage = 'closed' | 'confirm' | 'dirty' | 'working' | 'error';
@@ -41,6 +52,49 @@
   }
   function closePlan(): void {
     planAgentId = null;
+  }
+  function viewDefinition(entry: PageData['archivedAgents'][number]): void {
+    definitionView = entry.definition;
+    definitionOpen = true;
+  }
+  function closeDefinition(): void {
+    definitionOpen = false;
+  }
+
+  async function runRestart(entry: PageData['archivedAgents'][number]): Promise<void> {
+    const id = entry.agent.id;
+    if (restarting[id]) return;
+    restarting[id] = true;
+    try {
+      const res = await apiFetch(`/api/agents/${id}/restart`, { method: 'POST' });
+      if (res.ok) {
+        // The agent is live again — leave the archive and focus it on the
+        // repo dashboard.
+        await goto(`/repos/${data.repo.id}?agent=${id}`);
+        return;
+      }
+      const body = (await res.json().catch(() => ({}))) as {
+        code?: string;
+        message?: string;
+      };
+      const key = `archive.restart.error.${body.code ?? ''}`;
+      const translated = t(key, { message: body.message ?? '' });
+      // Fall back to the generic message when the code has no specific key.
+      restartError =
+        translated === key
+          ? t('archive.restart.error.generic', { message: body.message ?? `HTTP ${res.status}` })
+          : translated;
+      restartErrorOpen = true;
+      // The worktree may have vanished since page load — refresh restartable.
+      await invalidateAll();
+    } catch (err) {
+      restartError = t('archive.restart.error.generic', {
+        message: err instanceof Error ? err.message : String(err)
+      });
+      restartErrorOpen = true;
+    } finally {
+      restarting[id] = false;
+    }
   }
   function toggle(agentId: string): void {
     expanded[agentId] = !expanded[agentId];
@@ -208,8 +262,11 @@
                     status: entry.agent.status
                   }}
                   showExit={false}
+                  restartable={entry.restartable}
                   onShowPlan={() => viewPlan(entry)}
                   onShowLog={() => viewLog(entry)}
+                  onShowDefinition={() => viewDefinition(entry)}
+                  onRestart={() => runRestart(entry)}
                 />
                 <button
                   type="button"
@@ -360,6 +417,27 @@
     onClose={closePlan}
   />
 {/if}
+
+<AgentDefinitionModal
+  definition={definitionView}
+  open={definitionOpen}
+  onClose={closeDefinition}
+/>
+
+<Modal
+  open={restartErrorOpen}
+  onClose={() => (restartErrorOpen = false)}
+  title={t('agentMenu.restart')}
+>
+  <div class="delete-modal">
+    <p class="warn">{restartError}</p>
+    <div class="delete-actions">
+      <button type="button" class="btn-ghost" onclick={() => (restartErrorOpen = false)}>
+        {t('common.close')}
+      </button>
+    </div>
+  </div>
+</Modal>
 
 <Modal
   open={deleteStage !== 'closed'}

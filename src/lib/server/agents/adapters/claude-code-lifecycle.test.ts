@@ -50,6 +50,25 @@ describe('claude-code adapter — real cli-adapters/claude-code.jsonc', () => {
       const a = loadClaudeCodeAdapter();
       expect(a.needsCliSessionId).toBe(true);
     });
+
+    it('supportsResume is true and resume mode emits `--resume <sessionId>`', () => {
+      const a = loadClaudeCodeAdapter();
+      expect(a.supportsResume).toBe(true);
+      const spec = a.buildSpawnSpec({
+        role: { systemPrompt: '', toolConfig: {} },
+        worktreeCwd: '/tmp/wt',
+        task: { title: 't', body: 'carry on' },
+        env: { ANTHROPIC_API_KEY: 'x' },
+        agent: { id: 'agent-x', cliSessionId: 'sess-42' },
+        capabilityValues: { model: null, permissionMode: 'plan' },
+        mode: 'resume'
+      });
+      expect(spec.args).toContain('--resume');
+      expect(spec.args).toContain('sess-42');
+      expect(spec.args).not.toContain('--session-id');
+      // The original task body is re-fed as a positional nudge.
+      expect(spec.args).toContain('carry on');
+    });
   });
 
   describe('mobileQuickKeys carry exact VT220 escape sequences', () => {

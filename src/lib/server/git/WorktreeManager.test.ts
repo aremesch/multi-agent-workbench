@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SimpleGit } from 'simple-git';
+import type { WorktreeRow } from '$lib/server/db/types';
 
 const rawMock = vi.fn();
 const statusMock = vi.fn();
@@ -426,5 +427,118 @@ describe('WorktreeManager.checkout', () => {
       /uncommitted changes/
     );
     expect(checkoutMock).not.toHaveBeenCalled();
+  });
+});
+
+// -----------------------------------------------------------------------------
+// validateForReuse()
+// -----------------------------------------------------------------------------
+
+describe('WorktreeManager.validateForReuse', () => {
+  function wt(overrides: Partial<WorktreeRow> = {}): WorktreeRow {
+    return {
+      id: 'wt1',
+      user_id: 'u1',
+      repo_id: 'r1',
+      path: '/wt/feat-x',
+      branch: 'feat/x',
+      status: 'active',
+      created_at: 0,
+      updated_at: 0,
+      ...overrides
+    };
+  }
+
+  it('happy path: directory still on disk → recreated:false', async () => {
+    existsSyncMock.mockImplementation((p: string) => p === '/wt/feat-x');
+    const res = await WorktreeManager.validateForReuse({
+      worktree: wt(),
+      repoPath: '/repo',
+      sourceBranch: 'feat/x',
+      agentId: 'a1',
+      worktreeRoot: '/wt'
+    });
+    expect(res).toEqual({ ok: true, recreated: false, path: '/wt/feat-x' });
+    expect(rawMock).not.toHaveBeenCalled();
+  });
+
+  it('missing worktree row → worktree_gone', async () => {
+    const res = await WorktreeManager.validateForReuse({
+      worktree: undefined,
+      repoPath: '/repo',
+      sourceBranch: 'feat/x',
+      agentId: 'a1',
+      worktreeRoot: '/wt'
+    });
+    expect(res).toEqual({ ok: false, code: 'worktree_gone' });
+  });
+
+  it("tombstoned (status='removed') row → worktree_gone", async () => {
+    const res = await WorktreeManager.validateForReuse({
+      worktree: wt({ status: 'removed' }),
+      repoPath: '/repo',
+      sourceBranch: 'feat/x',
+      agentId: 'a1',
+      worktreeRoot: '/wt'
+    });
+    expect(res).toEqual({ ok: false, code: 'worktree_gone' });
+  });
+
+  it('dir gone but branch exists → recreates the worktree', async () => {
+    // existsSync false everywhere: the dir is gone AND create()'s own
+    // pre-check sees no path, so it proceeds to `worktree add`.
+    existsSyncMock.mockReturnValue(false);
+    branchLocalMock.mockResolvedValue({
+      branches: { main: {}, 'feat/x': {} },
+      current: 'main'
+    });
+    revparseMock.mockResolvedValue('sha-tip');
+    routeRaw([
+      { match: (a) => a[0] === 'worktree' && a[1] === 'prune', result: { stdout: '' } },
+      { match: (a) => a[0] === 'worktree' && a[1] === 'add', result: { stdout: '' } }
+    ]);
+    const res = await WorktreeManager.validateForReuse({
+      worktree: wt(),
+      repoPath: '/repo',
+      sourceBranch: 'feat/x',
+      agentId: 'a1',
+      worktreeRoot: '/wt'
+    });
+    expect(res).toEqual({ ok: true, recreated: true, path: '/wt/feat-x' });
+    // Re-pointed the branch to itself at <worktreeRoot>/<basename>.
+    expect(rawMock).toHaveBeenCalledWith([
+      'worktree',
+      'add',
+      '-B',
+      'feat/x',
+      '/wt/feat-x',
+      'feat/x'
+    ]);
+  });
+
+  it('dir gone and branch gone → branch_gone', async () => {
+    existsSyncMock.mockReturnValue(false);
+    branchLocalMock.mockResolvedValue({ branches: { main: {} }, current: 'main' });
+    const res = await WorktreeManager.validateForReuse({
+      worktree: wt(),
+      repoPath: '/repo',
+      sourceBranch: 'feat/x',
+      agentId: 'a1',
+      worktreeRoot: '/wt'
+    });
+    expect(res).toEqual({ ok: false, code: 'branch_gone' });
+  });
+
+  it('dir gone and no source branch recorded → branch_gone (no git)', async () => {
+    existsSyncMock.mockReturnValue(false);
+    const res = await WorktreeManager.validateForReuse({
+      worktree: wt(),
+      repoPath: '/repo',
+      sourceBranch: null,
+      agentId: 'a1',
+      worktreeRoot: '/wt'
+    });
+    expect(res).toEqual({ ok: false, code: 'branch_gone' });
+    expect(branchLocalMock).not.toHaveBeenCalled();
   });
 });

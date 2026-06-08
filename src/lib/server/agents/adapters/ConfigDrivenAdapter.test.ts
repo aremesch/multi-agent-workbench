@@ -705,4 +705,96 @@ describe('ConfigDrivenAdapter', () => {
       expect(spec.env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-xyz');
     });
   });
+
+  describe('resume mode (spawn.resume block)', () => {
+    function resumeOpts(overrides: Partial<BuildSpawnSpecOpts> = {}): BuildSpawnSpecOpts {
+      return {
+        role: { systemPrompt: '', toolConfig: {} },
+        worktreeCwd: '/tmp/wt',
+        task: { title: 't', body: 'continue' },
+        env: {},
+        agent: { id: 'agent-x', cliSessionId: 'sess-1' },
+        ...overrides
+      };
+    }
+
+    const resumeCfg = (): AdapterConfig =>
+      cfg({
+        spawn: {
+          command: 'claude',
+          args: ['--session-id', '{{agent.cliSessionId}}'],
+          initialInput: {
+            delivery: 'cli-arg',
+            template: '{{task.body}}',
+            placement: 'positional-last'
+          },
+          resume: {
+            args: ['--resume', '{{agent.cliSessionId}}'],
+            initialInput: {
+              delivery: 'cli-arg',
+              template: '{{task.body}}',
+              placement: 'positional-last'
+            }
+          }
+        }
+      });
+
+    it('supportsResume is true iff a spawn.resume block is present', () => {
+      expect(new ConfigDrivenAdapter(resumeCfg()).supportsResume).toBe(true);
+      expect(new ConfigDrivenAdapter(cfg()).supportsResume).toBe(false);
+    });
+
+    it("mode: 'resume' swaps --session-id for --resume", () => {
+      const a = new ConfigDrivenAdapter(resumeCfg());
+      const spec = a.buildSpawnSpec(resumeOpts({ mode: 'resume' }));
+      expect(spec.args).toEqual(['--resume', 'sess-1', 'continue']);
+    });
+
+    it("default mode (no mode field) is unchanged — uses spawn.args", () => {
+      const a = new ConfigDrivenAdapter(resumeCfg());
+      const spec = a.buildSpawnSpec(resumeOpts());
+      expect(spec.args).toEqual(['--session-id', 'sess-1', 'continue']);
+    });
+
+    it("mode: 'spawn' is identical to the default", () => {
+      const a = new ConfigDrivenAdapter(resumeCfg());
+      const spec = a.buildSpawnSpec(resumeOpts({ mode: 'spawn' }));
+      expect(spec.args).toEqual(['--session-id', 'sess-1', 'continue']);
+    });
+
+    it("resume mode still appends capability args", () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({
+          spawn: {
+            command: 'claude',
+            args: ['--session-id', '{{agent.cliSessionId}}'],
+            resume: { args: ['--resume', '{{agent.cliSessionId}}'] }
+          },
+          capabilities: {
+            model: {
+              label: 'Model',
+              default: 'default',
+              arg: '--model {{value}}',
+              values: [
+                { id: 'default', label: 'Default' },
+                { id: 'opus', label: 'Opus' }
+              ]
+            }
+          }
+        })
+      );
+      const spec = a.buildSpawnSpec(resumeOpts({ mode: 'resume', capabilityValues: { model: 'opus' } }));
+      expect(spec.args).toContain('--resume');
+      expect(spec.args).toContain('--model');
+      expect(spec.args).toContain('opus');
+    });
+
+    it("mode: 'resume' with no resume block falls back to spawn args", () => {
+      const a = new ConfigDrivenAdapter(
+        cfg({ spawn: { command: 'x', args: ['--session-id', '{{agent.cliSessionId}}'] } })
+      );
+      const spec = a.buildSpawnSpec(resumeOpts({ mode: 'resume' }));
+      expect(spec.args).toEqual(['--session-id', 'sess-1']);
+    });
+  });
 });

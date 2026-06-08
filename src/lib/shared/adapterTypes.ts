@@ -73,6 +73,15 @@ export interface BuildSpawnSpecOpts {
    * capability's `arg` template under `{{value}}` and appended to argv.
    */
   capabilityValues?: Record<string, string | null | undefined>;
+  /**
+   * `'spawn'` (default) builds the first-launch argv. `'resume'` builds the
+   * argv that re-attaches an existing CLI session — used when reviving a
+   * crashed agent in its original worktree. Adapters that declare a
+   * `spawn.resume` block (see {@link CliAdapter.supportsResume}) swap in its
+   * args (e.g. `claude --resume <uuid>` instead of `--session-id <uuid>`);
+   * adapters without one ignore the mode and behave exactly like `'spawn'`.
+   */
+  mode?: 'spawn' | 'resume';
 }
 
 export interface CliAdapter {
@@ -97,6 +106,13 @@ export interface CliAdapter {
    * in `agents.cli_session_id` so JSONL transcript paths are reproducible.
    */
   readonly needsCliSessionId: boolean;
+  /**
+   * True if the spawn config declares a `spawn.resume` block — i.e. this CLI
+   * can re-attach an existing session. AgentSupervisor.restart consults this
+   * (together with a surviving transcript) to decide whether to relaunch in
+   * `mode: 'resume'` or fall back to a fresh re-spawn.
+   */
+  readonly supportsResume: boolean;
   buildSpawnSpec(opts: BuildSpawnSpecOpts): SpawnSpec;
   ingest(chunk: Buffer): AdapterEvent[];
   input: InputEncoding;

@@ -61,6 +61,22 @@
       "template": "{{task.body}}",
       "placement": "positional-last",
       "omitWhenEmpty": true
+    },
+    // Reviving a crashed agent (AgentSupervisor.restart): `claude --resume
+    // <uuid>` re-attaches the exact conversation that `--session-id <uuid>`
+    // started, restoring full prior context. The transcript survives a crash
+    // because crashed agents skip the per-agent CLAUDE_CONFIG_DIR cleanup
+    // (only clean exits remove it) — see docs/plans/feat-archive-crashed-agents.md.
+    // We re-feed the original task body as a positional nudge so the resumed
+    // session gets a fresh "continue your work" prompt.
+    "resume": {
+      "args": ["--resume", "{{agent.cliSessionId}}"],
+      "initialInput": {
+        "delivery": "cli-arg",
+        "template": "{{task.body}}",
+        "placement": "positional-last",
+        "omitWhenEmpty": true
+      }
     }
   },
 
