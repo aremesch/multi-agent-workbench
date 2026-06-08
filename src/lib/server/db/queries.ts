@@ -240,6 +240,31 @@ export function updateRepo(row: {
   return res.changes > 0;
 }
 
+/**
+ * Hard-delete a repo, owner-scoped. Worktree rows cascade
+ * (worktrees.repo_id ON DELETE CASCADE). Callers MUST first ensure no agents
+ * or open queue entries reference the repo — both FKs are ON DELETE RESTRICT,
+ * so this throws otherwise. Returns true if a row was removed.
+ */
+export function deleteRepo(id: string, userId: string): boolean {
+  const res = prep<[string, string]>(
+    'DELETE FROM repos WHERE id = ? AND user_id = ?'
+  ).run(id, userId);
+  return res.changes > 0;
+}
+
+/**
+ * Count of agents (any status) referencing a repo. Used as the "fully empty"
+ * gate for repo deletion: a repo may only be deleted with zero agents, since
+ * even archived ones hold an ON DELETE RESTRICT FK.
+ */
+export function countAgentsForRepo(userId: string, repoId: string): number {
+  const row = prep<[string, string], { n: number }>(
+    'SELECT COUNT(*) AS n FROM agents WHERE user_id = ? AND repo_id = ?'
+  ).get(userId, repoId);
+  return row?.n ?? 0;
+}
+
 // --------------- worktrees ---------------
 
 export function getWorktree(id: string): WorktreeRow | undefined {
@@ -1574,6 +1599,23 @@ export function countOpenQueueEntriesByRepo(
        WHERE user_id = ? AND status IN ('pending','blocked','ready','running')
        GROUP BY repo_id`
   ).all(userId);
+}
+
+/**
+ * Open (non-terminal) queue entry count for a single repo. Mirrors
+ * {@link countOpenQueueEntriesByRepo} but scoped to one repo — used as a
+ * delete guard so a repo with pending/running tasks can't be removed.
+ */
+export function countOpenQueueEntriesForRepo(
+  userId: string,
+  repoId: string
+): number {
+  const row = prep<[string, string], { n: number }>(
+    `SELECT COUNT(*) AS n FROM queue_entries
+       WHERE user_id = ? AND repo_id = ?
+         AND status IN ('pending','blocked','ready','running')`
+  ).get(userId, repoId);
+  return row?.n ?? 0;
 }
 
 export interface UpdateQueueEntryStatusInput {

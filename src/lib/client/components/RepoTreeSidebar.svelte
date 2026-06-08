@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { invalidateAll } from '$app/navigation';
   import type { AgentCardRow, SidebarRepoNode } from '$lib/shared/types';
   import { useT } from '$lib/client/i18n.svelte';
   import RepoEditDialog from './RepoEditDialog.svelte';
@@ -35,6 +36,10 @@
   }
   function closeEdit(): void {
     editOpen = false;
+  }
+  function onRepoDeleted(): void {
+    editOpen = false;
+    void invalidateAll();
   }
 
   $effect(() => {
@@ -252,7 +257,12 @@
   {/if}
 </aside>
 
-<RepoEditDialog open={editOpen} repoId={editRepoId} onClose={closeEdit} />
+<RepoEditDialog
+  open={editOpen}
+  repoId={editRepoId}
+  onClose={closeEdit}
+  onDeleted={onRepoDeleted}
+/>
 
 <style>
   .sidebar {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from './Modal.svelte';
+  import ConfirmDialog from './ConfirmDialog.svelte';
   import { apiFetch } from '$lib/client/api';
   import { useT } from '$lib/client/i18n.svelte';
 
@@ -9,16 +10,20 @@
     open,
     repoId,
     onClose,
-    onSaved
+    onSaved,
+    onDeleted
   }: {
     open: boolean;
     repoId: string | null;
     onClose: () => void;
     onSaved?: (updated: { id: string; origin_url: string | null }) => void;
+    onDeleted?: (id: string) => void;
   } = $props();
 
   let loading = $state(false);
   let saving = $state(false);
+  let deleting = $state(false);
+  let confirmDelete = $state(false);
   let error = $state<string | null>(null);
   let path = $state('');
   let originUrl = $state('');
@@ -35,6 +40,7 @@
     const id = repoId;
     error = null;
     loading = true;
+    confirmDelete = false;
     path = '';
     originUrl = '';
     void (async () => {
@@ -86,6 +92,41 @@
       saving = false;
     }
   }
+
+  async function remove(): Promise<void> {
+    if (!repoId) return;
+    confirmDelete = false;
+    error = null;
+    deleting = true;
+    try {
+      const res = await apiFetch(`/api/repos/${encodeURIComponent(repoId)}`, {
+        method: 'DELETE'
+      });
+      if (res.status === 204) {
+        onDeleted?.(repoId);
+        onClose();
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        code?: string;
+        agents?: number;
+        openTasks?: number;
+        error?: string;
+      };
+      if (res.status === 409 && data.code === 'repo_in_use') {
+        error = t('repoEdit.inUse', {
+          agents: data.agents ?? 0,
+          tasks: data.openTasks ?? 0
+        });
+        return;
+      }
+      error = data.error ?? t('repoEdit.failedDelete');
+    } catch {
+      error = t('spawn.error.networkError');
+    } finally {
+      deleting = false;
+    }
+  }
 </script>
 
 <Modal {open} {onClose} title={t('repoEdit.title')}>
@@ -105,16 +146,36 @@
         <p class="err">{error}</p>
       {/if}
       <div class="actions">
-        <button type="button" class="cancel" onclick={onClose} disabled={saving}>
+        <button
+          type="button"
+          class="delete"
+          onclick={() => (confirmDelete = true)}
+          disabled={saving || deleting || !repoId}
+        >
+          {deleting ? t('repoEdit.deleting') : t('repoEdit.delete')}
+        </button>
+        <span class="spacer"></span>
+        <button type="button" class="cancel" onclick={onClose} disabled={saving || deleting}>
           {t('spawn.cancel')}
         </button>
-        <button type="button" onclick={save} disabled={saving || !repoId}>
+        <button type="button" onclick={save} disabled={saving || deleting || !repoId}>
           {saving ? t('repoEdit.saving') : t('repoEdit.save')}
         </button>
       </div>
     {/if}
   </div>
 </Modal>
+
+<ConfirmDialog
+  open={confirmDelete}
+  title={t('repoEdit.confirmDeleteTitle')}
+  body={t('repoEdit.confirmDeleteBody', { path })}
+  confirmLabel={t('repoEdit.delete')}
+  cancelLabel={t('spawn.cancel')}
+  tone="destructive"
+  onConfirm={remove}
+  onCancel={() => (confirmDelete = false)}
+/>
 
 <style>
   .wrap {
@@ -152,8 +213,11 @@
   }
   .actions {
     display: flex;
+    align-items: center;
     gap: 0.4rem;
-    justify-content: flex-end;
+  }
+  .actions .spacer {
+    flex: 1;
   }
   .actions button {
     padding: 0.45rem 0.9rem;
@@ -168,6 +232,15 @@
   .actions button.cancel {
     background: #1a1a1a;
     color: #e5e7eb;
+  }
+  .actions button.delete {
+    background: #1a1a1a;
+    border-color: #7f1d1d;
+    color: #f87171;
+  }
+  .actions button.delete:hover:not(:disabled) {
+    background: #7f1d1d;
+    color: #fff;
   }
   .actions button:disabled {
     opacity: 0.6;

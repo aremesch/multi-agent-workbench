@@ -57,6 +57,9 @@ import {
   insertTerminalChunk,
   insertUser,
   insertWorktree,
+  countAgentsForRepo,
+  countOpenQueueEntriesForRepo,
+  deleteRepo,
   listAgentCardsForRepo,
   listAgentCardsForUser,
   listAgentRuns,
@@ -331,6 +334,78 @@ describe('repos', () => {
     expect(
       updateRepo({ id: 'nope', user_id: 'user-1', origin_url: 'https://example.com' })
     ).toBe(false);
+  });
+});
+
+// ----- repo delete guards -------------------------------------------------
+
+describe('repo delete guards', () => {
+  function seedQueueEntry(
+    id: string,
+    overrides: Partial<Parameters<typeof insertQueueEntry>[0]> = {}
+  ): void {
+    insertQueueEntry({
+      id,
+      user_id: 'user-1',
+      role_id: 'role-1',
+      repo_id: 'repo-1',
+      title: id,
+      body: null,
+      target_url: null,
+      model: null,
+      permission_mode: null,
+      source_branch: null,
+      with_worktree: true,
+      optional_args_json: '{}',
+      priority: 0,
+      depends_on_json: '[]',
+      scheduled_for: null,
+      exclusive: false,
+      queued: true,
+      plan_md: null,
+      plan_source_path: null,
+      status: 'pending',
+      external_source_json: null,
+      ...overrides
+    });
+  }
+
+  beforeEach(() => {
+    seedUser();
+    seedRepo();
+    seedRole();
+  });
+
+  it('deleteRepo removes an empty repo and cascades worktree rows', () => {
+    seedWorktree('wt-1');
+    expect(listWorktreesForRepo('repo-1')).toHaveLength(1);
+    expect(deleteRepo('repo-1', 'user-1')).toBe(true);
+    expect(getRepo('repo-1')).toBeUndefined();
+    expect(listWorktreesForRepo('repo-1')).toHaveLength(0);
+  });
+
+  it('deleteRepo returns false for a foreign user and leaves the row', () => {
+    expect(deleteRepo('repo-1', 'attacker')).toBe(false);
+    expect(getRepo('repo-1')).toBeDefined();
+  });
+
+  it('countAgentsForRepo counts agents of any status, scoped to repo', () => {
+    seedWorktree('wt-1');
+    expect(countAgentsForRepo('user-1', 'repo-1')).toBe(0);
+    seedAgent('a1', 'user-1', { status: 'running' });
+    seedAgent('a2', 'user-1', {
+      status: 'exited',
+      tmux_session: 'maw-a2'
+    });
+    expect(countAgentsForRepo('user-1', 'repo-1')).toBe(2);
+  });
+
+  it('countOpenQueueEntriesForRepo counts only non-terminal entries', () => {
+    seedQueueEntry('q1', { status: 'pending' });
+    seedQueueEntry('q2', { status: 'running' });
+    seedQueueEntry('q3', { status: 'done' });
+    seedQueueEntry('q4', { status: 'cancelled' });
+    expect(countOpenQueueEntriesForRepo('user-1', 'repo-1')).toBe(2);
   });
 });
 
