@@ -7,6 +7,9 @@
  */
 
 import { execa, type ExecaError, type ResultPromise } from 'execa';
+import { writeFile, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 export const SESSION_PREFIX = 'maw-agent-';
 
@@ -130,7 +133,17 @@ export class Tmux {
 
   /**
    * Spawn a detached tmux session running `command args` in `cwd` with env.
-   * We delegate to `sh -lc` so we can carry the env vars through cleanly.
+   *
+   * The full `cd … && exec env … command args` shell line is written to a
+   * private, self-deleting temp script and tmux launches `sh -l <script>` —
+   * NOT `sh -lc <shellLine>` with the line inline. The reason is a hard tmux
+   * limit: the client packs its whole argv into one `imsg` to the tmux server,
+   * and `imsg` payloads cap at ~16 KB. A large initial prompt (e.g. a
+   * start-project task body with its plan markdown appended — see
+   * `composeBodyWithPlan`) pushes the inline command past that limit and tmux
+   * aborts the spawn with `command too long` before the CLI is ever exec'd.
+   * Routing the long content through a file keeps tmux's argv tiny regardless
+   * of prompt/env size. See `docs/plans/fix-fail-dossier-start-project-2.md`.
    */
   static async newSession(opts: SpawnOptions): Promise<void> {
     // Sensible default for headless spawns and for agents viewed before
@@ -152,19 +165,35 @@ export class Tmux {
     const cmdParts = [opts.command, ...opts.args].map(shQuote);
     const shellLine = `cd ${shQuote(opts.cwd)} && exec env ${envParts.join(' ')} ${cmdParts.join(' ')}`;
 
-    await execa('tmux', t([
-      'new-session',
-      '-d',
-      '-s',
-      opts.session,
-      '-x',
-      String(cols),
-      '-y',
-      String(rows),
-      'sh',
-      '-lc',
-      shellLine
-    ]));
+    // Self-deleting launcher. `rm -f -- "$0"` runs first, but POSIX keeps the
+    // already-open script fd readable after the unlink, so `sh` still reads and
+    // executes the following `exec` line. The happy path leaves nothing behind;
+    // only a tmux failure (sh never started) can leak the file, handled below.
+    // The session name embeds the agent ULID, so the path is collision-free.
+    const scriptPath = join(tmpdir(), `maw-spawn-${opts.session}.sh`);
+    const scriptBody = `#!/bin/sh\nrm -f -- "$0"\n${shellLine}\n`;
+    await writeFile(scriptPath, scriptBody, { mode: 0o700 });
+
+    try {
+      await execa('tmux', t([
+        'new-session',
+        '-d',
+        '-s',
+        opts.session,
+        '-x',
+        String(cols),
+        '-y',
+        String(rows),
+        'sh',
+        '-l',
+        scriptPath
+      ]));
+    } catch (err) {
+      // tmux never launched `sh`, so the script won't self-delete — clean it
+      // up here before surfacing the spawn failure.
+      await unlink(scriptPath).catch(() => {});
+      throw err;
+    }
   }
 
   /**
