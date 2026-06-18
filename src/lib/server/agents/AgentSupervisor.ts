@@ -972,7 +972,20 @@ export class AgentSupervisor {
       this.fireTerminated(agentId, 'exited');
       return;
     }
-    await Tmux.killSession(row.tmux_session);
+    // Best-effort tmux teardown. killSession already treats a vanished
+    // session/server as a no-op; guard the rest so an unexpected tmux failure
+    // can NEVER strand the agent at 'spawning'/'running' — the user must always
+    // be able to clear a wedge. (A 'spawning' agent whose launch never
+    // completed is exactly this case: its session may already be gone, and the
+    // unguarded kill used to throw "no current target", leaving the row stuck.)
+    try {
+      await Tmux.killSession(row.tmux_session);
+    } catch (err) {
+      console.warn(
+        `[AgentSupervisor] kill: tmux teardown failed for ${agentId} (archiving anyway):`,
+        err
+      );
+    }
     if (row.cli_kind === 'claude-code') {
       removeAgentClaudeConfigDir(agentId);
     }
