@@ -49,6 +49,27 @@ export function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * True when a tmux stderr means the target session / server is simply gone —
+ * the safe-to-treat-as-success class for idempotent teardown and liveness
+ * probes. Centralizes the several stderr variants tmux emits for "that target
+ * isn't here", which previously lived as four slightly-different inline regexes
+ * that drifted out of sync (the missing `no current target` term is what
+ * stranded a wedged agent: `kill-session` rethrew instead of no-op'ing):
+ *   - "can't find session: <name>" — session missing, OTHER sessions exist
+ *   - "can't find pane: <name>"     — the pane-probe variant
+ *   - "session not found"
+ *   - "no current target"           — target unresolvable AND zero sessions
+ *                                     remain on the server (last-session kill)
+ *   - "no server running on …"      — server already down
+ *   - "no such file or directory"   — socket file never existed
+ */
+export function isSessionGoneError(stderr: string): boolean {
+  return /can't find session|can't find pane|session not found|no current target|no server running|no such file or directory/i.test(
+    stderr
+  );
+}
+
 export interface SpawnOptions {
   session: string;            // e.g. 'maw-agent-<ulid>'
   command: string;            // the CLI binary name
@@ -215,8 +236,8 @@ export class Tmux {
     } catch (err) {
       const e = err as ExecaError;
       const stderr = typeof e.stderr === 'string' ? e.stderr : '';
-      // "can't find session" means the pane is already gone — ignore.
-      if (!/can't find session|session not found/i.test(stderr)) throw err;
+      // Session already gone means the pane is gone too — ignore.
+      if (!isSessionGoneError(stderr)) throw err;
     }
   }
 
@@ -286,9 +307,9 @@ export class Tmux {
       await execa('tmux', t(['kill-session', '-t', session]));
     } catch (err) {
       const e = err as ExecaError;
-      // "can't find session" is fine — idempotent kill.
+      // Session/server already gone is fine — idempotent kill.
       const stderr = typeof e.stderr === 'string' ? e.stderr : '';
-      if (!/can't find session|session not found|no server running/i.test(stderr)) throw err;
+      if (!isSessionGoneError(stderr)) throw err;
     }
   }
 
@@ -390,7 +411,7 @@ export class Tmux {
     } catch (err) {
       const e = err as ExecaError;
       const stderr = typeof e.stderr === 'string' ? e.stderr : '';
-      if (/can't find|session not found|no server running/i.test(stderr)) return true;
+      if (isSessionGoneError(stderr)) return true;
       return false;
     }
   }

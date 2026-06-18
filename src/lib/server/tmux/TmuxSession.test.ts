@@ -6,7 +6,7 @@ vi.mock('execa', () => ({
 }));
 
 import { spawnSync } from 'node:child_process';
-import { Tmux, SESSION_PREFIX, shQuote } from './TmuxSession.js';
+import { Tmux, SESSION_PREFIX, shQuote, isSessionGoneError } from './TmuxSession.js';
 
 beforeEach(() => {
   execaMock.mockReset();
@@ -72,6 +72,25 @@ describe('shQuote', () => {
 
   it('handles the empty string', () => {
     expect(shQuote('')).toBe("''");
+  });
+});
+
+describe('isSessionGoneError', () => {
+  it.each([
+    "can't find session: maw-agent-x",
+    "can't find pane: maw-agent-x",
+    'session not found',
+    'no current target',
+    'no server running on /tmp/tmux-1000/maw',
+    'error connecting to /tmp/tmux-1000/maw (No such file or directory)'
+  ])('treats %s as session-gone', (stderr) => {
+    expect(isSessionGoneError(stderr)).toBe(true);
+  });
+
+  it('does not match unrelated tmux errors', () => {
+    expect(isSessionGoneError('permission denied')).toBe(false);
+    expect(isSessionGoneError('unknown option --foo')).toBe(false);
+    expect(isSessionGoneError('')).toBe(false);
   });
 });
 
@@ -229,6 +248,11 @@ describe('Tmux.resizeWindow', () => {
     await expect(Tmux.resizeWindow('sid', 80, 24)).resolves.toBeUndefined();
   });
 
+  it('swallows "no current target" (last session already gone)', async () => {
+    execaMock.mockRejectedValueOnce(execaError('no current target'));
+    await expect(Tmux.resizeWindow('sid', 80, 24)).resolves.toBeUndefined();
+  });
+
   it('rethrows unrelated tmux errors', async () => {
     execaMock.mockRejectedValueOnce(execaError('unknown option --foo'));
     await expect(Tmux.resizeWindow('sid', 80, 24)).rejects.toThrow();
@@ -296,6 +320,16 @@ describe('Tmux — session lifecycle', () => {
 
   it('killSession swallows "no server running"', async () => {
     execaMock.mockRejectedValueOnce(execaError('no server running on /tmp/tmux'));
+    await expect(Tmux.killSession('sid')).resolves.toBeUndefined();
+  });
+
+  // Regression: tmux emits "no current target" (not "can't find session")
+  // when the target is missing AND the server has zero sessions left — the
+  // last-agent kill case. killSession used to rethrow this, stranding a
+  // wedged agent at 'spawning' because supervisor.kill never reached the
+  // status flip. See docs/plans/fix-fail-dossier-start-project.md.
+  it('killSession swallows "no current target" (last session already gone)', async () => {
+    execaMock.mockRejectedValueOnce(execaError('no current target'));
     await expect(Tmux.killSession('sid')).resolves.toBeUndefined();
   });
 
@@ -419,6 +453,11 @@ describe('Tmux.isPaneDead', () => {
 
   it('treats "can\'t find session" as dead (gone is dead)', async () => {
     execaMock.mockRejectedValueOnce(execaError("can't find session: sid"));
+    expect(await Tmux.isPaneDead('sid')).toBe(true);
+  });
+
+  it('treats "no current target" as dead (last session already gone)', async () => {
+    execaMock.mockRejectedValueOnce(execaError('no current target'));
     expect(await Tmux.isPaneDead('sid')).toBe(true);
   });
 
