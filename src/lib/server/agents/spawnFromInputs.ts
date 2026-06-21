@@ -34,6 +34,7 @@ import type { RepoRow, RoleRow } from '../db/types.js';
 import { resolveSha } from '../git/agentCommits.js';
 import { WorktreeManager } from '../git/WorktreeManager.js';
 import { parseBrowserTargetUrl } from '../../shared/browserTarget.js';
+import { writeAgentPlanFile } from '../plans/agentPlans.js';
 import { slugifyTitle } from '../util/slug.js';
 import {
   materializeIntoWorktree,
@@ -96,6 +97,15 @@ export interface ValidatedSpawnInputs {
   adapter: AdapterListing;
   title: string;
   body: string;
+  /**
+   * Optional markdown plan for a cli-arg adapter (null for non-prompt
+   * adapters). Delivered by `performSpawn`, NOT baked into `body`: it is
+   * written to `<plansDir>/<slug>.md` in the worktree and referenced from the
+   * prompt (keeping the prompt small), or inlined as a fallback when no
+   * worktree exists / the file already exists. See `composeBodyWithPlan` and
+   * `writeAgentPlanFile`.
+   */
+  planMd: string | null;
   /** Browser-kind only. Parsed and bound from `targetUrl`. */
   browser: { target_url: string; target_port: number } | null;
   /** Resolved per-spawn picks, already coerced through capability validation
@@ -248,13 +258,14 @@ export async function validateSpawnInputs(
     raw.permissionMode
   );
 
-  // Body only applies when the adapter takes an initial prompt at all.
-  // For cli-arg adapters, append the plan markdown after the body when
-  // provided so the agent sees the full plan as part of its initial prompt.
-  const body =
-    adapter.initialInputDelivery === 'cli-arg'
-      ? composeBodyWithPlan(raw.taskBody, raw.planMd)
-      : '';
+  // Body and plan only apply when the adapter takes an initial prompt at all.
+  // The plan markdown is carried separately (NOT inlined here): `performSpawn`
+  // writes it to a file in the worktree and references it from the prompt, or
+  // inlines it as a fallback — so the prompt stays small. Non-prompt adapters
+  // get neither.
+  const isPromptAdapter = adapter.initialInputDelivery === 'cli-arg';
+  const body = isPromptAdapter ? raw.taskBody : '';
+  const planMd = isPromptAdapter ? raw.planMd : null;
 
   return {
     ok: true,
@@ -264,6 +275,7 @@ export async function validateSpawnInputs(
       adapter,
       title,
       body,
+      planMd,
       browser,
       model,
       permissionMode,
@@ -356,6 +368,35 @@ export async function performSpawn(
     baseSha = await resolveSha(v.repo.path, v.branchStartPoint);
   }
 
+  let finalBody = v.body;
+
+  // ── Plan markdown → file in the worktree (referenced, not inlined) ────
+  // Writing the plan to `<plansDir>/<slug>.md` keeps the CLI prompt small (a
+  // large plan otherwise bloats the prompt) and makes the plan a first-class
+  // artifact the agent can read / edit / commit — it also surfaces in the
+  // "Show Plan" modal automatically. When we can't write a file (the adapter
+  // has no worktree, or a file already exists at that path) we inline the plan
+  // exactly as before. `v.planMd` is non-null only for cli-arg adapters.
+  if (v.planMd && v.planMd.trim()) {
+    let planRef: string | null = null;
+    if (v.adapterSupportsWorktree) {
+      try {
+        planRef = await writeAgentPlanFile(worktreePath, v.slug, v.planMd);
+      } catch (err) {
+        return {
+          ok: false,
+          error: { code: 'spawnFailed', message: `plan write failed: ${(err as Error).message}` }
+        };
+      }
+    }
+    if (planRef) {
+      const block = `## Plan\n\nThe full plan for this task is in \`${planRef}\` — read it before you begin.`;
+      finalBody = finalBody ? `${finalBody}\n\n${block}` : block;
+    } else {
+      finalBody = composeBodyWithPlan(finalBody, v.planMd);
+    }
+  }
+
   // ── Image attachments → hand them to the agent ────────────────────────
   // Guarantee 1: bytes on disk in the agent's cwd. Copy staged files into
   // the worktree whenever this adapter has one, regardless of how it
@@ -367,7 +408,6 @@ export async function performSpawn(
   // on disk). A copy failure fails the spawn so we never report success
   // with the agent missing its screenshots; the scheduler keeps staging
   // for retry on failure.
-  let finalBody = v.body;
   if (v.adapterSupportsWorktree && v.attachments.length > 0) {
     let refs: string[];
     try {

@@ -5,14 +5,38 @@ vi.mock('execa', () => ({
   execa: (cmd: string, args: string[]) => execaMock(cmd, args)
 }));
 
+// newSession writes its launcher to a temp script and `unlink`s it on a tmux
+// failure. Mock both so unit tests capture the script body without touching the
+// real filesystem (the mocked execa means `sh` never runs to self-delete it).
+const writeFileMock = vi.fn();
+const unlinkMock = vi.fn();
+vi.mock('node:fs/promises', () => ({
+  writeFile: (...a: unknown[]) => writeFileMock(...a),
+  unlink: (...a: unknown[]) => unlinkMock(...a)
+}));
+
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Tmux, SESSION_PREFIX, shQuote, isSessionGoneError } from './TmuxSession.js';
 
 beforeEach(() => {
   execaMock.mockReset();
+  writeFileMock.mockReset();
+  writeFileMock.mockResolvedValue(undefined);
+  unlinkMock.mockReset();
+  unlinkMock.mockResolvedValue(undefined);
   vi.spyOn(console, 'info').mockImplementation(() => undefined);
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
+
+// The launcher script body / path written for a given newSession call.
+function scriptBodyFromCall(i = 0): string {
+  return String(writeFileMock.mock.calls[i]?.[1]);
+}
+function scriptPathFromCall(i = 0): string {
+  return String(writeFileMock.mock.calls[i]?.[0]);
+}
 
 function execaError(stderr: string): Error & { stderr: string } {
   return Object.assign(new Error('execa fail'), { stderr });
@@ -95,7 +119,7 @@ describe('isSessionGoneError', () => {
 });
 
 describe('Tmux.newSession', () => {
-  it('builds a -d -s new-session argv with quoted env + command parts', async () => {
+  it('builds a -d -s new-session argv that launches the temp script via `sh -l`', async () => {
     execaMock.mockResolvedValueOnce({ stdout: '' });
     await Tmux.newSession({
       session: 'maw-agent-1',
@@ -120,13 +144,23 @@ describe('Tmux.newSession', () => {
       '-y'
     ]);
     expect(args[9]).toBe('24');
+    // tmux launches `sh -l <scriptPath>` — the long content lives in the file,
+    // never on tmux's argv (which has a ~16 KB imsg limit).
     expect(args[10]).toBe('sh');
-    expect(args[11]).toBe('-lc');
-    const shell = args[12] as string;
-    expect(shell).toContain("cd '/some/cwd'");
-    expect(shell).toContain("FOO='bar'");
-    expect(shell).toContain("QUOTED='a b'");
-    expect(shell).toContain("'bash' '-lc' 'echo hi'");
+    expect(args[11]).toBe('-l');
+    const scriptPath = scriptPathFromCall();
+    expect(args[12]).toBe(scriptPath);
+    // Script path is a maw-spawn-<session> file under the OS temp dir.
+    expect(scriptPath).toBe(join(tmpdir(), 'maw-spawn-maw-agent-1.sh'));
+    expect(writeFileMock).toHaveBeenCalledWith(scriptPath, expect.any(String), { mode: 0o700 });
+
+    // The script self-deletes first, then carries the quoted env + command line.
+    const body = scriptBodyFromCall();
+    expect(body.startsWith('#!/bin/sh\nrm -f -- "$0"\n')).toBe(true);
+    expect(body).toContain("cd '/some/cwd'");
+    expect(body).toContain("FOO='bar'");
+    expect(body).toContain("QUOTED='a b'");
+    expect(body).toContain("'bash' '-lc' 'echo hi'");
   });
 
   // Regression: the spawn line used to quote with JSON.stringify (double
@@ -134,7 +168,7 @@ describe('Tmux.newSession', () => {
   // unbalanced backtick or `$(` opened a command substitution the shell never
   // closed → `sh: Syntax error: end of file unexpected` and the agent died
   // before exec. shQuote (single quotes) keeps every byte literal.
-  it('renders hostile env/args into a syntactically valid shell line', async () => {
+  it('renders hostile env/args into a syntactically valid script', async () => {
     execaMock.mockResolvedValueOnce({ stdout: '' });
     const body = 'review `whoami` and run $(rm -rf /); it\'s "done"\nline2';
     await Tmux.newSession({
@@ -144,20 +178,49 @@ describe('Tmux.newSession', () => {
       env: { ANTHROPIC_API_KEY: 'sk-`echo pwn`', WEIRD: '$(touch /tmp/x)' },
       cwd: "/repo/it's a dir"
     });
-    const [, args] = execaMock.mock.calls[0];
-    const shell = args[12] as string;
+    const script = scriptBodyFromCall();
     // Metacharacters survive verbatim inside single quotes; the only escaping
     // is the `'\''` idiom for embedded single quotes.
-    expect(shell).toContain("ANTHROPIC_API_KEY='sk-`echo pwn`'");
-    expect(shell).toContain("WEIRD='$(touch /tmp/x)'");
-    expect(shell).toContain("cd '/repo/it'\\''s a dir'");
-    expect(shell).toContain("'review `whoami` and run $(rm -rf /); it'\\''s \"done\"");
+    expect(script).toContain("ANTHROPIC_API_KEY='sk-`echo pwn`'");
+    expect(script).toContain("WEIRD='$(touch /tmp/x)'");
+    expect(script).toContain("cd '/repo/it'\\''s a dir'");
+    expect(script).toContain("'review `whoami` and run $(rm -rf /); it'\\''s \"done\"");
 
-    // The real proof: `sh -n -c` parses the produced line without executing
-    // it. Before the fix this exited non-zero with a syntax error.
-    const check = spawnSync('sh', ['-n', '-c', shell]);
+    // The real proof: `sh -n` parses the produced script without executing it.
+    // Before the original shQuote fix this exited non-zero with a syntax error.
+    const check = spawnSync('sh', ['-n'], { input: script });
     expect(check.status).toBe(0);
     expect(String(check.stderr)).not.toMatch(/Syntax error/);
+  });
+
+  // The bug this change fixes: a large initial prompt used to be inlined into
+  // tmux's argv (`sh -lc <shellLine>`), blowing tmux's ~16 KB imsg limit
+  // (`command too long`). The long content must now live only in the script
+  // file, keeping every tmux argv element small.
+  it('keeps tmux argv tiny for a multi-KB prompt (the imsg-limit regression)', async () => {
+    execaMock.mockResolvedValueOnce({ stdout: '' });
+    const hugePrompt = 'x'.repeat(64 * 1024);
+    await Tmux.newSession({
+      session: 'maw-agent-big',
+      command: 'claude',
+      args: [hugePrompt],
+      env: {},
+      cwd: '/repo'
+    });
+    const [, args] = execaMock.mock.calls[0];
+    // No single tmux argument carries the prompt — the script file does.
+    for (const a of args as string[]) {
+      expect(a.length).toBeLessThan(1024);
+    }
+    expect(scriptBodyFromCall()).toContain(hugePrompt);
+  });
+
+  it('unlinks the orphaned script and rethrows when tmux fails to launch', async () => {
+    execaMock.mockRejectedValueOnce(execaError('command too long'));
+    await expect(
+      Tmux.newSession({ session: 'maw-agent-f', command: 'bash', args: [], env: {}, cwd: '/' })
+    ).rejects.toThrow();
+    expect(unlinkMock).toHaveBeenCalledWith(scriptPathFromCall());
   });
 
   it('defaults cols=120 rows=32 when not given', async () => {
