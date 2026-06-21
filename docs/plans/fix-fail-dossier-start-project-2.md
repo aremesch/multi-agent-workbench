@@ -102,6 +102,37 @@ script-file shape:
 - Add a cleanup test: when `execa` rejects, `newSession` unlinks the script and
   rethrows.
 
+## Addendum — deliver the plan as a file, not inlined into the prompt
+
+The tmux fix above is the transport-level backstop (it makes *any* oversized
+spawn safe — long bodies, long env, resume re-feeds). On top of it we also
+attack the *source* of the bloat for the common case: a large plan no longer
+gets baked into the CLI prompt at all.
+
+Mirrors the existing image-attachment materialization pattern
+(`materializeIntoWorktree` in `taskAttachmentUploads.ts`): write the artifact
+into the worktree, then put a short *reference* in the prompt instead of the
+full content.
+
+- New `writeAgentPlanFile(worktreePath, slug, planMd)` in
+  `src/lib/server/plans/agentPlans.ts` — reuses the existing
+  `resolvePlansDir()` (default `docs/plans`, honors
+  `.claude/settings.json#plansDirectory`) and `SAFE_FILENAME_RE`. Writes
+  `<plansDir>/<slug>.md`, returns the worktree-relative path — or `null` when
+  the slug is unsafe or a file already exists there (never clobbers tracked
+  content; caller inlines instead). The written file shows up in the existing
+  "Show Plan" modal automatically (it lists uncommitted `*.md` in that dir).
+- `spawnFromInputs.ts`: `validateSpawnInputs` now carries `planMd` separately
+  instead of pre-composing it into `body`. `performSpawn` (alongside the
+  attachment block) writes the plan file and appends a
+  `## Plan … see \`<path>\`` reference; falls back to `composeBodyWithPlan`
+  (the old inline behavior) when there's no worktree or the file exists.
+- `composeBodyWithPlan` is retained as the inline fallback path.
+- Tests: `agentPlans.write.test.ts` (real-fs) covers write / no-clobber /
+  custom `plansDirectory` / unsafe-slug. Existing `composeBodyWithPlan`,
+  Scheduler and queue-API suites stay green (the no-plan body is byte-identical
+  to before; Scheduler stubs `performSpawn`).
+
 ## Recovering the wedged dossier task
 
 The code fix removes the cause; the existing blocked entry then needs a clean

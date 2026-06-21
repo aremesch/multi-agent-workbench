@@ -34,7 +34,8 @@
  * combo is the standard cure.
  */
 
-import { readFile, readdir, realpath, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, sep, basename, isAbsolute } from 'node:path';
 import { marked } from 'marked';
@@ -125,6 +126,49 @@ export async function resolvePlansDir(worktreePath: string): Promise<string> {
     return DEFAULT_PLANS_DIR;
   }
   return trimmed;
+}
+
+/**
+ * Materialize a task's plan markdown into the agent's worktree at
+ * `<plansDir>/<slug>.md` so the spawn flow can *reference* the plan from the
+ * initial prompt instead of inlining the whole — often multi-KB — plan into
+ * the CLI prompt (which otherwise bloats the prompt and, before the tmux
+ * temp-script fix, could exceed tmux's command-length limit). The plans dir is
+ * resolved exactly like the "Show Plan" modal reads it (`resolvePlansDir`,
+ * default `docs/plans`), so the written file shows up there automatically as
+ * an uncommitted change and the agent can read / edit / commit it.
+ *
+ * Returns the worktree-relative path written (e.g. `docs/plans/foo.md`), or
+ * `null` when we decline to write: an unsafe slug, a plans dir that resolves
+ * outside the worktree, or a file already present at that path (we never
+ * clobber existing — possibly tracked — content). The caller falls back to
+ * inlining the plan in the prompt when this returns null.
+ *
+ * Mirrors `materializeIntoWorktree` (image attachments) in shape and intent.
+ */
+export async function writeAgentPlanFile(
+  worktreePath: string,
+  slug: string,
+  planMd: string
+): Promise<string | null> {
+  const filename = `${slug}.md`;
+  if (!SAFE_FILENAME_RE.test(filename)) return null;
+
+  const plansDir = await resolvePlansDir(worktreePath);
+  const dirAbs = resolve(worktreePath, plansDir);
+  // Containment guard — resolvePlansDir already rejects `..` / absolute paths,
+  // but stay defensive against a symlinked worktree root.
+  const wtRoot = resolve(worktreePath);
+  if (dirAbs !== wtRoot && !dirAbs.startsWith(wtRoot + sep)) return null;
+
+  const fileAbs = resolve(dirAbs, filename);
+  if (!fileAbs.startsWith(dirAbs + sep)) return null;
+  // Never overwrite an existing plan file — fall back to inlining instead.
+  if (existsSync(fileAbs)) return null;
+
+  await mkdir(dirAbs, { recursive: true });
+  await writeFile(fileAbs, planMd.endsWith('\n') ? planMd : `${planMd}\n`);
+  return `${plansDir}/${filename}`;
 }
 
 interface RawDirEntry {
