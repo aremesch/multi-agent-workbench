@@ -386,6 +386,23 @@ export class AgentRuntime extends EventEmitter {
       this.lastHookAt = Date.now();
       return;
     }
+
+    if (eventName === 'Stop') {
+      // The agent finished its turn and is now idle. Emit `task_done` so the
+      // supervisor (and the existing task_done alert path, gated by user push
+      // prefs + the 30s dedup window) gets a reliable completion signal that
+      // does NOT depend on the interactive CLI process exiting.
+      this.lastHookAt = Date.now();
+      const ev: AdapterEvent = {
+        kind: 'task_done',
+        at: Date.now(),
+        patternId: 'claude_hook_stop',
+        detail,
+        raw: ''
+      };
+      this.processEvent(ev, 'hook');
+      return;
+    }
     // Everything else: ignored.
   }
 

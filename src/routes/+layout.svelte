@@ -98,6 +98,11 @@
     void goto('/roles');
   }
 
+  function gotoSupervisor(): void {
+    closeMenu();
+    void goto('/supervisor');
+  }
+
   function openAbout(): void {
     closeMenu();
     aboutOpen = true;
@@ -214,6 +219,20 @@
                 />
               </svg>
               {tt('nav.roles')}
+            </button>
+            <button
+              type="button"
+              class="menu-item flex h-10 items-center gap-3 px-4 text-left text-sm text-on-surface hover:bg-surface-container-highest"
+              role="menuitem"
+              onclick={gotoSupervisor}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Zm-1 13-3-3 1.4-1.4L11 12.2l4.6-4.6L17 9l-6 6Z"
+                />
+              </svg>
+              Supervisor
             </button>
             <hr class="my-1 border-outline-variant" />
             <button

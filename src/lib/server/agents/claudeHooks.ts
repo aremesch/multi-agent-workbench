@@ -78,6 +78,13 @@ export function writeClaudeHookSettings(opts: ClaudeHookSettingsOpts): void {
       ],
       PreToolUse: [
         { matcher: '', hooks: [{ type: 'command', command }] }
+      ],
+      // `Stop` fires when the agent finishes a turn and goes idle. The
+      // supervisor uses it as the reliable "task work finished" signal: an
+      // interactive CLI agent does NOT exit when its task is done, so process
+      // termination is the wrong trigger. See AgentRuntime.ingestHookEvent.
+      Stop: [
+        { matcher: '', hooks: [{ type: 'command', command }] }
       ]
     }
   };

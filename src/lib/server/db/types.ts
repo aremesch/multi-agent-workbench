@@ -274,3 +274,98 @@ export interface LlmOversightVerdictRow {
   created_at: number;
   updated_at: number;
 }
+
+// --------------- supervisor (v0.5) ---------------
+
+/** Run-level state machine — see migration 015. */
+export type SupervisorRunPhase =
+  | 'planning'
+  | 'awaiting_approval'
+  | 'executing'
+  | 'stopping'
+  | 'done'
+  | 'stopped'
+  | 'failed';
+
+/** Per-step state machine — see migration 015. */
+export type SupervisorStepPhase =
+  | 'pending'
+  | 'running_task'
+  | 'awaiting_commit'
+  | 'quality_check'
+  | 'fixing'
+  | 'ready_to_push'
+  | 'pushed'
+  | 'done'
+  | 'blocked_on_human'
+  | 'failed';
+
+export type SupervisorStepApproval = 'pending' | 'approved' | 'sent_back';
+
+export type SupervisorStopMode = 'normal' | 'emergency';
+
+export interface SupervisorRunRow {
+  id: string;
+  user_id: string;
+  repo_id: string;
+  role_id: string;
+  qc_role_id: string;
+  title: string;
+  plan_md: string;
+  phase: SupervisorRunPhase;
+  stop_mode: SupervisorStopMode | null;
+  current_step_id: string | null;
+  config_json: string;
+  error: string | null;
+  created_at: number;
+  updated_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+}
+
+export interface SupervisorStepRow {
+  id: string;
+  run_id: string;
+  user_id: string;
+  seq: number;
+  title: string;
+  body: string;
+  depends_on_json: string;
+  phase: SupervisorStepPhase;
+  approval_state: SupervisorStepApproval;
+  refinement_notes: string | null;
+  queue_entry_id: string | null;
+  qc_queue_entry_id: string | null;
+  agent_id: string | null;
+  fix_iterations: number;
+  last_verdict_id: string | null;
+  base_sha: string | null;
+  branch: string | null;
+  blocked_reason: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SupervisorRunEventRow {
+  id: string;
+  run_id: string;
+  step_id: string | null;
+  kind: string;
+  payload_json: string;
+  ts: number;
+}
+
+export interface ProjectMemoryRow {
+  id: string;
+  user_id: string;
+  repo_id: string;
+  category: string;
+  lesson: string;
+  detail: string;
+  hit_count: number;
+  last_seen_at: number;
+  source_run_id: string | null;
+  active: number;
+  created_at: number;
+  updated_at: number;
+}

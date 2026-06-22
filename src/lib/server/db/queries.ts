@@ -25,12 +25,21 @@ import type {
   AuthEventRow,
   AlertSeverity,
   EventRow,
+  LlmOversightVerdictRow,
   MessageRow,
+  ProjectMemoryRow,
   PushSubscriptionRow,
   QueueEntryRow,
   QueueEntryStatus,
   RepoRow,
   RoleRow,
+  SupervisorRunRow,
+  SupervisorRunPhase,
+  SupervisorRunEventRow,
+  SupervisorStepRow,
+  SupervisorStepPhase,
+  SupervisorStepApproval,
+  SupervisorStopMode,
   TaskRow,
   TaskStatus,
   TerminalLogRow,
@@ -1783,4 +1792,410 @@ export function deleteQueueEntry(id: string, userId: string): boolean {
     'DELETE FROM queue_entries WHERE id = ? AND user_id = ?'
   ).run(id, userId);
   return res.changes > 0;
+}
+
+// =================================================================
+// Supervisor (v0.5) — see migration 015 + docs/plans/feat-task-supervisor.md
+// =================================================================
+
+// --------------- supervisor settings (user_settings KV) ---------------
+
+const SUPERVISOR_SETTINGS_KEY = 'supervisor.config';
+
+/** Permission mode handed to spawned task agents + how the supervisor
+ *  answers any prompts that still surface. Mirrors the plan's autonomy
+ *  decision; default is full-auto (bypassPermissions). */
+export type SupervisorAutonomy = 'defer_all' | 'auto_safe' | 'bypassPermissions';
+export type SupervisorExecutionMode = 'sequential' | 'parallel';
+
+export interface SupervisorSettings {
+  /** System prompt for the plan-split LLM call. Empty = built-in default. */
+  plannerPrompt: string;
+  /** Max QC→fix rounds before a step blocks on the human. */
+  fixLoopCap: number;
+  /** Execution order of approved steps within a run. */
+  executionMode: SupervisorExecutionMode;
+  /** Permission mode / prompt-handling policy for task agents. */
+  autonomy: SupervisorAutonomy;
+  /** Model id for the bounded planner / QC-verdict LLM calls. */
+  model: string;
+  /** Optional per-run output-token budget; 0 = unlimited. */
+  tokenBudget: number;
+  /** Per-step wall-clock stall timeout in seconds; 0 = disabled. */
+  stallTimeoutSec: number;
+}
+
+export const DEFAULT_SUPERVISOR_SETTINGS: SupervisorSettings = {
+  plannerPrompt: '',
+  fixLoopCap: 3,
+  executionMode: 'sequential',
+  autonomy: 'bypassPermissions',
+  model: 'claude-opus-4-8',
+  tokenBudget: 0,
+  stallTimeoutSec: 1800
+};
+
+function clampInt(raw: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof raw === 'number' && Number.isFinite(raw) ? Math.floor(raw) : fallback;
+  return Math.min(Math.max(n, min), max);
+}
+
+export function getSupervisorSettings(userId: string): SupervisorSettings {
+  const raw = getUserSetting(userId, SUPERVISOR_SETTINGS_KEY);
+  if (!raw) return { ...DEFAULT_SUPERVISOR_SETTINGS };
+  try {
+    const p = JSON.parse(raw) as Partial<SupervisorSettings>;
+    return {
+      plannerPrompt: typeof p.plannerPrompt === 'string' ? p.plannerPrompt : DEFAULT_SUPERVISOR_SETTINGS.plannerPrompt,
+      fixLoopCap: clampInt(p.fixLoopCap, DEFAULT_SUPERVISOR_SETTINGS.fixLoopCap, 0, 20),
+      executionMode: p.executionMode === 'parallel' ? 'parallel' : 'sequential',
+      autonomy:
+        p.autonomy === 'defer_all' || p.autonomy === 'auto_safe' || p.autonomy === 'bypassPermissions'
+          ? p.autonomy
+          : DEFAULT_SUPERVISOR_SETTINGS.autonomy,
+      model: typeof p.model === 'string' && p.model !== '' ? p.model : DEFAULT_SUPERVISOR_SETTINGS.model,
+      tokenBudget: clampInt(p.tokenBudget, DEFAULT_SUPERVISOR_SETTINGS.tokenBudget, 0, 100_000_000),
+      stallTimeoutSec: clampInt(p.stallTimeoutSec, DEFAULT_SUPERVISOR_SETTINGS.stallTimeoutSec, 0, 86_400)
+    };
+  } catch {
+    return { ...DEFAULT_SUPERVISOR_SETTINGS };
+  }
+}
+
+export function setSupervisorSettings(userId: string, settings: SupervisorSettings): void {
+  setUserSetting(userId, SUPERVISOR_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+// --------------- supervisor runs ---------------
+
+export interface InsertSupervisorRunInput {
+  id: string;
+  user_id: string;
+  repo_id: string;
+  role_id: string;
+  qc_role_id: string;
+  title: string;
+  plan_md: string;
+  phase: SupervisorRunPhase;
+  config_json: string;
+}
+
+export function insertSupervisorRun(input: InsertSupervisorRunInput): void {
+  const ts = now();
+  prep<[string, string, string, string, string, string, string, SupervisorRunPhase, string, number, number]>(
+    `INSERT INTO supervisor_runs
+       (id, user_id, repo_id, role_id, qc_role_id, title, plan_md, phase, config_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.id,
+    input.user_id,
+    input.repo_id,
+    input.role_id,
+    input.qc_role_id,
+    input.title,
+    input.plan_md,
+    input.phase,
+    input.config_json,
+    ts,
+    ts
+  );
+}
+
+export function getSupervisorRun(id: string): SupervisorRunRow | undefined {
+  return prep<[string], SupervisorRunRow>('SELECT * FROM supervisor_runs WHERE id = ?').get(id);
+}
+
+export function getSupervisorRunForUser(id: string, userId: string): SupervisorRunRow | undefined {
+  return prep<[string, string], SupervisorRunRow>(
+    'SELECT * FROM supervisor_runs WHERE id = ? AND user_id = ?'
+  ).get(id, userId);
+}
+
+export function listSupervisorRunsForUser(userId: string): SupervisorRunRow[] {
+  return prep<[string], SupervisorRunRow>(
+    'SELECT * FROM supervisor_runs WHERE user_id = ? ORDER BY created_at DESC'
+  ).all(userId);
+}
+
+/** Non-terminal runs across all users — used by reboot reconciliation. */
+export function listActiveSupervisorRuns(): SupervisorRunRow[] {
+  return prep<[], SupervisorRunRow>(
+    `SELECT * FROM supervisor_runs
+       WHERE phase NOT IN ('done','stopped','failed')
+       ORDER BY created_at ASC`
+  ).all();
+}
+
+export interface UpdateSupervisorRunInput {
+  phase?: SupervisorRunPhase;
+  stop_mode?: SupervisorStopMode | null;
+  current_step_id?: string | null;
+  plan_md?: string;
+  config_json?: string;
+  error?: string | null;
+  started_at?: number | null;
+  completed_at?: number | null;
+}
+
+export function updateSupervisorRun(id: string, patch: UpdateSupervisorRunInput): boolean {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  const push = (col: string, val: unknown): void => {
+    sets.push(`${col} = ?`);
+    params.push(val);
+  };
+  if (patch.phase !== undefined) push('phase', patch.phase);
+  if ('stop_mode' in patch) push('stop_mode', patch.stop_mode ?? null);
+  if ('current_step_id' in patch) push('current_step_id', patch.current_step_id ?? null);
+  if (patch.plan_md !== undefined) push('plan_md', patch.plan_md);
+  if (patch.config_json !== undefined) push('config_json', patch.config_json);
+  if ('error' in patch) push('error', patch.error ?? null);
+  if ('started_at' in patch) push('started_at', patch.started_at ?? null);
+  if ('completed_at' in patch) push('completed_at', patch.completed_at ?? null);
+  if (sets.length === 0) return false;
+  sets.push('updated_at = ?');
+  params.push(now());
+  params.push(id);
+  const res = prep<unknown[], unknown>(
+    `UPDATE supervisor_runs SET ${sets.join(', ')} WHERE id = ?`
+  ).run(...params) as { changes: number };
+  return res.changes > 0;
+}
+
+// --------------- supervisor steps ---------------
+
+export interface InsertSupervisorStepInput {
+  id: string;
+  run_id: string;
+  user_id: string;
+  seq: number;
+  title: string;
+  body: string;
+  depends_on_json: string;
+  phase: SupervisorStepPhase;
+}
+
+export function insertSupervisorStep(input: InsertSupervisorStepInput): void {
+  const ts = now();
+  prep<[string, string, string, number, string, string, string, SupervisorStepPhase, number, number]>(
+    `INSERT INTO supervisor_steps
+       (id, run_id, user_id, seq, title, body, depends_on_json, phase, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.id,
+    input.run_id,
+    input.user_id,
+    input.seq,
+    input.title,
+    input.body,
+    input.depends_on_json,
+    input.phase,
+    ts,
+    ts
+  );
+}
+
+export function getSupervisorStep(id: string): SupervisorStepRow | undefined {
+  return prep<[string], SupervisorStepRow>('SELECT * FROM supervisor_steps WHERE id = ?').get(id);
+}
+
+export function listSupervisorSteps(runId: string): SupervisorStepRow[] {
+  return prep<[string], SupervisorStepRow>(
+    'SELECT * FROM supervisor_steps WHERE run_id = ? ORDER BY seq ASC'
+  ).all(runId);
+}
+
+/** Find the step that owns a given queue entry (coding OR QC entry). Used by
+ *  the engine's reaction to QueueScheduler 'change' events. */
+export function getSupervisorStepByQueueEntry(queueEntryId: string): SupervisorStepRow | undefined {
+  return prep<[string, string], SupervisorStepRow>(
+    `SELECT * FROM supervisor_steps
+       WHERE queue_entry_id = ? OR qc_queue_entry_id = ?
+       LIMIT 1`
+  ).get(queueEntryId, queueEntryId);
+}
+
+export interface UpdateSupervisorStepInput {
+  seq?: number;
+  title?: string;
+  body?: string;
+  depends_on_json?: string;
+  phase?: SupervisorStepPhase;
+  approval_state?: SupervisorStepApproval;
+  refinement_notes?: string | null;
+  queue_entry_id?: string | null;
+  qc_queue_entry_id?: string | null;
+  agent_id?: string | null;
+  fix_iterations?: number;
+  last_verdict_id?: string | null;
+  base_sha?: string | null;
+  branch?: string | null;
+  blocked_reason?: string | null;
+}
+
+export function updateSupervisorStep(id: string, patch: UpdateSupervisorStepInput): boolean {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  const push = (col: string, val: unknown): void => {
+    sets.push(`${col} = ?`);
+    params.push(val);
+  };
+  if (patch.seq !== undefined) push('seq', patch.seq);
+  if (patch.title !== undefined) push('title', patch.title);
+  if (patch.body !== undefined) push('body', patch.body);
+  if (patch.depends_on_json !== undefined) push('depends_on_json', patch.depends_on_json);
+  if (patch.phase !== undefined) push('phase', patch.phase);
+  if (patch.approval_state !== undefined) push('approval_state', patch.approval_state);
+  if ('refinement_notes' in patch) push('refinement_notes', patch.refinement_notes ?? null);
+  if ('queue_entry_id' in patch) push('queue_entry_id', patch.queue_entry_id ?? null);
+  if ('qc_queue_entry_id' in patch) push('qc_queue_entry_id', patch.qc_queue_entry_id ?? null);
+  if ('agent_id' in patch) push('agent_id', patch.agent_id ?? null);
+  if (patch.fix_iterations !== undefined) push('fix_iterations', patch.fix_iterations);
+  if ('last_verdict_id' in patch) push('last_verdict_id', patch.last_verdict_id ?? null);
+  if ('base_sha' in patch) push('base_sha', patch.base_sha ?? null);
+  if ('branch' in patch) push('branch', patch.branch ?? null);
+  if ('blocked_reason' in patch) push('blocked_reason', patch.blocked_reason ?? null);
+  if (sets.length === 0) return false;
+  sets.push('updated_at = ?');
+  params.push(now());
+  params.push(id);
+  const res = prep<unknown[], unknown>(
+    `UPDATE supervisor_steps SET ${sets.join(', ')} WHERE id = ?`
+  ).run(...params) as { changes: number };
+  return res.changes > 0;
+}
+
+export function deleteSupervisorStep(id: string, userId: string): boolean {
+  const res = prep<[string, string]>(
+    'DELETE FROM supervisor_steps WHERE id = ? AND user_id = ?'
+  ).run(id, userId);
+  return res.changes > 0;
+}
+
+// --------------- supervisor run events (audit / timeline) ---------------
+
+export function insertSupervisorRunEvent(input: {
+  id: string;
+  run_id: string;
+  step_id: string | null;
+  kind: string;
+  payload_json: string;
+}): void {
+  prep<[string, string, string | null, string, string, number]>(
+    `INSERT INTO supervisor_run_events (id, run_id, step_id, kind, payload_json, ts)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(input.id, input.run_id, input.step_id, input.kind, input.payload_json, now());
+}
+
+export function listSupervisorRunEvents(runId: string, limit = 500): SupervisorRunEventRow[] {
+  return prep<[string, number], SupervisorRunEventRow>(
+    'SELECT * FROM supervisor_run_events WHERE run_id = ? ORDER BY ts ASC, id ASC LIMIT ?'
+  ).all(runId, limit);
+}
+
+// --------------- llm oversight verdicts (QC results) ---------------
+
+export function insertLlmOversightVerdict(input: {
+  id: string;
+  user_id: string;
+  agent_id: string;
+  verdict: string;
+  rationale: string;
+  model: string;
+  tokens_in: number;
+  tokens_out: number;
+}): void {
+  const ts = now();
+  prep<[string, string, string, string, string, string, number, number, number, number, number]>(
+    `INSERT INTO llm_oversight_verdicts
+       (id, user_id, agent_id, verdict, rationale, model, tokens_in, tokens_out, ts, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.id,
+    input.user_id,
+    input.agent_id,
+    input.verdict,
+    input.rationale,
+    input.model,
+    input.tokens_in,
+    input.tokens_out,
+    ts,
+    ts,
+    ts
+  );
+}
+
+export function getLlmOversightVerdict(id: string): LlmOversightVerdictRow | undefined {
+  return prep<[string], LlmOversightVerdictRow>(
+    'SELECT * FROM llm_oversight_verdicts WHERE id = ?'
+  ).get(id);
+}
+
+/** Sum output tokens charged to a run's verdicts — used for token-budget
+ *  enforcement. Joins verdicts to the run's steps via the QC agent id. */
+export function sumVerdictTokensForRun(runId: string): number {
+  const row = prep<[string], { total: number | null }>(
+    `SELECT COALESCE(SUM(v.tokens_in + v.tokens_out), 0) AS total
+       FROM llm_oversight_verdicts v
+       JOIN supervisor_steps s ON s.last_verdict_id = v.id
+      WHERE s.run_id = ?`
+  ).get(runId);
+  return row?.total ?? 0;
+}
+
+// --------------- project memory (recurring issues) ---------------
+
+export function listProjectMemory(repoId: string, activeOnly = true): ProjectMemoryRow[] {
+  const sql = activeOnly
+    ? 'SELECT * FROM project_memory WHERE repo_id = ? AND active = 1 ORDER BY hit_count DESC, last_seen_at DESC'
+    : 'SELECT * FROM project_memory WHERE repo_id = ? ORDER BY hit_count DESC, last_seen_at DESC';
+  return prep<[string], ProjectMemoryRow>(sql).all(repoId);
+}
+
+/**
+ * Upsert a lesson for (repo, category). If the category already exists for the
+ * repo, increment hit_count + refresh last_seen_at (and reactivate); otherwise
+ * insert a fresh row. Returns the resulting row id.
+ */
+export function upsertProjectMemory(input: {
+  mintId: () => string;
+  user_id: string;
+  repo_id: string;
+  category: string;
+  lesson: string;
+  detail: string;
+  source_run_id: string | null;
+}): void {
+  const ts = now();
+  const id = input.mintId();
+  prep<[string, string, string, string, string, string, string | null, number, number, number]>(
+    `INSERT INTO project_memory
+       (id, user_id, repo_id, category, lesson, detail, source_run_id, last_seen_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(repo_id, category) DO UPDATE SET
+       hit_count    = hit_count + 1,
+       lesson       = excluded.lesson,
+       detail       = excluded.detail,
+       active       = 1,
+       last_seen_at = excluded.last_seen_at,
+       updated_at   = excluded.updated_at`
+  ).run(
+    id,
+    input.user_id,
+    input.repo_id,
+    input.category,
+    input.lesson,
+    input.detail,
+    input.source_run_id,
+    ts,
+    ts,
+    ts
+  );
+}
+
+export function setProjectMemoryActive(id: string, userId: string, active: boolean): boolean {
+  const res = prep<[number, number, string, string]>(
+    'UPDATE project_memory SET active = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+  ).run(active ? 1 : 0, now(), id, userId);
+  return (res as { changes: number }).changes > 0;
 }

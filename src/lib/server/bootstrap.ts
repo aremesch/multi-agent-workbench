@@ -33,6 +33,8 @@ import {
 } from './agents/AgentSupervisor.js';
 import { PushService } from './push/PushService.js';
 import { getQueueScheduler, QueueScheduler } from './queue/Scheduler.js';
+import { startSupervisorEngine } from './supervisor/wiring.js';
+import type { SupervisorEngine } from './supervisor/SupervisorEngine.js';
 import { hashPassword } from './auth/password.js';
 import { Tmux } from './tmux/TmuxSession.js';
 
@@ -47,6 +49,7 @@ const G = globalThis as unknown as {
   __maw_registry?: AdapterRegistry;
   __maw_push?: PushService;
   __maw_scheduler?: QueueScheduler;
+  __maw_engine?: SupervisorEngine;
 };
 
 export function bootstrap(): Promise<void> {
@@ -146,6 +149,18 @@ export function bootstrap(): Promise<void> {
     await G.__maw_scheduler.start(G.__maw_supervisor);
     console.log('[maw] queue scheduler: started');
 
+    // 6b. Supervisor engine — orchestration layer on top of the scheduler.
+    //     Subscribes to scheduler 'change' + the AgentEventBus, and reconciles
+    //     any in-flight supervisor runs (honoring a requested stop) before
+    //     resuming them from their persisted phase.
+    G.__maw_engine = await startSupervisorEngine({
+      supervisor: G.__maw_supervisor,
+      scheduler: G.__maw_scheduler,
+      push: G.__maw_push,
+      apiKey: cfg.anthropicApiKey
+    });
+    console.log('[maw] supervisor engine: started');
+
     // 6. Periodic reaper: scans every ~5s for runtimes whose tmux session
     //    has disappeared and flips them to `exited`. This is the slow-path
     //    safety net — the fast path is the per-agent session-closed hook
@@ -193,4 +208,11 @@ export function getScheduler(): QueueScheduler {
     throw new Error('bootstrap() has not completed — getScheduler() called too early');
   }
   return G.__maw_scheduler;
+}
+
+export function getEngine(): SupervisorEngine {
+  if (!G.__maw_engine) {
+    throw new Error('bootstrap() has not completed — getEngine() called too early');
+  }
+  return G.__maw_engine;
 }

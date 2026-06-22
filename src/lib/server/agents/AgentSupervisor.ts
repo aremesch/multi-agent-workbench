@@ -44,6 +44,7 @@ import {
 } from './claudeConfigDir.js';
 import { jsonlPathInRoot } from './history/ClaudeJsonlTokens.js';
 import { getAlertBus } from './AlertBus.js';
+import { getAgentEventBus } from './AgentEventBus.js';
 
 /** CLI kinds for which we register Claude Code hook settings at spawn /
  *  reattach. Keep this restrictive — only kinds that share Claude Code's
@@ -398,9 +399,18 @@ export class AgentSupervisor {
    */
   private wireAlertBus(runtime: AgentRuntime): void {
     const userId = runtime.agent.user_id;
+    const agentId = runtime.agent.id;
     const bus = getAlertBus();
     runtime.on('alert', (payload) => {
       bus.emitUserAlert(userId, payload);
+    });
+    // Also fan adapter events (task_done / prompt_detected / error / …) onto
+    // the AgentEventBus so the SupervisorEngine can drive its state machine.
+    // Same lifecycle as the alert wiring above — once per runtime, at spawn
+    // and at reattach — so the engine keeps observing across reboots.
+    const eventBus = getAgentEventBus();
+    runtime.on('event', (event) => {
+      eventBus.emitAgentEvent({ agentId, userId, event });
     });
   }
 

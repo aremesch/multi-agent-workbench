@@ -349,4 +349,62 @@ export class WorktreeManager {
     }
     return { kind: 'no_master', current };
   }
+
+  /**
+   * Resolve the current HEAD SHA of a worktree (full 40-char hash), or null
+   * if HEAD can't be resolved (unborn repo / bad path).
+   */
+  static async headSha(wtPath: string): Promise<string | null> {
+    try {
+      const sha = (await getGit(wtPath).revparse(['HEAD'])).trim();
+      return sha || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Verify a task agent actually committed its work: HEAD must have advanced
+   * past `baseSha` AND the working tree must be clean (nothing left
+   * uncommitted). Used by the supervisor before handing a step to QC.
+   *
+   * Returns `{ committed, head, dirty }`:
+   *   - committed: HEAD differs from baseSha (new commit(s) landed)
+   *   - dirty:     uncommitted changes remain in the worktree
+   * A step is "ready for QC" when `committed && !dirty`.
+   */
+  static async verifyCommit(
+    wtPath: string,
+    baseSha: string | null
+  ): Promise<{ committed: boolean; head: string | null; dirty: boolean }> {
+    const head = await WorktreeManager.headSha(wtPath);
+    const dirty = await WorktreeManager.isDirty(wtPath);
+    const committed = head !== null && head !== baseSha;
+    return { committed, head, dirty };
+  }
+
+  /**
+   * Push a worktree's current branch to `origin` with upstream tracking so the
+   * human can open a PR. Best-effort: throws on failure (no remote, auth, …)
+   * so the supervisor can record the error and block on the human rather than
+   * silently swallowing it.
+   */
+  static async pushBranch(wtPath: string, branch: string): Promise<void> {
+    await getGit(wtPath).raw(['push', '-u', 'origin', branch]);
+  }
+
+  /**
+   * Unified diff of everything committed since `baseSha` (i.e. the work a task
+   * agent produced). Truncated to `maxBytes` so it stays within the QC verdict
+   * LLM call's context budget. Returns '' on error / no base.
+   */
+  static async diffSince(wtPath: string, baseSha: string | null, maxBytes = 200_000): Promise<string> {
+    try {
+      const range = baseSha ? `${baseSha}..HEAD` : 'HEAD';
+      const out = await getGit(wtPath).raw(['diff', range]);
+      return out.length > maxBytes ? out.slice(0, maxBytes) + '\n…(diff truncated)…\n' : out;
+    } catch {
+      return '';
+    }
+  }
 }

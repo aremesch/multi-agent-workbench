@@ -38,6 +38,11 @@ export function openMemoryDb(): Database.Database {
  * straight `DELETE FROM` loop works even with FKs on.
  */
 export const TABLES_IN_TEARDOWN_ORDER = [
+  // supervisor (v0.5) — children before parents (FKs are toggled off anyway)
+  'supervisor_run_events',
+  'project_memory',
+  'supervisor_steps',
+  'supervisor_runs',
   'llm_oversight_verdicts',
   'push_subscriptions',
   'alerts',
