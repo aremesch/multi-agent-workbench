@@ -2,8 +2,9 @@
  * Bundle server.js → build/server.js
  *
  * Resolves all src/lib/server/** and src/lib/shared/** TypeScript into a
- * single ESM file. Native addons and the SvelteKit handler stay external
- * so they resolve from node_modules / build/ at runtime.
+ * single ESM file. Every npm package and the SvelteKit handler stay external
+ * so they resolve from node_modules / build/ at runtime (see the
+ * `packages: 'external'` note below for why).
  *
  * Run: `node scripts/bundle-server.mjs`  (called automatically by `pnpm build`)
  */
@@ -40,37 +41,24 @@ await build({
     $shared: resolve('src/lib/shared'),
   },
 
-  // Keep native addons and npm packages external — they resolve from
-  // node_modules at runtime. better-auth ships pre-compiled chunks that
-  // pin to zod@4 (`.meta(…)`); inlining them here would resolve `import
-  // 'zod'` to the app's top-level zod@3 and crash. Externalizing lets
-  // Node's resolver hand better-auth its own zod@4 from its sub-tree.
-  external: [
-    'better-sqlite3',
-    '@node-rs/argon2',
-    'better-auth',
-    'better-auth/cookies',
-    'ws',
-    'execa',
-    'chokidar',
-    'jsonc-parser',
-    'strip-ansi',
-    'ulid',
-    'zod',
-    'web-push',
-    '@sveltejs/kit',
-    // simple-git's transitive @kwsites/file-exists is CJS and calls
-    // `require('fs')` at module top-level. esbuild rewrites that as a
-    // dynamic require shim that throws under ESM (`Dynamic require of
-    // "fs" is not supported`), so keep the whole simple-git chain
-    // external and let Node's CJS resolver handle it at runtime.
-    'simple-git',
-    // playwright pulls in chromium-bidi via dynamic require which esbuild
-    // can't statically resolve — keep the entire package external so
-    // Node's loader handles the chain at runtime.
-    'playwright',
-    'playwright-core',
-  ],
+  // Externalize every npm package: leave all bare-specifier imports as
+  // runtime imports resolved from node_modules and bundle only our own
+  // source (relative imports + the $shared alias). node_modules is already
+  // present at runtime (the deploy installs prod deps), so this changes
+  // nothing about deployment — but it removes a whole class of boot crash.
+  //
+  // Three reasons a package MUST stay external, all covered by this:
+  //   - Native addons (better-sqlite3, @node-rs/argon2) can't be bundled.
+  //   - CJS deps that call require() dynamically — jsdom (via
+  //     isomorphic-dompurify), @kwsites/file-exists (via simple-git),
+  //     chromium-bidi (via playwright) — otherwise hit esbuild's __require2
+  //     shim, which throws `Dynamic require of "X" is not supported` at
+  //     runtime. This bit us three times; externalizing every package stops
+  //     it recurring the next time such a dependency is added.
+  //   - better-auth ships pre-compiled chunks pinned to zod@4 (`.meta(…)`);
+  //     externalizing lets Node hand it its own zod@4 sub-tree instead of
+  //     the app's top-level zod@3.
+  packages: 'external',
 
   // Drop unused code; keep stack traces readable.
   treeShaking: true,

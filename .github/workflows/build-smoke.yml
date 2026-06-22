@@ -1,0 +1,39 @@
+name: build-smoke
+
+on:
+  pull_request:
+    branches: [main, development]
+  push:
+    branches: [main, development]
+
+jobs:
+  bundle-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install tmux
+        # bootstrap.ts probes tmux at boot. The smoke server uses an empty
+        # data dir (0 agents) so nothing is actually spawned, but tmux must be
+        # on PATH so the probe path behaves like production.
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build production bundle
+        run: pnpm build
+
+      - name: Boot the bundle and assert it reaches ready
+        # Fails (non-zero exit) if the bundled server crashes at boot — e.g. a
+        # newly added CJS dependency tripping esbuild's dynamic-require shim.
+        run: node scripts/smoke-boot.mjs
