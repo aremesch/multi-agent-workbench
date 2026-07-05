@@ -180,32 +180,47 @@
       };
       window.addEventListener('resize', handleWindowResize);
 
-      // Touch-to-scroll bridge. xterm's scrollable element is `.xterm-viewport`,
-      // but its content renders into a sibling `.xterm-screen` (canvas layers)
-      // that sits *on top* of the viewport — so a touch lands on the screen and
-      // never reaches the viewport, and native touch-scrolling never fires
-      // (a long-standing xterm.js limitation). Bridge it: translate a
-      // single-finger vertical drag anywhere over the host into a viewport
-      // scroll, mirroring what xterm's own wheel handler does (mutating
-      // `scrollTop`), which keeps xterm in sync via its internal scroll listener.
+      // Touch-to-scroll bridge. xterm has NO built-in touch scrolling: in v6 it
+      // bundles VS Code's Gesture class but never registers a target, so touch
+      // panning is dormant, and the rendered content lives in a `.xterm-screen`
+      // canvas that sits over the scrollable `.xterm-viewport`, so native scroll
+      // never fires either. We drive scrolling through xterm's public
+      // `scrollLines()` API rather than the viewport's `scrollTop`, because v6
+      // routes scrolling through a VS Code ScrollableElement that overrides any
+      // `scrollTop` we set. Translate a single-finger vertical drag over the
+      // host into whole-line scrolls, carrying the sub-line pixel remainder
+      // across moves so the gesture tracks the finger smoothly.
       const viewport = container.querySelector<HTMLElement>('.xterm-viewport');
       let lastTouchY = 0;
+      let scrollRemainder = 0;
       const onTouchStart = (e: TouchEvent): void => {
         const touch = e.touches.length === 1 ? e.touches[0] : undefined;
-        if (touch) lastTouchY = touch.clientY;
+        if (!touch) return;
+        lastTouchY = touch.clientY;
+        scrollRemainder = 0;
       };
       const onTouchMove = (e: TouchEvent): void => {
         const touch = e.touches.length === 1 ? e.touches[0] : undefined;
-        if (!viewport || !touch) return;
+        if (!term || !touch) return;
         const y = touch.clientY;
+        // Finger up (y shrinks) → positive delta → scroll down toward newest.
         const dy = lastTouchY - y;
         lastTouchY = y;
-        // Only consume the gesture when there's actually somewhere to scroll,
-        // so a non-overflowing terminal doesn't swallow the touch.
-        if (viewport.scrollHeight > viewport.clientHeight) {
-          viewport.scrollTop += dy;
-          e.preventDefault();
+        // px per row: the viewport shows exactly `term.rows` rows; fall back to
+        // the configured font size if the viewport isn't measurable yet.
+        const cellH =
+          viewport && viewport.clientHeight > 0
+            ? viewport.clientHeight / term.rows
+            : 18;
+        scrollRemainder += dy;
+        const lines = Math.trunc(scrollRemainder / cellH);
+        if (lines !== 0) {
+          scrollRemainder -= lines * cellH;
+          term.scrollLines(lines);
         }
+        // Only consume the gesture when there's scrollback to move through, so a
+        // terminal with no history doesn't swallow the touch.
+        if (term.buffer.active.baseY > 0) e.preventDefault();
       };
       // Listeners live on the host so drags starting over `.xterm-screen` are
       // captured. Only touchmove (a drag) is non-passive/preventDefault'd; a
@@ -241,9 +256,13 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
-    /* pan-y: let Android forward vertical swipes to xterm's viewport
-       instead of treating them as a parent gesture. */
-    touch-action: pan-y;
+    /* none: xterm has no native touch scrolling and the canvas isn't a scroll
+       container, so we drive scrolling ourselves via the touch handler in
+       onMount (term.scrollLines). Suppressing the browser's own pan/zoom keeps
+       every touchmove cancelable — with pan-y, Android can fast-track a native
+       pan of the scrollable modal ancestor and deliver non-cancelable moves
+       that ignore our preventDefault, breaking the scroll. */
+    touch-action: none;
   }
   /* xterm injects its own canvas layers; make sure they fill the host. */
   .terminal-host :global(.xterm) {
@@ -252,6 +271,6 @@
   }
   .terminal-host :global(.xterm-viewport) {
     background-color: transparent !important;
-    touch-action: pan-y;
+    touch-action: none;
   }
 </style>

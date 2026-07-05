@@ -9,15 +9,15 @@ In the mobile PWA, users **cannot** scroll with touch inside the **agent dialog*
 **Root cause.** The plan dialog scrolls a plain DOM element
 (`.markdown-body`, `overflow: auto`, default `touch-action`) — native momentum
 touch-scrolling just works. The agent and log dialogs both embed an xterm.js
-terminal via the shared `Terminal.svelte` wrapper. xterm's scrollable element is
-`.xterm-viewport`, but xterm renders its content into a **sibling** `.xterm-screen`
-(canvas layers) that sits *on top* of the viewport. A touch therefore lands on
-`.xterm-screen`, whose touch events never reach the sibling `.xterm-viewport`, so
-the browser's native scroll of the viewport is never triggered. This is a
-well-known xterm.js limitation (no built-in touch-drag scrolling). The existing
-`touch-action: pan-y` on the host/viewport cannot help, because there is no
-ancestor scroll container for the browser to pan — the only scrollable element is
-the viewport the touch never reaches.
+terminal via the shared `Terminal.svelte` wrapper, and **xterm.js has no working
+touch scrolling**:
+
+- The rendered content lives in a `.xterm-screen` canvas that sits *over* the
+  scrollable `.xterm-viewport`, so a touch lands on the canvas and native
+  viewport scroll never fires.
+- xterm **v6** bundles VS Code's `Gesture` class (which would translate touch
+  pans into scrolls) but **never registers a target** (`Gesture.addTarget` is
+  never called), so that touch-pan path is dormant.
 
 Because both broken dialogs route through the single `Terminal.svelte` wrapper,
 one fix there repairs both.
@@ -25,9 +25,12 @@ one fix there repairs both.
 ## Approach
 
 Add a **touch-to-scroll bridge** in `Terminal.svelte` that translates a
-single-finger vertical drag anywhere over the terminal into a scroll of
-`.xterm-viewport`. This mirrors what xterm's own wheel handler does (it mutates
-`viewport.scrollTop`), so xterm stays in sync via its internal `scroll` listener.
+single-finger vertical drag anywhere over the terminal host into scrolling via
+xterm's **public `term.scrollLines()` API**.
+
+> Note: an earlier attempt mutated `viewport.scrollTop` directly. That does not
+> work in xterm v6 — scrolling is routed through a VS Code `ScrollableElement`
+> that overrides any `scrollTop` we set — so we drive the public API instead.
 
 ### File to modify
 
@@ -38,24 +41,25 @@ single-finger vertical drag anywhere over the terminal into a scroll of
 Inside the `onMount` async IIFE, **after `term.open(container)`** (so the xterm
 DOM exists) and alongside the existing `ResizeObserver`/`window resize` wiring:
 
-1. Resolve the viewport: `const viewport = container.querySelector('.xterm-viewport')`.
-   Guard on null (defensive — should always exist after `open`).
-2. Attach listeners to `container` (the `.terminal-host`, not the viewport) so
-   drags starting over `.xterm-screen` are captured:
-   - `touchstart` (passive): if `e.touches.length === 1`, record
-     `lastY = e.touches[0].clientY`.
-   - `touchmove` (`{ passive: false }`): if single touch, compute
-     `dy = lastY - currentY`, set `lastY = currentY`, apply
-     `viewport.scrollTop += dy`, and `e.preventDefault()` to suppress any
-     competing default gesture. Only preventDefault when the viewport is
-     actually scrollable (`viewport.scrollHeight > viewport.clientHeight`) so a
-     non-scrolling terminal doesn't swallow the gesture.
+1. Attach listeners to `container` (the `.terminal-host`) so drags starting over
+   `.xterm-screen` are captured:
+   - `touchstart` (passive): record `lastY` from the single touch; reset the
+     sub-line pixel remainder.
+   - `touchmove` (`{ passive: false }`): compute `dy = lastY - currentY`,
+     convert accumulated pixels to whole lines using per-row height
+     (`viewport.clientHeight / term.rows`), carry the remainder across moves,
+     and call `term.scrollLines(lines)`. `preventDefault()` only when there is
+     scrollback to move through (`term.buffer.active.baseY > 0`).
    - Ignore multi-touch (pinch/zoom) by bailing when `touches.length !== 1`.
-3. Register the listeners' removal in the existing `cleanup` closure (which
-   already tears down the resize listener/observer and disposes `term`).
+2. Register the listeners' removal in the existing `cleanup` closure.
+3. Set `touch-action: none` on `.terminal-host` / `.xterm-viewport` (was
+   `pan-y`). Since we own scrolling in JS, suppressing the browser's native
+   pan/zoom keeps every `touchmove` cancelable — with `pan-y`, Android can
+   fast-track a native pan of the scrollable modal ancestor and deliver
+   non-cancelable moves that ignore our `preventDefault`.
 
 Only `touchmove` (a drag) calls `preventDefault`; a plain `touchstart`/tap is
-left untouched, so xterm's existing tap-to-focus behaviour (and the deliberate
+left untouched, so xterm's tap-to-focus behaviour (and the deliberate
 soft-keyboard trigger described in the current comments) is preserved.
 
 ### CSS note
