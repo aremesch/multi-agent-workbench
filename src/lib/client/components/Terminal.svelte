@@ -180,8 +180,44 @@
       };
       window.addEventListener('resize', handleWindowResize);
 
+      // Touch-to-scroll bridge. xterm's scrollable element is `.xterm-viewport`,
+      // but its content renders into a sibling `.xterm-screen` (canvas layers)
+      // that sits *on top* of the viewport — so a touch lands on the screen and
+      // never reaches the viewport, and native touch-scrolling never fires
+      // (a long-standing xterm.js limitation). Bridge it: translate a
+      // single-finger vertical drag anywhere over the host into a viewport
+      // scroll, mirroring what xterm's own wheel handler does (mutating
+      // `scrollTop`), which keeps xterm in sync via its internal scroll listener.
+      const viewport = container.querySelector<HTMLElement>('.xterm-viewport');
+      let lastTouchY = 0;
+      const onTouchStart = (e: TouchEvent): void => {
+        const touch = e.touches.length === 1 ? e.touches[0] : undefined;
+        if (touch) lastTouchY = touch.clientY;
+      };
+      const onTouchMove = (e: TouchEvent): void => {
+        const touch = e.touches.length === 1 ? e.touches[0] : undefined;
+        if (!viewport || !touch) return;
+        const y = touch.clientY;
+        const dy = lastTouchY - y;
+        lastTouchY = y;
+        // Only consume the gesture when there's actually somewhere to scroll,
+        // so a non-overflowing terminal doesn't swallow the touch.
+        if (viewport.scrollHeight > viewport.clientHeight) {
+          viewport.scrollTop += dy;
+          e.preventDefault();
+        }
+      };
+      // Listeners live on the host so drags starting over `.xterm-screen` are
+      // captured. Only touchmove (a drag) is non-passive/preventDefault'd; a
+      // plain tap is left untouched so xterm's tap-to-focus (and the deliberate
+      // soft-keyboard trigger above) still works.
+      container.addEventListener('touchstart', onTouchStart, { passive: true });
+      container.addEventListener('touchmove', onTouchMove, { passive: false });
+
       cleanup = () => {
         window.removeEventListener('resize', handleWindowResize);
+        container?.removeEventListener('touchstart', onTouchStart);
+        container?.removeEventListener('touchmove', onTouchMove);
         ro.disconnect();
         term?.dispose();
         term = null;
