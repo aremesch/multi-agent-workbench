@@ -263,6 +263,9 @@ const en = {
     'Unsupported image format. Use PNG, JPEG, GIF, or WebP.',
   'agentTerminal.image.error.size': 'Image too large. Maximum 5 MB.',
   'agentTerminal.image.error.upload': 'Upload failed. Please try again.',
+  'terminalSelect.copy': 'Copy',
+  'terminalSelect.paste': 'Paste',
+  'terminalSelect.copied': 'Copied',
 
   // ── Roles ────────────────────────────────────────────────────────
   'roles.title': 'Agent roles',

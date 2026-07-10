@@ -230,6 +230,9 @@ const es: Partial<Record<TranslationKey, string>> = {
     'Formato de imagen no soportado. Usa PNG, JPEG, GIF o WebP.',
   'agentTerminal.image.error.size': 'Imagen demasiado grande. M\u00e1ximo 5 MB.',
   'agentTerminal.image.error.upload': 'Error al subir. Int\u00e9ntalo de nuevo.',
+  'terminalSelect.copy': 'Copiar',
+  'terminalSelect.paste': 'Pegar',
+  'terminalSelect.copied': 'Copiado',
   'agent.dragHandle': 'Arrastrar para reordenar',
 
   // ── Roles ────────────────────────────────────────────────────────
