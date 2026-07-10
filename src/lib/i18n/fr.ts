@@ -230,6 +230,9 @@ const fr: Partial<Record<TranslationKey, string>> = {
     'Format d’image non pris en charge. Utilisez PNG, JPEG, GIF ou WebP.',
   'agentTerminal.image.error.size': 'Image trop volumineuse. Maximum 5 Mo.',
   'agentTerminal.image.error.upload': 'Échec du téléversement. Réessayez.',
+  'terminalSelect.copy': 'Copier',
+  'terminalSelect.paste': 'Coller',
+  'terminalSelect.copied': 'Copié',
   'agent.dragHandle': 'Glisser pour réorganiser',
 
   // ── Roles ────────────────────────────────────────────────────────
