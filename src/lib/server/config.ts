@@ -55,6 +55,7 @@ export interface MawConfig {
   vapidSubject: string;
   anthropicApiKey: string;
   claudeCodeOauthToken: string;
+  giteaToken: string;
   terminalLogBudgetBytes: number;
   trustProxy: boolean;
   authLogPath: string;
@@ -102,6 +103,10 @@ export function getConfig(): MawConfig {
     vapidSubject: env.MAW_VAPID_SUBJECT ?? 'mailto:dev@example.com',
     anthropicApiKey: env.ANTHROPIC_API_KEY ?? '',
     claudeCodeOauthToken: env.CLAUDE_CODE_OAUTH_TOKEN ?? '',
+    // Gitea API token (personal access token). Exposed to every spawned
+    // agent so they can open pull requests against Gitea repos via the REST
+    // API — see AgentSupervisor.launchCliRuntime. Empty when unset.
+    giteaToken: env.GITEA_TOKEN ?? '',
     terminalLogBudgetBytes: Number(env.MAW_TERMINAL_LOG_BYTES ?? 4 * 1024 * 1024),
     trustProxy: env.MAW_TRUST_PROXY === '1',
     authLogPath:

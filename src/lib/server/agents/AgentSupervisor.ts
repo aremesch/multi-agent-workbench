@@ -766,6 +766,17 @@ export class AgentSupervisor {
       env.MAW_AGENT_TOKEN = hookToken;
     }
 
+    // Gitea API token, shared by every agent kind so they can open pull
+    // requests against Gitea repos via the REST API (the managed repos use
+    // git@gitea SSH remotes, so branch pushes ride the host's SSH key — only
+    // the PR-creation API call needs a token). Injected here at the single
+    // spawn choke point rather than per-adapter, so claude-code, codex,
+    // gemini and shell all inherit it uniformly. Empty-skip: never surface
+    // GITEA_TOKEN="" to an agent when it isn't configured.
+    if (cfg.giteaToken) {
+      env.GITEA_TOKEN = cfg.giteaToken;
+    }
+
     // For claude-code agents: pin CLAUDE_CONFIG_DIR to a per-agent path so
     // each CLI reads/writes its own `.claude.json` and friends. Without
     // this, every spawn atomically rewrites the user-global `~/.claude.json`
