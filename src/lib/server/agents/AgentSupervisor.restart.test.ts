@@ -36,7 +36,8 @@ vi.mock('../config.js', () => ({
     worktreeRoot: '/wt',
     dataDir: '/tmp/data',
     anthropicApiKey: 'sk-test',
-    claudeCodeOauthToken: ''
+    claudeCodeOauthToken: '',
+    giteaToken: 'gitea-pat-xyz'
   })
 }));
 
@@ -255,6 +256,19 @@ describe('AgentSupervisor.restart', () => {
     expect(runCount('a1')).toBe(2); // original run + the revived run
     expect(newSessionMock).toHaveBeenCalledWith(
       expect.objectContaining({ session: 'maw-a1' })
+    );
+  });
+
+  it('forwards GITEA_TOKEN from config into the agent spawn env', async () => {
+    seedCrashedAgent();
+    const res = await sup.restart('a1');
+    expect(res.ok).toBe(true);
+    // The launchCliRuntime choke point injects the configured Gitea token so
+    // every agent kind can open PRs via the API. spawn() shares this tail.
+    expect(newSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({ GITEA_TOKEN: 'gitea-pat-xyz' })
+      })
     );
   });
 
