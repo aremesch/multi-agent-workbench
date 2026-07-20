@@ -337,6 +337,7 @@ const fr: Partial<Record<TranslationKey, string>> = {
   // \u2500\u2500 Agent-window kebab menu \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   'agentMenu.button': 'Menu de l\u2019agent',
   'agentMenu.showPlan': 'Afficher le plan',
+  'agentMenu.showChanges': 'Afficher les modifications',
   'agentMenu.showLog': 'Afficher le journal',
   'agentMenu.exitAgent': 'Quitter l\u2019agent',
 

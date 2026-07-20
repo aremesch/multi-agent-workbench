@@ -424,6 +424,7 @@ const en = {
   // ── Agent-window kebab menu ──────────────────────────────────────
   'agentMenu.button': 'Agent menu',
   'agentMenu.showPlan': 'Show plan',
+  'agentMenu.showChanges': 'Show changes',
   'agentMenu.showLog': 'Show log',
   'agentMenu.showDefinition': 'Show definition',
   'agentMenu.restart': 'Restart/continue work',
@@ -444,6 +445,35 @@ const en = {
   'plan.modal.copy': 'Copy markdown',
   'plan.modal.copied': 'Copied ✓',
   'plan.modal.copyError': 'Copy failed',
+
+  // ── Show Changes (diff) modal ────────────────────────────────────
+  'changes.modal.title': 'Changes',
+  'changes.modal.loading': 'Loading changes…',
+  'changes.modal.error': 'Failed to load changes: {error}',
+  'changes.modal.retry': 'Retry',
+  'changes.modal.empty': 'This agent has not changed anything yet.',
+  'changes.modal.committed': 'Committed',
+  'changes.modal.uncommitted': 'Uncommitted',
+  'changes.modal.binary': 'binary',
+  'changes.modal.binaryBody': 'Binary file changed.',
+  'changes.modal.largeChange': 'Large change — stats only.',
+  'changes.modal.noTextChange': 'No textual changes.',
+  'changes.modal.status.A': 'Added',
+  'changes.modal.status.M': 'Modified',
+  'changes.modal.status.D': 'Deleted',
+  'changes.modal.status.R': 'Renamed',
+  'changes.modal.status.C': 'Copied',
+  'changes.modal.status.T': 'Type changed',
+  'changes.modal.note.base_unavailable': 'Base commit unavailable — cannot show committed changes.',
+  'changes.modal.note.worktree_gone': 'The agent’s worktree no longer exists.',
+  'changes.modal.note.no_commits': 'No commits yet.',
+  'changes.modal.askPlaceholder': 'Ask about these changes…',
+  'changes.modal.send': 'Send',
+  'changes.modal.sending': 'Sending…',
+  'changes.modal.thinking': 'Thinking…',
+  'changes.modal.qaError': 'Failed to get an answer. Please try again.',
+  'changes.modal.aiDisabledHint':
+    'AI Q&A is unavailable. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY to enable it.',
 
   // ── Agent log modal title (running-agent variant) ────────────────
   'agent.logTitle': 'Log: {name}',

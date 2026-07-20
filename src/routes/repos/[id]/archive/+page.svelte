@@ -7,6 +7,7 @@
   import ArchivedAgentLogModal from '$lib/client/components/ArchivedAgentLogModal.svelte';
   import Modal from '$lib/client/components/Modal.svelte';
   import PlanViewerModal from '$lib/client/components/PlanViewerModal.svelte';
+  import ShowChangesModal from '$lib/client/components/ShowChangesModal.svelte';
   import { apiFetch } from '$lib/client/api';
   import { formatDurationHMS, formatTimestamp, formatTokens } from '$lib/shared/format';
   import { useT } from '$lib/client/i18n.svelte';
@@ -18,6 +19,7 @@
   let openAgentId = $state<string | null>(null);
   let openAgentTitle = $state<string>('');
   let planAgentId = $state<string | null>(null);
+  let changesAgentId = $state<string | null>(null);
   let expanded = $state<Record<string, boolean>>({});
 
   let definitionView = $state<AgentDefinitionView | null>(null);
@@ -52,6 +54,12 @@
   }
   function closePlan(): void {
     planAgentId = null;
+  }
+  function viewChanges(entry: PageData['archivedAgents'][number]): void {
+    changesAgentId = entry.agent.id;
+  }
+  function closeChanges(): void {
+    changesAgentId = null;
   }
   function viewDefinition(entry: PageData['archivedAgents'][number]): void {
     definitionView = entry.definition;
@@ -264,6 +272,7 @@
                   showExit={false}
                   restartable={entry.restartable}
                   onShowPlan={() => viewPlan(entry)}
+                  onShowChanges={() => viewChanges(entry)}
                   onShowLog={() => viewLog(entry)}
                   onShowDefinition={() => viewDefinition(entry)}
                   onRestart={() => runRestart(entry)}
@@ -416,6 +425,10 @@
     source={{ kind: 'agent', agentId: planAgentId }}
     onClose={closePlan}
   />
+{/if}
+
+{#if changesAgentId !== null}
+  <ShowChangesModal open={true} agentId={changesAgentId} onClose={closeChanges} />
 {/if}
 
 <AgentDefinitionModal

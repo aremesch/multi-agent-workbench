@@ -358,6 +358,7 @@ const de: Partial<Record<TranslationKey, string>> = {
   // ── Agent-window kebab menu ──────────────────────────────────────
   'agentMenu.button': 'Agent-Menü',
   'agentMenu.showPlan': 'Plan anzeigen',
+  'agentMenu.showChanges': 'Änderungen anzeigen',
   'agentMenu.showLog': 'Log anzeigen',
   'agentMenu.exitAgent': 'Agent beenden',
 
@@ -376,6 +377,36 @@ const de: Partial<Record<TranslationKey, string>> = {
   'plan.modal.copy': 'Markdown kopieren',
   'plan.modal.copied': 'Kopiert ✓',
   'plan.modal.copyError': 'Kopieren fehlgeschlagen',
+
+  // ── Show Changes (Diff) Modal ────────────────────────────────────
+  'changes.modal.title': 'Änderungen',
+  'changes.modal.loading': 'Änderungen werden geladen…',
+  'changes.modal.error': 'Änderungen konnten nicht geladen werden: {error}',
+  'changes.modal.retry': 'Erneut versuchen',
+  'changes.modal.empty': 'Dieser Agent hat noch nichts geändert.',
+  'changes.modal.committed': 'Committet',
+  'changes.modal.uncommitted': 'Nicht committet',
+  'changes.modal.binary': 'binär',
+  'changes.modal.binaryBody': 'Binärdatei geändert.',
+  'changes.modal.largeChange': 'Große Änderung – nur Statistik.',
+  'changes.modal.noTextChange': 'Keine Textänderungen.',
+  'changes.modal.status.A': 'Hinzugefügt',
+  'changes.modal.status.M': 'Geändert',
+  'changes.modal.status.D': 'Gelöscht',
+  'changes.modal.status.R': 'Umbenannt',
+  'changes.modal.status.C': 'Kopiert',
+  'changes.modal.status.T': 'Typ geändert',
+  'changes.modal.note.base_unavailable':
+    'Basis-Commit nicht verfügbar – committete Änderungen können nicht angezeigt werden.',
+  'changes.modal.note.worktree_gone': 'Der Arbeitsbereich des Agenten existiert nicht mehr.',
+  'changes.modal.note.no_commits': 'Noch keine Commits.',
+  'changes.modal.askPlaceholder': 'Zu diesen Änderungen fragen…',
+  'changes.modal.send': 'Senden',
+  'changes.modal.sending': 'Senden…',
+  'changes.modal.thinking': 'Denkt nach…',
+  'changes.modal.qaError': 'Antwort konnte nicht abgerufen werden. Bitte erneut versuchen.',
+  'changes.modal.aiDisabledHint':
+    'KI-Fragen sind nicht verfügbar. Setze CLAUDE_CODE_OAUTH_TOKEN oder ANTHROPIC_API_KEY, um sie zu aktivieren.',
 
   // ── Agent log modal title (running-agent variant) ────────────────
   'agent.logTitle': 'Log: {name}',

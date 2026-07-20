@@ -337,6 +337,7 @@ const es: Partial<Record<TranslationKey, string>> = {
   // ── Agent-window kebab menu ──────────────────────────────────────
   'agentMenu.button': 'Menú del agente',
   'agentMenu.showPlan': 'Ver plan',
+  'agentMenu.showChanges': 'Ver cambios',
   'agentMenu.showLog': 'Ver log',
   'agentMenu.exitAgent': 'Salir del agente',
 
