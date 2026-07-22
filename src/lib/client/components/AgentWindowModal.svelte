@@ -20,6 +20,7 @@
   import AgentTerminalPanel from './AgentTerminalPanel.svelte';
   import AgentMenu from './AgentMenu.svelte';
   import PlanViewerModal from './PlanViewerModal.svelte';
+  import ShowChangesModal from './ShowChangesModal.svelte';
   import ArchivedAgentLogModal from './ArchivedAgentLogModal.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
 
@@ -50,6 +51,7 @@
 
   let openAgentStatus = $state('');
   let planOpen = $state(false);
+  let changesOpen = $state(false);
   let logOpen = $state(false);
   let exitConfirmOpen = $state(false);
   let exitErrorMsg = $state<string | null>(null);
@@ -65,6 +67,7 @@
   $effect(() => {
     if (!open || !agent) {
       planOpen = false;
+      changesOpen = false;
       logOpen = false;
       exitConfirmOpen = false;
       exitErrorMsg = null;
@@ -81,6 +84,10 @@
   function openShowPlan(): void {
     exitErrorMsg = null;
     planOpen = true;
+  }
+  function openShowChanges(): void {
+    exitErrorMsg = null;
+    changesOpen = true;
   }
   function openShowLog(): void {
     exitErrorMsg = null;
@@ -120,6 +127,7 @@
         status: (openAgentStatus || agent.status) as AgentStatus
       }}
       onShowPlan={openShowPlan}
+      onShowChanges={openShowChanges}
       onShowLog={openShowLog}
       onExit={openExitConfirm}
     />
@@ -156,6 +164,14 @@
     open={planOpen}
     source={{ kind: 'agent', agentId: agent?.id ?? '' }}
     onClose={() => (planOpen = false)}
+  />
+{/if}
+
+{#if changesOpen}
+  <ShowChangesModal
+    open={changesOpen}
+    agentId={agent?.id ?? ''}
+    onClose={() => (changesOpen = false)}
   />
 {/if}
 

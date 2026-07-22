@@ -23,6 +23,7 @@
   let {
     agent,
     onShowPlan,
+    onShowChanges,
     onShowLog,
     onShowDefinition,
     onRestart,
@@ -32,6 +33,8 @@
   }: {
     agent: { id: string; cli_kind: string; status: AgentStatus };
     onShowPlan: () => void;
+    /** When provided, adds a "Show changes" (git diff) row. */
+    onShowChanges?: () => void;
     onShowLog: () => void;
     /** When provided, adds a "Show definition" row (archive surfaces). */
     onShowDefinition?: () => void;
@@ -60,6 +63,17 @@
       onSelect: onShowPlan,
       disabled: planDisabled
     },
+    ...(onShowChanges
+      ? [
+          {
+            id: 'changes',
+            label: t('agentMenu.showChanges'),
+            icon: changesIcon,
+            onSelect: onShowChanges,
+            disabled: planDisabled
+          } satisfies OverflowMenuItem
+        ]
+      : []),
     {
       id: 'log',
       label: t('agentMenu.showLog'),
@@ -109,6 +123,15 @@
     <path
       fill="currentColor"
       d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm0 7V3.5L19.5 9H14ZM8 13h8v2H8v-2Zm0 4h5v2H8v-2Z"
+    />
+  </svg>
+{/snippet}
+
+{#snippet changesIcon()}
+  <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      fill="currentColor"
+      d="M9 3H4v5h2V6.41l3.29 3.3 1.42-1.42L7.41 5H9V3Zm11 13h-2v1.59l-3.29-3.3-1.42 1.42L16.59 19H15v2h5v-5ZM4 16v5h5v-2H6.41l3.3-3.29-1.42-1.42L5 17.59V16H4Zm16-8V3h-5v2h1.59l-3.3 3.29 1.42 1.42L18 6.41V8h2Z"
     />
   </svg>
 {/snippet}
